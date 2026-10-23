@@ -316,3 +316,16 @@ operation/evidence → оставшееся ограничение. Полный
   источник пишет copy-out, не прямой Resolve. Read-only hooks и private trace
   plugin собраны; pending readback/fence integration остаётся открытой.
   [Proof](../logs/acv-resolve-consumer-20261023/complete-proof.json).
+
+## GitHub source-only checkpoint — 2026-10-23
+
+Приватный [GrayRats/DEArmoredcoreV](https://github.com/GrayRats/DEArmoredcoreV)
+создан и initial commit `451b6c4` отправлен в main. Проверены remote SHA и tree:
+185 небольших текстовых файлов, 955282 bytes; только tools, scripts, MD и
+root instructions. Логи, cache/temp, SDK checkouts, сборки, игровые данные и
+личный acv.config исключены.
+Проверка перед публикацией: `scripts/check_repository_payload.py`
+(regular text blobs, максимум512KiB, без gitlinks/credentials); manifest
+[remote-verified.json](../logs/acv-github-export-20261023/remote-verified.json).
+Это checkpoint исследовательских инструментов; экспериментальный deferred
+Resolve default OFF, его GPU compilation прошла, game/runtime ещё не принят.

@@ -71,3 +71,8 @@ full в игре. Для немедленного CPU consumer необходи�
 пакете остаётся normal55937953…. Trace plugin отдельно tmp/acv-bake-chain-test;
 его не переносить в normal package. Raw PPC/трассы в logs/acv-resolve-consumer-20261023.
 Ghidra restarted headless, saved default.xex opened --no-analyze; DB не менялась.
+
+Исходники инструментов/скрипты/MD сохранены в приватном
+[DEArmoredcoreV](https://github.com/GrayRats/DEArmoredcoreV), initial451b6c4.
+Данные игры, SDK, logs/tmp/cache и персональный config в GitHub не отправлены.
+Проверка payload: scripts/check_repository_payload.py; подробности в PROGRESS.
