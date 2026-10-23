@@ -25,7 +25,7 @@ workspace, build scripts пока содержат привязки к лока�
 
 Проверенный ACV profile использует `readback_resolve=full`. Private
 `ACV_DEFER_RESOLVES_TEST` — эксперимент с явно заданным диапазоном; GPU-вариант
-компилируется, игровой тест и полные lifetime/coherency гарантии ещё не приняты.
+прошёл ограниченный игровой byte test; полные lifetime/coherency гарантии ещё не приняты.
 Он выключен по умолчанию и не заменяет рабочий full readback.
 
 Перед коммитом выполнить `python3 scripts/check_repository_payload.py`.

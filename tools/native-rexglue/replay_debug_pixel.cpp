@@ -42,7 +42,10 @@ int main(int argc, char** argv) {
   if(end == argv[3] || *end) return 2;
   const uint32_t y = static_cast<uint32_t>(std::strtoul(argv[4], &end, 10));
   if(end == argv[4] || *end) return 2;
-  const bool relax_fp = argc == 7 && std::strcmp(argv[6], "--debug-relax-rte") == 0;
+  // Replay-only probe. Disabling interlock is NOT valid rendering semantics;
+  // use only pre-EDRAM shader arithmetic, never as an output/parity oracle.
+  const bool relax_fsi = argc == 7 && std::strcmp(argv[6], "--debug-relax-fsi") == 0;
+  const bool relax_fp = relax_fsi || (argc == 7 && std::strcmp(argv[6], "--debug-relax-rte") == 0);
   if(argc == 7 && !relax_fp) return 2;
   ReplayLifetime lifetime;
   std::unique_ptr<ICaptureFile, CloseCapture> capture(RENDERDOC_OpenCaptureFile());
@@ -98,7 +101,17 @@ int main(int argc, char** argv) {
                         words[i+1] == spv::CapabilityRoundingModeRTE) ||
                        (op == spv::OpExecutionMode && count >= 3 &&
                         words[i+2] == spv::ExecutionModeRoundingModeRTE);
-      if(rte) ++removed;
+      const bool interlock = relax_fsi && (
+          (op == spv::OpExtension && count > 1 &&
+           std::strcmp(reinterpret_cast<const char*>(&words[i+1]), "SPV_EXT_fragment_shader_interlock") == 0) ||
+          (op == spv::OpCapability && count == 2 &&
+           (words[i+1] == spv::CapabilityFragmentShaderSampleInterlockEXT ||
+            words[i+1] == spv::CapabilityFragmentShaderPixelInterlockEXT)) ||
+          (op == spv::OpExecutionMode && count >= 3 &&
+           (words[i+2] == spv::ExecutionModeSampleInterlockOrderedEXT ||
+            words[i+2] == spv::ExecutionModePixelInterlockOrderedEXT)) ||
+          op == spv::OpBeginInvocationInterlockEXT || op == spv::OpEndInvocationInterlockEXT);
+      if(rte || interlock) ++removed;
       else filtered.insert(filtered.end(), words.begin() + i, words.begin() + i + count);
       i += count;
     }
@@ -118,7 +131,7 @@ int main(int argc, char** argv) {
     replay->SetFrameEvent(event, true);
     vk = replay->GetVulkanPipelineState();
     report_pixel("Diagnostic shader");
-    std::cerr << "Diagnostic RTE declarations removed: " << removed << "\n";
+    std::cerr << "Diagnostic declarations/instructions removed: " << removed << "\n";
   }
   if(vk && vk->fragmentShader.reflection && !vk->fragmentShader.reflection->debugInfo.debuggable) {
     std::cerr << "Shader is not debuggable: " << vk->fragmentShader.reflection->debugInfo.debugStatus.c_str() << "\n";

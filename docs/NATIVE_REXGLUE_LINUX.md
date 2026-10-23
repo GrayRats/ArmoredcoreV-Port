@@ -933,3 +933,26 @@ guest completion value immediately. Any deferred readback must publish pending
 bytes before a guest-visible fence/writeback can let the CPU proceed. An async
 copy alone is insufficient. A production deferred mode and its memory-allocation/
 CPU-write-generation guards are still open; full remains the working default.
+
+### Private deferred Resolve experiment, 2026-10-23
+
+Two70s tests completed child0 with45/27 existing VFS/protection errors.
+Private GPU bb29a5c4… and host fbf7f9ce… use the measured CPU copy boundary
+LR0x82C8391C to request publication on the GPU worker.51 jobs published;47 CPU
+reads match latest publication by size and4KiB sample. First2MiB exactly equal
+the same-run Resolve and full oracle SHA6af9819e….44 flushes came from CPU
+requests,2 from slot reuse,3 from eviction. First2MiB request waited2429us;
+this diagnostic measurement does not establish FPS or lower stalls.
+[Proof](../logs/acv-resolve-consumer-20261023/deferred-test/second-final-proof.json),
+[runs](../logs/acv-resolve-consumer-20261023/deferred-test/runtime-summary.json).
+
+Actual-header ASan/UBSan tests reject CPU changes/failed completion, verify
+wait outside memory lock and overlapping slot retirement. Unique active tracing
+is mandatory for this experiment; failure/exhaustion prevents unchecked CPU reads.
+Test: tools/native-rexglue/test_deferred_resolve.py, operation5ff94476-c71d-4e20-996b-6c0eb5e40ded.
+The fixed leased range is a reused bake pool, not a generic resource identity.
+Allocation ABA, other CPU readers, shutdown concurrency and performance remain
+unproven. Normal GPU55937953… and default full are retained.
+
+User priority is now remaining black gameplay models. This deferred prototype
+is not a fix for all scene shading; continue at a concrete full-readback draw.

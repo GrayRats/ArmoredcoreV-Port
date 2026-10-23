@@ -47,11 +47,12 @@ bool AcvDeferredEligible(uint32_t address,uint32_t bytes) {
   static const Filter f;
   return bytes && bytes<=0x800000 && address>=f.first && uint64_t(address)+bytes<=f.end;
 }
-bool AcvFlushDeferred(rex::graphics::CommandProcessor* processor) {
+bool AcvFlushDeferred(rex::graphics::CommandProcessor* processor,const char* reason) {
   auto& s=AcvDeferred();
   if(s.flushing || s.processor.load()!=processor || s.jobs.empty())return !s.failed;
   if(s.failed)return false;
   s.flushing=true;
+  s.trace.Record("\"event\":\"deferred_flush\",\"reason\":\"%s\",\"jobs\":%u",reason,unsigned(s.jobs.size()));
   // GPU waits happen outside the memory critical region. A recursive flush
   // from EndSubmission cleanup cannot inspect or retire the current jobs.
   bool ok=true;
@@ -74,13 +75,16 @@ bool AcvFlushDeferred(rex::graphics::CommandProcessor* processor) {
 }
 bool AcvRetireDeferredSlot(rex::graphics::CommandProcessor* processor,VkBuffer slot) {
   auto& s=AcvDeferred();
-  for(const auto& job:s.jobs)if(job.slot==slot)return AcvFlushDeferred(processor);
+  for(const auto& job:s.jobs)if(job.slot==slot)return AcvFlushDeferred(processor,"slot_reuse");
   return !s.failed;
 }
 bool AcvAddDeferred(rex::graphics::CommandProcessor* processor,AcvDeferredJob job) {
   auto& s=AcvDeferred();
+  if(!s.trace.enabled()) {
+    std::fprintf(stderr,"[acv-deferred] Active unique bake trace required; refusing deferral\n");return false;
+  }
   if(s.failed || (s.processor.load() && s.processor.load()!=processor))return false;
-  if(s.jobs.size()>=16 && !AcvFlushDeferred(processor))return false;
+  if(s.jobs.size()>=16 && !AcvFlushDeferred(processor,"queue_limit"))return false;
   job.baseline.assign(job.destination,job.destination+job.bytes);
   s.processor.store(processor);
   s.trace.Record("\"event\":\"deferred_enqueue\",\"physical\":%u,\"bytes\":%u,\"ticket\":%llu",
@@ -103,7 +107,7 @@ bool AcvResolveReadbackForCpu(uint32_t address,uint32_t bytes) {
   auto promise=std::make_shared<std::promise<bool>>();auto ready=promise->get_future();
   processor->CallInThread([processor,promise]() {
     if(AcvDeferred().processor.load()!=processor) {promise->set_value(false);return;}
-    promise->set_value(AcvFlushDeferred(processor));
+    promise->set_value(AcvFlushDeferred(processor,"cpu_consumer"));
   });
   // Requests retain their state if the worker is stuck in a guest WAIT packet.
   // Fail closed on a bounded timeout rather than copying an unready buffer.

@@ -109,6 +109,10 @@ if display_gamma is not None:
 report["display_gamma_type_override"] = env.get("ACV_DISPLAY_GAMMA_TYPE")
 if args.compat_mm_wc_rw:
     env["ACV_COMPAT_MM_WC_RW"] = "1"
+dlc_sound_root = ROOT / "tmp/acv-dlc-sound"
+if dlc_sound_root.is_dir():
+    env["ACV_DLC_SOUND_ROOT"] = str(dlc_sound_root)
+report["dlc_sound_root"] = env.get("ACV_DLC_SOUND_ROOT")
 for variable, option in (("ACV_PILOT_NAME", "pilot_name"), ("ACV_GAMERTAG", "gamertag")):
     value = config.get("profile", option, fallback="").strip()
     if value:

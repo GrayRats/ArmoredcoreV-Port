@@ -24,7 +24,7 @@
   Первый converter snapshot и поздний upload относятся к разным обновлениям:
   не требовать их равенства. Точная визуальная корректность всей сцены не принята.
 - **Текущий пакет:** tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe,
-  ELF SHA dde92b53…, normal GPU55937953…, runtime d8fb56af….
+  ELF SHA fbf7f9ce…, normal GPU55937953…, runtime d8fb56af….
   Resolve slot completion/reuse и invalidate-result guards интегрированы;
   staging округляется к64KiB. Full остаётся default. Последний120s run
   20261022T182231377426Z: child0,45 прежних diagnostics; global scene не принята.
@@ -76,3 +76,8 @@ Ghidra restarted headless, saved default.xex opened --no-analyze; DB не мен
 [DEArmoredcoreV](https://github.com/GrayRats/DEArmoredcoreV), initial451b6c4.
 Данные игры, SDK, logs/tmp/cache и персональный config в GitHub не отправлены.
 Проверка payload: scripts/check_repository_payload.py; подробности в PROGRESS.
+
+Текущий приоритет пользователя: исправить чёрные модели gameplay. Deferred
+prototype проверен на2MiB/47 samples, но не включён в normal GPU. Продолжать
+с full capture frame37095/event69 и других opaque draws: shader inputs, lighting
+и EDRAM writes; не подменять visual fix очередной async-оптимизацией.

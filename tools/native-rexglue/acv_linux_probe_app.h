@@ -6,6 +6,11 @@
 
 #include "acv_build_info.h"
 #include <rex/rex_app.h>
+#include <rex/filesystem/vfs.h>
+#include <rex/filesystem/devices/host_path_device.h>
+#include <rex/runtime.h>
+#include <cstdlib>
+#include <filesystem>
 #include <rex/system/function_dispatcher.h>
 #include <rex/input/mnk/mnk_input_driver.h>
 #include <rex/ui/keybinds.h>
@@ -39,6 +44,25 @@ class AcvLinuxProbeApp : public rex::ReXApp {
   }
 
   void OnPostSetup() override {
+    // dlc_sound: serves the game's own sound banks, stored in dvdbnd under path hashes. The directory is
+    // built by tools/build_dlc_sound_dir.py and passed by the probe (ACV_DLC_SOUND_ROOT). Read-only mount.
+    if (const char* sound_root = std::getenv("ACV_DLC_SOUND_ROOT"); sound_root && *sound_root) {
+      const std::filesystem::path root_path(sound_root);
+      auto* vfs = runtime()->file_system();
+      if (vfs && std::filesystem::is_directory(root_path)) {
+        // Must not start with "\\Device\\Harddisk0": the SDK NullDevice owns that prefix and is matched first.
+        const char* mount = "\\Device\\AcvDlcSound";
+        auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, root_path, true);
+        if (device->Initialize() && vfs->RegisterDevice(std::move(device)) &&
+            vfs->RegisterSymbolicLink("dlc_sound:", mount)) {
+          REXLOG_INFO("[acv-vfs] dlc_sound: mounted from {}", root_path.string());
+        } else {
+          REXLOG_ERROR("[acv-vfs] dlc_sound: mount failed for {}", root_path.string());
+        }
+      } else {
+        REXLOG_ERROR("[acv-vfs] ACV_DLC_SOUND_ROOT is not a directory: {}", root_path.string());
+      }
+    }
     REXLOG_INFO("[acv-build] Host source revision {}", ACV_HOST_REVISION);
     // Menus and text dialogs retain the cursor until the user opts into look.
     rex::input::mnk::SetMouseLookActive(false);

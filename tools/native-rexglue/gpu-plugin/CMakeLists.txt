@@ -124,11 +124,11 @@ if(ACV_DEFER_RESOLVES_TEST)
 ]=])
   string(REPLACE "${defer_anchor}" "${defer_body}\n${defer_anchor}" deferred_source "${deferred_source}")
   string(REPLACE "void VulkanCommandProcessor::ShutdownContext() {"
-    "void VulkanCommandProcessor::ShutdownContext() {\n  AcvFlushDeferred(this);\n  AcvResetDeferred(this);"
+    "void VulkanCommandProcessor::ShutdownContext() {\n  AcvFlushDeferred(this, \"shutdown\");\n  AcvResetDeferred(this);"
     deferred_source "${deferred_source}")
   set(evict_anchor "    std::unordered_map<uint64_t, ReadbackBuffer>& buffer_map) {")
   string(REPLACE "${evict_anchor}"
-    "${evict_anchor}\n  if (!AcvFlushDeferred(this)) return;"
+    "${evict_anchor}\n  if (!AcvFlushDeferred(this, \"eviction\")) return;"
     deferred_source "${deferred_source}")
   file(WRITE "${diagnostic_processor}" "${deferred_source}")
 endif()

@@ -113,7 +113,8 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 - **Physical allocation.** Два запроса sizes 0x40000/0x800000 с protect
   0x20000400 не проходят SDK READONLY/READWRITE check. --compat-mm-wc-rw
   добавляет READWRITE; 2 перехвата без bad-protection diagnostics наблюдались,
-  render effect не доказан. Retail поведение не установлено; default false.
+  render effect не доказан. Retail поведение не установлено. С 2026-10-23 включено в acv.config
+  (`[compat] mm_wc_rw = true`) по решению пользователя: обе аллокации проходят, `bad protection bits` 0 (PROGRESS, шаги 24–25).
 - **VFS/текст.** system:, dlc_sound:, dlc_image: не смонтированы; связь с тёмным
   кадром не доказана. Есть испорченные tutorial glyphs: decoding/font path открыт.
   Часть текстур и BDT reads подтверждены; полный диск не означает верный shader output.
@@ -139,6 +140,13 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 Планирование завершено; перечисленные ниже исправления ещё требуют выполнения.
 
 ### 1. P0 — воспроизводимый сценарий и граница потери текстуры
+
+**Приоритет пользователя 2026-10-23:** исправить оставшиеся чёрные модели
+gameplay при рабочем full readback. Проверить конкретный opaque draw после
+восстановления текстуры: sampled inputs → lighting arithmetic → EDRAM writes →
+resolve/present. Deferred prototype имеет отдельное byte proof, но его
+обобщение/оптимизацию отложить до локализации оставшегося shading defect.
+
 
 Сохранить текущий рабочий ELF и его manifest; использовать штатный config,
 одну миссию, профиль сохранения, одинаковый ввод и явно записанное состояние

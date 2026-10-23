@@ -26,6 +26,7 @@
 #include <string>
 #include <cerrno>
 #include <unordered_map>
+#include <vector>
 #include <algorithm>
 #include <cstdarg>
 #include <chrono>
@@ -41,6 +42,8 @@ struct AcvIoTrace {
   std::unordered_map<uint32_t, uint64_t> files;
   struct Allocation { uint64_t epoch; uint32_t physical, bytes; };
   std::unordered_map<uint32_t, Allocation> allocations;
+  // Recent virtual allocations (address, granted bytes) for prefix capture at file close.
+  std::vector<std::pair<uint32_t,uint32_t>> recent_virtual;
   bool enabled = false;
   AcvIoTrace() {
     const char* path = std::getenv("ACV_TRACE_RESOURCE_IO");
@@ -112,11 +115,20 @@ AcvBakeChainTrace& AcvCpuBakeTrace() {static AcvBakeChainTrace trace("cpu");retu
 void AcvTraceBakeCopy(PPCContext& ctx) {
   auto& t=AcvCpuBakeTrace();
   const uint32_t caller=uint32_t(ctx.lr);
-  if(!t.enabled() || (caller!=0x82C82518 && caller!=0x82C8391C && caller!=0x82C83EC4) || !ctx.r4.u32 ||
+  if((caller!=0x82C82518 && caller!=0x82C8391C && caller!=0x82C83EC4) || !ctx.r4.u32 ||
      !ctx.r5.u32 || ctx.r5.u32>0x800000)return;
+  if(!t.enabled()) {
+    if(caller==0x82C8391C && std::getenv("ACV_DEFER_RESOLVE_START")) {
+      std::fprintf(stderr,"[acv-deferred] Active bake trace required before CPU read; aborting private test\n");
+      std::abort();
+    }
+    return;
+  }
   auto* thread=rex::runtime::ThreadState::Get();if(!thread)return;
   auto* memory=thread->memory();
   if(caller==0x82C8391C && std::getenv("ACV_DEFER_RESOLVE_START")) {
+    t.Record("\"event\":\"cpu_sync_request\",\"physical\":%u,\"bytes\":%u",
+        memory->GetPhysicalAddress(ctx.r4.u32),ctx.r5.u32);
     struct Gateway {
       void* plugin=nullptr;
       using Fn=bool(*)(uint32_t,uint32_t);
@@ -137,6 +149,8 @@ void AcvTraceBakeCopy(PPCContext& ctx) {
       std::fprintf(stderr,"[acv-deferred] CPU consumer synchronization failed; aborting private test\n");
       std::abort();
     }
+    t.Record("\"event\":\"cpu_sync_ready\",\"physical\":%u,\"bytes\":%u",
+        memory->GetPhysicalAddress(ctx.r4.u32),ctx.r5.u32);
   }
   const auto* data=memory->TranslateVirtual<const uint8_t*>(ctx.r4.u32);
   static std::atomic<bool> source_saved{false};
@@ -806,6 +820,21 @@ extern "C" REX_FUNC(__imp__NtClose) {
   {std::lock_guard<std::mutex> lock(t.mutex);
    if(t.enabled) {auto it=t.files.find(handle);if(it!=t.files.end())token=it->second;}}
   original(ctx,base);
+  {
+    // Logging only: first 32 bytes of recent virtual allocations, to match decoded DCX signatures offline.
+    std::lock_guard<std::mutex> lock(t.mutex);
+    if(t.enabled) {
+      static constexpr char hex[]="0123456789abcdef";
+      const size_t first=t.recent_virtual.size()>64 ? t.recent_virtual.size()-64 : 0;
+      for(size_t k=first;k<t.recent_virtual.size();++k) {
+        const uint32_t va=t.recent_virtual[k].first, bytes=t.recent_virtual[k].second;
+        std::string prefix;
+        for(uint32_t i=0;i<32 && i<bytes;++i) { const uint8_t c=REX_LOAD_U8(va+i); prefix+=hex[c>>4]; prefix+=hex[c&15]; }
+        t.row("\"event\":\"alloc_prefix\",\"va\":%u,\"granted\":%u,\"prefix_hex\":\"%s\",\"closed_handle\":%u",
+              va,bytes,prefix.c_str(),handle);
+      }
+    }
+  }
   if(!token) return;
   std::lock_guard<std::mutex> lock(t.mutex);
   auto it=t.files.find(handle);
@@ -830,4 +859,69 @@ extern "C" REX_FUNC(__imp__MmFreePhysicalMemory) {
   // The SDK export returns void. This records intent, not proof of release or
   // GPU-reference retirement; unmatched aliases require heap-level follow-up.
   original(ctx,base);
+}
+
+// Heap-side allocations. Physical MmAllocatePhysicalMemory traces alone miss decoder output that is
+// allocated from virtual or pool memory. Logging only: arguments and results are recorded, never changed.
+extern "C" REX_FUNC(__imp__NtAllocateVirtualMemory) {
+  static const HostFn original=NextExport("__imp__NtAllocateVirtualMemory");
+  auto& t=AcvResources();
+  // SDK ABI (xboxkrnl_memory.cpp NtAllocateVirtualMemory_entry): base_addr_ptr, region_size_ptr,
+  // alloc_type, protect_bits, debug_memory. Region size is read through the second pointer.
+  const uint32_t base_ptr=ctx.r3.u32, size_ptr=ctx.r4.u32, lr=uint32_t(ctx.lr);
+  const uint32_t requested=size_ptr ? REX_LOAD_U32(size_ptr) : 0;
+  const uint32_t type=ctx.r5.u32, protect=ctx.r6.u32;
+  original(ctx,base);
+  std::lock_guard<std::mutex> lock(t.mutex);
+  if(!t.enabled) return;
+  const uint32_t status=ctx.r3.u32;
+  const uint32_t result=(base_ptr && status==0) ? REX_LOAD_U32(base_ptr) : 0;
+  const uint32_t granted=(size_ptr && status==0) ? REX_LOAD_U32(size_ptr) : 0;
+  if(status==0 && result && granted && granted<=16u*1024*1024) {
+    t.recent_virtual.emplace_back(result,granted);
+    if(t.recent_virtual.size()>256) t.recent_virtual.erase(t.recent_virtual.begin());
+  }
+  t.row("\"event\":\"virtual_alloc\",\"status\":%u,\"result\":%u,\"requested\":%u,\"granted\":%u,"
+        "\"type\":%u,\"protect\":%u,\"lr\":%u",
+        status,result,requested,granted,type,protect,lr);
+}
+
+extern "C" REX_FUNC(__imp__ExAllocatePoolWithTag) {
+  static const HostFn original=NextExport("__imp__ExAllocatePoolWithTag");
+  auto& t=AcvResources();
+  // ExAllocatePoolWithTag(NumberOfBytes, Tag)
+  const uint32_t requested=ctx.r3.u32, tag=ctx.r4.u32, lr=uint32_t(ctx.lr);
+  original(ctx,base);
+  std::lock_guard<std::mutex> lock(t.mutex);
+  if(!t.enabled) return;
+  const uint32_t result=ctx.r3.u32;
+  t.row("\"event\":\"pool_alloc\",\"result\":%u,\"requested\":%u,\"tag\":%u,\"lr\":%u",
+        result,requested,tag,lr);
+}
+
+// Volume device type for the disc. The SDK stub reports FILE_DEVICE_UNKNOWN for FileFsDeviceInformation
+// (class 4). The disc is optical media, so the shim reports FILE_DEVICE_CD_ROM (0x2, MS-FSCC). Applied only
+// after a successful original call; characteristics are left unchanged. Not yet verified in game.
+extern "C" REX_FUNC(__imp__NtQueryVolumeInformationFile) {
+  static const HostFn original=NextExport("__imp__NtQueryVolumeInformationFile");
+  // NtQueryVolumeInformationFile(file_handle, iosb, info, length, class)
+  const uint32_t info_ptr=ctx.r5.u32, info_class=ctx.r7.u32;
+  original(ctx,base);
+  constexpr uint32_t kFileFsDeviceInformation=4, kFileDeviceCdRom=0x00000002;
+  if(ctx.r3.u32==0 && info_class==kFileFsDeviceInformation && info_ptr) {
+    REX_STORE_U32(info_ptr, kFileDeviceCdRom);
+    static bool logged=false;
+    if(!logged) { logged=true; std::fprintf(stderr,"[acv-compat] FileFsDeviceInformation device type -> CD-ROM (0x2)\n"); }
+  }
+}
+
+// Logging only: counts ObReferenceObject calls (SDK export is a one-time-warning stub that does not retain).
+// Lets the paired ObDereferenceObject balance be checked from the trace. Behaviour is unchanged.
+extern "C" REX_FUNC(__imp__ObReferenceObject) {
+  static const HostFn original=NextExport("__imp__ObReferenceObject");
+  static std::atomic<uint32_t> calls{0};
+  const uint32_t object=ctx.r3.u32, lr=uint32_t(ctx.lr);
+  const uint32_t n=++calls;
+  original(ctx,base);
+  if(n<=64) std::fprintf(stderr,"[acv-compat] ObReferenceObject #%u object=%08x lr=%08x\n",n,object,lr);
 }
