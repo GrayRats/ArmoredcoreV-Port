@@ -100,8 +100,6 @@ operations `daec2451-6971-49b8-8382-61116d38f909` /
   [SQLite workflow](SQLITE_LOGGING.md) хранит команды, операции и пределы.
 - Vulkan skill/reference installation: все 6 pinned submodules сверены,
   `logs/vulkan-skill-install.json`. Skill не является исправлением игры.
-- 11 прежних technical reports сжаты с 89 713 до ~13 KB в fine/;
-  полный текст сохранён. PLAN/PLAN_B/TASK-XBOX объединены в PLAN:
   `docs/fine/planning-merge.json`, originals byte-verified, прежние файлы удалены.
 
 ## Как обновлять этот журнал
