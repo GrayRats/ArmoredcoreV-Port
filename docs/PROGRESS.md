@@ -525,9 +525,10 @@ child0, без abort/exception; далее Setup завершился, но ре
 `system.properties`/отсутствующих `dlc_image` запросов.
 [Подробности и ограничения](NATIVE_REXGLUE_LINUX.md#bounded-keyboard-dialog-conversion-2026-10-24).
 
-По текущему запросу активны DLC file-open audit и GPU readback lifetime fix.
-FPS, input и save/load/soak отложены; texture fix и просьба убрать дополнительную
-mission/material regression остаются принятыми ограничениями.
+Позднее DLC file-open audit и GPU readback lifetime fix завершены в рамках
+доступных данных; их остаточные сигналы пользователь поручил пропускать (см.
+раздел ниже). FPS, input и save/load/soak отложены; texture fix и просьба убрать
+дополнительную mission/material regression остаются принятыми ограничениями.
 
 
 ## Retail emblem VFS recovery — 2026-10-24

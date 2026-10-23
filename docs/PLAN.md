@@ -133,7 +133,7 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 
 ## Статус DLC и GPU readback
 
-Текущая очередь после подтверждения texture fix пользователем:
+Состояние после подтверждения texture fix пользователем:
 
 Обычная пересборка уже защищена от возврата старого GPU: retained manifest/hash
 проверены тестом и реальной сборкой. Исторические replay probes74/79 не имели
