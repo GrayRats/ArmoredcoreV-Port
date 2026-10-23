@@ -1193,19 +1193,25 @@ The five unresolved sound names are `acv_bgm_title.fev`,
 also checked for the FSB names. Existing `acv_voice_ch09.fev` metadata has no
 corresponding `ch09.fsb` entry. No payload was found in the current retail ISO,
 so manufacturing dummy banks or guessing aliases would conceal missing content.
-The locale placeholder is passed literally by the guest. Candidate locale
-variants (`en/eng/us`, `jp/jpn/ja`, and other common language codes) have no
-matching BHD5 path hash; intended substitution or replacement bank is not
-established by these logs. Complete audit:
+The extracted `0000_acv.ini` sets `VoiceLang=jp`; the sound builder now resolves
+the literal token to `acv_talk_jp.fev` for lookup and will create a read-only
+VFS alias only when that verified localized bank exists. It does not exist in
+this disc image, so the fifth request remains unresolved. Complete audit:
 [`runtime-file-open-audit.json`](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json).
 
-The updated Release GPU artifact hash is `c2c9ae722aac1715…`; private runtime
-hash `fa27bc225e91aa96…`; native executable
-`2d112d64471913c6…`. Final bounded run exited child0 at75s, showed the two VFS
-mounts, and logged only the six distinct unresolved paths recorded in the audit
-(five sound names plus optional system properties). The existing invalid-fetch
-warnings and window-close callback warnings are separate from file loading and
-were not changed by this lifetime/VFS patch.
+The follow-up MEMEXPORT changes additionally validate guest physical ranges,
+key staging buffers by exact ordered range topology, wait before reusing a slot,
+propagate readback failures, check mapped-memory invalidation, and defer staging
+destruction by submission ticket when completion waits fail. Regression tests
+compile the actual SDK methods with ASan/UBSan. Release SDK and native package
+were rebuilt; GPU artifact SHA-256 is
+`78231562bdd4fb268d8ac94185e893d9eaa10111c01be7c8496e0ff6c6d055bc`.
+Updated package startup smoke ran 75 seconds and exited child0. It did not enter
+gameplay and emitted no Resolve/MEMEXPORT/readback log lines, so it does not
+verify the readback path end to end. It repeated the four startup sound misses
+and optional `system.properties`; `ch09.fsb` was not requested in this menu run.
+All targeted readback/VFS/texture/build regressions passed. Real GPU eviction
+under forced queue pressure remains unobserved.
 
 ### Manual gameplay capture, 2026-10-24
 

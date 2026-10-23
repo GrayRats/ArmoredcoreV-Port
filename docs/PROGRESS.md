@@ -555,23 +555,39 @@ image smoke больше не падают. Последний финальны�
 `tmp/acv-dlc-sound/manifest.json` присутствуют; оставшиеся четыре обычных имени
 не имеют совпадающего `/sound/NAME` hash в индексе BHD5 основного retail
 `dvdbnd`: `acv_bgm_title.fev`, `acv_dlc_dlc_se.fev`, `ch09.fsb`, `dlc_se.fsb`.
-Пятый запрос содержит нераскрытый literal `$(voicelang)`. Данных отсутствующего
-DLC в текущем ISO не обнаружено; пустые файлы/неподтверждённые alias скрыли бы
-ошибку, но не восстановили бы контент. `system.properties` — optional loader
-fallback по PPC-trace. Полный срез: [audit JSON](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json),
+Пятый запрос передаётся literal `$(voicelang)`, но извлечённый `acv.ini`
+задаёт `VoiceLang=jp`. Builder теперь подставляет locale и создаёт VFS alias
+из literal-запроса в проверенный locale-specific файл, если тот есть в BHD5;
+`acv_talk_jp.fev` в этом образе отсутствует. FSB `8b43e587` содержит отдельный
+`se_stream.fsb` с именами sample `ch09_*`, но это другой банк и не доказательство,
+что он совместим с запрошенным `ch09.fsb`. Полного DLC/voice payload в образе
+нет; пустые банки или неподтверждённый alias скрыли бы ошибку и не вернули звук.
+`system.properties` — optional loader fallback по PPC-trace. Полный срез:
+[audit JSON](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json),
 [scanner](../tools/audit_runtime_file_misses.py).
 
-В SDK `EvictOldReadbackBuffers` теперь сохраняет ресурсы, пока любой из двух
-submission tickets не завершён, и отмечает отложенное вытеснение для следующего
-кадра. Это предотвращает unmap/destroy/free staging memory, пока queued Vulkan
-transfer ещё может в неё писать, без ожидания на eviction пути. Actual-source
-ASan/UBSan test покрывает завершённый/незавершённый ticket, лимит map и
-повторное вытеснение после completion:
+Кроме eviction guard, SDK теперь ждёт предыдущий ticket перед повторной записью
+в MEMEXPORT slot, кэширует точную упорядоченную раскладку диапазонов и
+отклоняет выходящие за 512 MiB physical memory ranges до создания Vulkan copy.
+Ошибки invalidate больше не публикуют host-cache bytes; ошибки fence wait
+откладывают уничтожение staging handles по submission ticket, а отказ helper
+корректно доходит до вызывающего кода. Actual-source тесты под ASan/UBSan
+проверяют eviction, resolve, границы, packed layouts и отложенное освобождение:
+[`readback tests`](../tools/native-rexglue/test_memexport_readback_layout.py),
+[`failed-wait lifetime test`](../tools/native-rexglue/test_memexport_readback_failure.py),
+[`DLC locale test`](../tools/native-rexglue/test_dlc_sound_locale.py),
+[`test_resolve_readback.py`](../tools/native-rexglue/test_resolve_readback.py),
 [`test_readback_eviction.py`](../tools/native-rexglue/test_readback_eviction.py).
-Release SDK `librexgpu-xenos.so` и `librexruntime.so` пересобраны; native host
-package также пересобран и запустился в финальном75s X11 smoke
-`logs/acv-native-linux/20261023T212444919696Z/` (child0, лимит времени,
-без device loss). Ошибки file-open повторили только те же sound/DLC запросы и
-optional `system.properties`. Реальный high-pressure eviction в этом smoke не
-форсировался; safe lifetime подтверждён actual-source test, но не заявляется
-как наблюдённая реальная GPU eviction.
+Проверка locale-builder проходит; генерация по текущему retail ISO сопоставила
+122 sound-файла и оставила те же пять отсутствующих банков. Она правильно
+разрешает placeholder к `acv_talk_jp.fev`, но сам банк в образе не найден,
+поэтому alias не создаётся. SDK Release и native host package пересобраны:
+GPU `librexgpu-xenos.so` SHA-256
+`78231562bdd4fb268d8ac94185e893d9eaa10111c01be7c8496e0ff6c6d055bc`;
+runtime `librexruntime.so` `fa27bc225e91aa96224fb0380d0b8fdc442362ec36bae84d7d0d3427c2529ddc`;
+executable `acv_linux_probe` `2d112d64471913c64c88d127aa83f81a84a612ad06989f6a4cb0e3e2056c5aeb`.
+Обновлённый package прошёл 75s startup smoke, child exit0; gameplay не запускал.
+В runtime нет строк Resolve/MEMEXPORT/readback, поэтому smoke не проверил
+этот путь; зафиксированы лишь отсутствующие на диске sound banks и optional
+`system.properties`. Все восемь targeted readback/VFS/texture/build regressions
+прошли. Реальную high-pressure eviction GPU smoke по-прежнему не форсировали.

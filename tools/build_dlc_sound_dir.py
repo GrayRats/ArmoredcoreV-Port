@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "tmp/acv-dlc-sound"
 EXTRACTED = ROOT / "assets/original/acv-dvdbnd-all"
 MISSING_STATUS = 0xC000000F
+VOICE_LANG_RE = re.compile(r"^\s*\$\(VoiceLang\)\s*=\s*([A-Za-z0-9_-]+)", re.IGNORECASE | re.MULTILINE)
 
 
 def path_hash(path: str) -> int:
@@ -50,6 +51,24 @@ def requested_names() -> set[str]:
                 if text.lower().startswith("dlc_sound:\\"):
                     names.add(text.split("\\", 1)[1])
     return names
+
+
+def configured_voice_language() -> str | None:
+    """Read the voice-language token from the extracted retail ACV config."""
+    for path in (ROOT / "assets/original/acv-bnd3-all").glob("*/0000_acv.ini"):
+        match = VOICE_LANG_RE.search(path.read_text(encoding="latin1", errors="replace"))
+        if match:
+            return match.group(1)
+    return None
+
+
+def resolve_voice_language(name: str, voice_language: str | None) -> str | None:
+    """Return the concrete bank name, or None if its voice-language token is unresolved."""
+    if not re.search(r"\$\(\s*voicelang\s*\)", name, re.IGNORECASE):
+        return name
+    if not voice_language:
+        return None
+    return re.sub(r"\$\(\s*voicelang\s*\)", voice_language, name, flags=re.IGNORECASE)
 
 
 MAGIC = {".fev": b"FEV1", ".fsb": b"FSB4"}
@@ -79,20 +98,34 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     matched, unmatched = [], []
     requested = requested_names()
+    voice_language = configured_voice_language()
     derived = candidates_from_fev(index)
     for name in sorted(requested | derived):
-        if "\\" in name or "$(" in name:
-            unmatched.append({"name": name, "reason": "subpath or variable in name"})
+        if "\\" in name or "/" in name or name in {".", ".."}:
+            unmatched.append({"name": name, "reason": "subpath in name"})
             continue
-        row = index.get(path_hash("/sound/" + name))
+        resolved_name = resolve_voice_language(name, voice_language)
+        if resolved_name is None:
+            unmatched.append({"name": name, "reason": "VoiceLang is not defined in extracted acv.ini"})
+            continue
+        if re.search(r"\$\(", resolved_name):
+            unmatched.append({"name": name, "resolved_name": resolved_name,
+                              "reason": "unresolved variable in sound bank name"})
+            continue
+        row = index.get(path_hash("/sound/" + resolved_name))
         if row is None:
-            unmatched.append({"name": name, "reason": "hash of /sound/NAME not in dvdbnd index"})
+            unmatched.append({"name": name, "resolved_name": resolved_name,
+                              "reason": "hash of resolved /sound/NAME not in dvdbnd index"})
             continue
         source = EXTRACTED / row["file"]
-        extension = os.path.splitext(name)[1].lower()
+        extension = os.path.splitext(resolved_name)[1].lower()
         if extension in MAGIC and source.read_bytes()[:4] != MAGIC[extension]:
-            unmatched.append({"name": name, "reason": "hash match but magic differs from extension"})
+            unmatched.append({"name": name, "resolved_name": resolved_name,
+                              "reason": "hash match but magic differs from extension"})
             continue
+        # Keep a literal-request alias when the guest passes an unexpanded
+        # $(VoiceLang) token to the VFS. On disk this exact filename lets the
+        # request resolve to the verified locale-specific archive payload.
         target = OUT / name
         if target.exists() or target.is_symlink():
             target.unlink()
@@ -101,9 +134,11 @@ def main() -> int:
         except OSError:
             shutil.copy2(source, target)
         data = target.read_bytes()
-        matched.append({"name": name, "origin": "requested" if name in requested else "derived-from-fev", "source": row["file"], "bytes": len(data),
+        matched.append({"name": name, "resolved_name": resolved_name,
+                        "origin": "requested" if name in requested else "derived-from-fev", "source": row["file"], "bytes": len(data),
                         "sha256": hashlib.sha256(data).hexdigest(), "magic": data[:4].hex()})
-    (OUT / "manifest.json").write_text(json.dumps({"matched": matched, "unmatched": unmatched}, indent=1) + "\n")
+    (OUT / "manifest.json").write_text(json.dumps({"voice_language": voice_language,
+                                                    "matched": matched, "unmatched": unmatched}, indent=1) + "\n")
     print(f"matched {len(matched)}, unmatched {len(unmatched)}")
     for item in unmatched:
         print("unmatched:", item["name"], "-", item["reason"])

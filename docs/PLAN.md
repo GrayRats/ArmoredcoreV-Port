@@ -3,9 +3,10 @@
 Актуально: 2026-10-24.
 Читать вместе с [AGENTS](../AGENTS.md), [журналом](PROGRESS.md),
 [архитектурой](ARCHITECTURE.md) и [RE evidence](REVERSE_ENGINEERING.md).
-Полная история трёх исходников сохранена без изменений в
-[архиве](fine/planning-originals-20261022.tar.gz); проверка, исходные заголовки
-и индекс всех ссылок — [planning-merge.json](fine/planning-merge.json).
+Полный исходный архив трёх планов хранится локально в
+`docs/fine/planning-originals-20261022.tar.gz` и не публикуется в source repo;
+проверка, исходные заголовки и индекс ссылок доступны в
+[planning-merge.json](fine/planning-merge.json).
 Старые проценты готовности и статусы «ещё не собрано» являются историческими.
 
 ## Цель и границы
@@ -138,15 +139,19 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 проверены тестом и реальной сборкой. Исторические replay probes74/79 не имели
 одинакового входа; они не используются как основание для активной задачи.
 
-1. DLC/VFS: сопоставить свежие file-open failures с содержимым retail BDT,
-   устранить ошибки монтирования/извлечения и отдельно отметить отсутствующий
-   внешний DLC. `system.properties` уже классифицирован как optional loader
-   fallback; четыре `dlc_image:` контейнера восстановлены. См. audit в PROGRESS.
-2. GPU lifetime eviction исправлен: pending tickets удерживают оба staging
-   slots; actual-source ASan/UBSan regression, Release SDK/native build и
-   75s runtime smoke пройдены. Реальную eviction под принудительным queue load
-   ещё не удавалось вызвать; retail allocation/free semantics и отдельный
-   visual effect shim остаются вне этого fix.
+1. DLC/VFS: локальная проверка завершена. 122 доступных sound-ресурса
+   сопоставлены; пять имён остаются отсутствующими в текущем retail ISO, включая
+   `acv_talk_jp.fev` после корректного разрешения `VoiceLang=jp`. Для реального
+   исправления этих пяти запросов нужен образ/пакет DLC с payload; не подменять
+   банки нулевыми файлами или неподтверждёнными alias. `system.properties` —
+   optional loader fallback; четыре `dlc_image:` контейнера восстановлены.
+2. GPU MEMEXPORT/readback: исправлены range validation, alias по layout,
+   повторное использование slot только после submission ticket, invalidate
+   error handling и deferred destruction при ошибке wait; ошибки доходят до
+   caller. Actual-source ASan/UBSan regressions, SDK Release/native package и
+   75s startup smoke прошли. Smoke не заходил в gameplay и не вызывал
+   Resolve/MEMEXPORT, поэтому end-to-end readback надо подтвердить в игровом
+   сценарии. Реальную eviction под queue pressure также требуется наблюдать.
 
 Отложено по текущему запросу пользователя: задачи прежних пунктов1 (FPS),2
 (ввод/диалог) и4 (save/load, переходы, звук/soak). Возобновлять их только после
@@ -459,8 +464,9 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
 
 Здесь оставлен актуальный рабочий контекст; все исходные формулировки,
 промежуточные числа, commands, hyperlinks и противоречивые исторические статусы
-доступны без потерь в tar.gz. [Manifest](fine/planning-merge.json) хранит SHA-256
-и исходные заголовки/ссылки для каждого из трёх документов.
+сохранены локально без потерь в `docs/fine/planning-originals-20261022.tar.gz`;
+в GitHub опубликованы их Markdown-резюме и
+[manifest](fine/planning-merge.json) с SHA-256 и исходными заголовками/ссылками.
 
 ```bash
 tar -xOf docs/fine/planning-originals-20261022.tar.gz docs/PLAN_B.md
