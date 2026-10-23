@@ -956,3 +956,281 @@ unproven. Normal GPU55937953… and default full are retained.
 
 User priority is now remaining black gameplay models. This deferred prototype
 is not a fix for all scene shading; continue at a concrete full-readback draw.
+
+### Texture rendering fix confirmed by user, 2026-10-24
+
+Пользователь подтвердил, что предыдущие правки помогли именно с текстурами
+в самой игре. Принятый вклад — исправление result exponent bias в Vulkan
+SPIR-V translator, а не эксперимент deferred readback.
+
+`src/graphics/pipeline/shader/spirv_translator_fetch.cpp:2032` извлекал
+`exp_adjust` из dword4, содержащего LOD bias. По `xenos.h:1236–1254`
+и `dxbc_translator_fetch.cpp:1957–1958` правильное поле — signed bits13:18
+из dword3. Теперь оно загружается отдельно; dword4 остаётся источником LOD.
+[Переносимый patch](../tools/native-rexglue/patches/texture-fetch-exponent-word.patch).
+
+На сохранённом frame37095/event69/pixel560,480 texture sample RGB≈0.21
+умножался на2^-16: после выборки≈3.2e-6, при упаковке RGB округлялся до0.
+Для этого descriptor dword3 задаёт exponent0, то есть множитель1.
+[Причина и значения](../logs/acv-gameplay-black-20261023/root-cause.json).
+Это replay с диагностически снятым FSI/RTE ограничением; он устанавливает
+вычислительную причину, а визуальное улучшение подтверждено пользователем.
+
+[Test](../tools/native-rexglue/test_texture_fetch_exponent.py):2048 случаев
+знакового exponent/texture slot, реальный descriptor ACV, ASan/UBSan;
+negative control со старым dword4 отвергается. GPU build прошёл, plugin
+SHA90d8ef1adcad93dd043750aecdd24753eb52f17260f8398deb532dbb3a061f78.
+Текущий host SHA8b10aa52…, runtime d8fb56af…. Полный manifest и source
+checkpoint: [accepted-fix.json](../logs/acv-texture-fix-accepted-20261024/accepted-fix.json).
+Сохранённый fixed plugin: `tmp/acv-gpu-texture-fix/librexgpu-xenos.so`.
+Для следующих host builds использовать
+`--gpu-plugin-artifact tmp/acv-gpu-texture-fix/librexgpu-xenos.so`,
+чтобы не вернуть прежний plugin55937953… или installed SDK artifact.
+
+Full readback продолжает восстанавливать CPU-generated atlas; это отдельное
+ранее проверенное исправление. Текущий пользовательский config содержит
+mm_wc_rw=true; отдельный вклад этого флага в texture fix не измерялся.
+Подтверждено улучшение текстур, полная визуальная parity всех сцен не заявлена.
+
+### Same-input texture colour regression, 2026-10-24
+
+Frame37095/event69/pixel560,480 replayed with identical nine interpolated
+inputs and identical texture sample RGB≈0.21. Correcting only the descriptor
+word used by exponent extraction changes scale2^-16→1 and final RGB
+[0.0000031726,0.00000315055,0.00000288745]→
+[0.207919,0.206474,0.189232]. Ratios65535.84–65536.03 reflect printed precision;
+packed RGB changes from0 to nonzero.
+[Proof](../logs/acv-gameplay-black-20261024/same-input-color-proof.json),
+operation ed190804-dd8b-43f7-bd2a-9cabee4198e9.
+The diagnostic replacement corrects two fetches and preserves original dword4
+LOD accesses; both compared replays remove unsupported interlock/RTE for the
+debugger. This is a matched arithmetic proof, not an interlock-output oracle.
+
+The existing105s test20261023T192728538829Z used the accepted fixed GPU and
+current user config98d1c2ed…, ended child0/abort_reason=null. Only error-level
+message was missing `system:\system.properties`; dlc_sound was mounted.
+[Run](../logs/acv-native-linux/20261023T192728538829Z/launch.json).
+Eight RDCs exist, but frame42120 has no4158-index target draw; these captures
+do not establish a regression across all gameplay models. The user's visual
+confirmation remains the accepted in-game evidence.
+
+### Build retains selected GPU artifact, 2026-10-24
+
+`build_linux.py` now retains the preceding manifest GPU override when no
+explicit artifact is supplied. A missing/out-of-workspace/non-ELF or changed
+recorded artifact fails before CMake; a mutation during the host build fails
+before private staging. Explicit artifact selection records a new expected hash.
+Fresh workspaces without an override still use SDK defaults.
+
+[Test](../tools/native-rexglue/test_build_gpu_retention.py) executes the actual
+wrapper with a fake CMake that stages the old SDK plugin, and checks all five
+selection/failure scenarios (operation2684a64e-e31d-426c-83a1-bf5dc76ff797).
+Real `build_linux.py --jobs4` preserved host8b10aa52… / GPU90d8ef1a…
+(operation0cfa9293-a4ba-48bb-aa97-cc84665a8f66).
+[Retained manifest](../logs/acv-gameplay-black-20261024/retained-build.json).
+Explicit `--gpu-plugin-artifact tmp/acv-gpu-texture-fix/librexgpu-xenos.so`
+remains the recovery path if another GPU build changes a recorded mutable file.
+This changes build staging only; no new gameplay/visual claim.
+
+The extra material probe event79 did not retain identical interpolated inputs
+after replay replacement, even with DebugPixelInputs.primitive=0. Treat its
+before/after values as unmatched; event74 had no supported pixel trace. The
+matched event69 proof is unaffected. Full multiple-material in-game regression
+remains open.
+
+### Missing system.properties is handled, 2026-10-24
+
+The failed `system:/system.properties` request is a startup properties override,
+not a texture payload. Read-only retail inspection finds UTF16BE path0x8210FA38,
+its pointer0x83573270, and switches `--DLsysprop`/`--DLsysprop_nooverwrite`.
+Constructor0x82C23700 selects the default path and allows command-line replacement.
+Loader0x82C22B90 calls file-status check0x82C33458 at0x82C22BF4; a false result
+branches0x82C22C00→0x82C22C8C, skips parser0x82C25810, destroys the local file
+wrapper and returns. Caller0x82C23DF4 does not test a return value and continues
+initialization. No abort or fabricated replacement is required on that branch.
+[Classification and exact addresses](../logs/acv-gameplay-black-20261024/system-properties-classification.json),
+[raw loader](../logs/acv-gameplay-black-20261024/system-properties-read.rpc.asm),
+[caller continuation](../logs/acv-gameplay-black-20261024/system-properties-tail.rpc.asm).
+
+This is static absence-path evidence plus the recorded failed NtCreateFile and
+normal runtime completion; no new guest hook correlated the loader at runtime.
+It does not reconstruct every default property or all override behavior. Six
+plausible dvdbnd path hashes had no matches; that bounded search is not proof
+that no differently named archive entry exists. SDK VFS diagnostics remain
+visible; no dummy file, false-success import shim or mount was added.
+
+### Bounded profile UTF-8 decoding, 2026-10-24
+
+The handwritten profile shim's previous BMP-only decoder accepted overlong
+sequences/surrogate scalars and replaced valid supplementary characters byte
+by byte. `profile_text.h` now validates scalar ranges and continuation bytes,
+keeps the established '?' policy for malformed input, and emits complete
+UTF-16 surrogate pairs without splitting at the guest-name capacity. The
+header participates in host revision hashing; original XAM completion still
+runs. ARTEM and canonical config are unchanged.
+
+[Test](../tools/native-rexglue/test_profile_text.py) checks1112063 valid non-NUL
+Unicode scalars, Cyrillic, malformed/truncated UTF-8, pair capacity and the
+actual StoreGuestWide UTF16BE/NUL/canary bounds under ASan/UBSan
+(operation cb7209b6-bcd6-47ac-a218-385746ea3f9f).
+New host f61ee442… built with retained fixed GPU90d8ef1a….55s smoke reached
+XamShowKeyboardUI pilot-name ARTEM and child0;13 known system/DLC-image errors.
+[Proof](../logs/acv-gameplay-black-20261024/profile-text-smoke-proof.json).
+Prior working package is preserved in `tmp/acv-profile-text-previous-package`.
+
+This fixes config/profile conversion only. The installed SDK's non-headless
+KeyboardInputDialog still needs its own byte-length/truncation, cancel and
+conversion fix/verification; tutorial font glyph rendering is also separate.
+No claim that a GUI dialog or all in-game text is now correct.
+
+The build-retention guard additionally verifies copied GPU bytes before atomic
+replacement and records the selected/staged hash rather than rereading the
+mutable origin. Regression416f6bcc-1f66-4ced-a91b-887f8c6b95c0 includes a
+source mutation after copy: manifest keeps the actual staged identity and the
+next implicit selection refuses the changed origin.
+
+### Fixed-build material capture follow-up, 2026-10-24
+
+The 105s launch produced a multi-draw capture at
+`logs/acv-renderdoc/20261023T195121046588Z/acv_frame18547.rdc`. Draw309 has
+3129 indices and shader-declared fetch slot0, BC1 512x512, physical0x1C3E2000.
+The fixed fragment SPIR-V reads `fetch_constants[0].w` (dword3) for signed
+`exp_adjust`; the captured dword is0x06A80D10, exponent0, multiplier1.
+The raw BC1 mip0 has 131072 bytes, SHA-256
+`124e73fa788a2d3c76c0ac1a981a039836049b280a3a22c92c4e105afb7df4f3`; decoding
+shows941 RGB values and122691 nonzero-luma pixels. This rules out an all-zero
+source for this draw, but the texture's object/material identity is unknown and
+black texels are present. RenderDoc pixel-debug probes did not produce a trace
+for this EDRAM/interlock draw, so they do not prove visible model output.
+
+Neighbor captures contain 158 draws/273 declared fetches in frame18547; the
+other captured frames have few draws. The launch log shows Setup/emblem-related
+VFS requests and does not establish a mission. Exact artifacts are indexed in
+`logs/acv-gameplay-black-20261024/fixed-capture-neighbor-coverage.json`,
+`fixed18547-all-fetches.json`, `current-draw309.json`, and
+`texture309-512x512.raw` (raw bytes are not an image preview). A reproducible
+mission plus mapping these draws to mech/environment materials is still the
+first open graphics acceptance item.
+
+
+### Bounded keyboard dialog conversion, 2026-10-24
+
+The SDK `KeyboardInputDialog` now sizes its ImGui UTF-8 buffer for the maximum
+UTF-16 unit count (up to three UTF-8 bytes per unit plus NUL), sanitizes and
+truncates the initial text through the shared bounded decoder, reads the actual
+NUL-terminated input, and decodes the result to at most `buffer_length - 1`
+UTF-16 units before guest storage. Zero and overflowing guest lengths are
+rejected. Portable source delta is
+[`keyboard-dialog-utf8-boundaries.patch`](../tools/native-rexglue/patches/keyboard-dialog-utf8-boundaries.patch);
+it applies to SDK base `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518` and depends on
+[`profile_text.h`](../tools/native-rexglue/profile_text.h).
+
+`test_profile_text.py` passed Unicode, malformed/truncated input, capacity and
+canary tests under ASan/UBSan. SDK runtime was rebuilt privately (SHA
+`40b0e13445ddafa9178b21be898af74d21f42bde9b8f324fc2c8a69fbbbdd36b`) and
+staged with host `799f0054…`, fixed GPU `90d8ef1a…` and config `98d1c2ed…`.
+The 105s non-headless smoke at
+`logs/acv-native-linux/20261023T202212361942Z/` reached
+`XamShowKeyboardUI` with pilot name ARTEM and exited 0 without abort/exception.
+It did not establish that typed input or Cancel works; UI-driven Unicode/cancel
+and tutorial glyph rendering remain open.
+
+### Recovered dlc_image emblem assets from retail dvdbnd, 2026-10-24
+
+The runtime's `dlc_image:` requests were not all truly absent: four requested TPF
+containers are present in the main retail `dvdbnd.bdt`, although no separate DLC
+payload exists in the ISO. `tools/build_dlc_image_dir.py` maps only the observed
+requests to verified BHD5 path hashes, validates the BDT byte ranges, checks TPF
+magic and internal texture names (strictly decoding DCX for validation), and
+copies the original bytes into a minimal VFS tree. The DCX wrapper is preserved
+for `piece00/01.tpf.dcx`. Its manifest is generated only under `tmp/`.
+
+`acv_linux_probe_app.h` mounts this directory read-only at `dlc_image:` when
+present. The bounded probe discovers `tmp/acv-dlc-image` and supplies the root;
+without that generated asset directory no mount is made. The regression test
+[`test_dlc_image_mount.py`](../tools/native-rexglue/test_dlc_image_mount.py)
+checks all four paths against actual BHD5/BDT bytes, hashes, magic and file set.
+
+The rebuilt host `2d112d64…` kept GPU `90d8ef1a…`, private runtime
+`40b0e134…`, and config `98d1c2ed…`. In the 70s runtime smoke
+`logs/acv-native-linux/20261023T203303169143Z/`, child returned 0 at the
+configured time limit, `dlc_image:` mounted, and the only runtime error was the
+previously classified optional missing `system:\system.properties`. No failed
+`dlc_image:` opens remained, including both emblem and thumbnail requests.
+This resolves those four observed paths only; unobserved DLC content is not
+reconstructed. It is a VFS/Setup improvement and is not claimed as the cause or
+fix of gameplay mech shading.
+
+### Readback eviction lifetime and file-open audit, 2026-10-24
+
+`VulkanCommandProcessor::EvictOldReadbackBuffers` previously unmapped and
+destroyed both slots as soon as the map exceeded its cap or a resource aged out,
+without checking `submission_written[]`. A staging buffer could therefore be
+freed while its queued transfer still referenced it. The method now skips any
+candidate with a ticket newer than `submission_completed_`, marks it
+`eviction_pending`, and retries on a later frame after completion. It does not
+wait in the eviction path. `ShutdownContext` remains ordered behind
+`AwaitAllQueueOperationsCompletion()` before bulk destruction.
+
+The regression compiles this exact SDK method with Vulkan lifetime mocks under
+ASan/UBSan. It verifies no unmap/destroy/free while pending and reclamation after
+the ticket completes, including map-cap pressure. Evidence is logger stage
+`gpu_lifetime_test`; a real GPU run has not forced eviction under queue load.
+
+[`audit_runtime_file_misses.py`](../tools/audit_runtime_file_misses.py) scans
+explicit `NtCreateFile FAILED` records only, excluding VFS root-resolution
+noise. Across117 runtime logs it found3241 historical failures/35 unique paths.
+Most were repeated requests before the `dlc_image:` and `dlc_sound:` mounts
+were added. Final post-rebuild log `20261023T212444919696Z` is post-mount: all four known
+image files and all indexed sound banks resolve; only the unavailable sound
+names below and optional `system.properties` still fail.
+
+The five unresolved sound names are `acv_bgm_title.fev`,
+`acv_dlc_dlc_se.fev`, `ch09.fsb`, `dlc_se.fsb`, and literal
+`acv_talk_$(voicelang).fev`. The first four have no matching lowercase
+`/sound/NAME` hash in the main BHD5 index; candidate directory variants were
+also checked for the FSB names. Existing `acv_voice_ch09.fev` metadata has no
+corresponding `ch09.fsb` entry. No payload was found in the current retail ISO,
+so manufacturing dummy banks or guessing aliases would conceal missing content.
+The locale placeholder is passed literally by the guest. Candidate locale
+variants (`en/eng/us`, `jp/jpn/ja`, and other common language codes) have no
+matching BHD5 path hash; intended substitution or replacement bank is not
+established by these logs. Complete audit:
+[`runtime-file-open-audit.json`](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json).
+
+The updated Release GPU artifact hash is `c2c9ae722aac1715…`; private runtime
+hash `fa27bc225e91aa96…`; native executable
+`2d112d64471913c6…`. Final bounded run exited child0 at75s, showed the two VFS
+mounts, and logged only the six distinct unresolved paths recorded in the audit
+(five sound names plus optional system properties). The existing invalid-fetch
+warnings and window-close callback warnings are separate from file loading and
+were not changed by this lifetime/VFS patch.
+
+### Manual gameplay capture, 2026-10-24
+
+The 300-second RenderDoc run `logs/acv-native-linux/20261023T205031330068Z/`
+exited with child status 0 at the configured time limit. Four captures were
+written under `logs/acv-renderdoc/20261023T205031330068Z/`. The largest capture
+(`acv_frame89178.rdc`, 149 MiB; around 170 seconds) replays to one fullscreen
+4-vertex draw and one dispatch. Its 1280×720 pixel descriptor has non-black
+numeric samples (center RGB about `[0.343, 0.298, 0.274]`); this does not identify
+the gameplay scene or validate mech materials. The other captures have at most
+29 non-indexed draws and no indexed elements. They therefore do not provide a
+material draw to tie to the invalid fetch warning.
+
+The runtime logged 3,853 invalid-fetch warnings. A persistent constant was
+`8A000000 0F9FF097 0059E4FF 00A80D11 00000003 00000200`, with base address
+`0x0F9FF000`, size 1280×720, and format value 23 (`24_8_FLOAT`) under the Xenos
+bitfield decode. This is consistent with a depth/stencil-like surface, but its
+consumer was not identified; other warnings referenced `0x1C1...` regions.
+The allow-invalid flag remains off: earlier A/B evidence did not show that it
+fixes dark gameplay. Vulkan device/driver for this run were NVIDIA GeForce GTX
+1660 SUPER, driver 615.78.08, Vulkan 1.4.0. The only runtime error was the
+already classified missing optional `system:\system.properties`; no Vulkan
+device-loss or synchronization error appeared.
+
+This run did not change the implementation. The user separately confirmed the
+black mech textures are fixed; this capture only classifies an unrelated warning
+and does not replace that visual confirmation. It did not contain a mech/material
+draw, so it adds no further visual finding; the user has removed additional
+mission/material regression from the active task list.

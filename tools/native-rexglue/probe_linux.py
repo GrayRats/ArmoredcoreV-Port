@@ -113,6 +113,10 @@ dlc_sound_root = ROOT / "tmp/acv-dlc-sound"
 if dlc_sound_root.is_dir():
     env["ACV_DLC_SOUND_ROOT"] = str(dlc_sound_root)
 report["dlc_sound_root"] = env.get("ACV_DLC_SOUND_ROOT")
+dlc_image_root = ROOT / "tmp/acv-dlc-image"
+if dlc_image_root.is_dir():
+    env["ACV_DLC_IMAGE_ROOT"] = str(dlc_image_root)
+report["dlc_image_root"] = env.get("ACV_DLC_IMAGE_ROOT")
 for variable, option in (("ACV_PILOT_NAME", "pilot_name"), ("ACV_GAMERTAG", "gamertag")):
     value = config.get("profile", option, fallback="").strip()
     if value:

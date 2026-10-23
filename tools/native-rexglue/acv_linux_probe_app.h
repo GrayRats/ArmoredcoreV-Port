@@ -63,6 +63,23 @@ class AcvLinuxProbeApp : public rex::ReXApp {
         REXLOG_ERROR("[acv-vfs] ACV_DLC_SOUND_ROOT is not a directory: {}", root_path.string());
       }
     }
+    // Serve verified retail emblem TPFs extracted by build_dlc_image_dir.py.
+    if (const char* image_root = std::getenv("ACV_DLC_IMAGE_ROOT"); image_root && *image_root) {
+      const std::filesystem::path root_path(image_root);
+      auto* vfs = runtime()->file_system();
+      if (vfs && std::filesystem::is_directory(root_path)) {
+        const char* mount = "\\Device\\AcvDlcImage";
+        auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, root_path, true);
+        if (device->Initialize() && vfs->RegisterDevice(std::move(device)) &&
+            vfs->RegisterSymbolicLink("dlc_image:", mount)) {
+          REXLOG_INFO("[acv-vfs] dlc_image: mounted verified retail assets from {}", root_path.string());
+        } else {
+          REXLOG_ERROR("[acv-vfs] dlc_image: mount failed for {}", root_path.string());
+        }
+      } else {
+        REXLOG_ERROR("[acv-vfs] ACV_DLC_IMAGE_ROOT is not a directory: {}", root_path.string());
+      }
+    }
     REXLOG_INFO("[acv-build] Host source revision {}", ACV_HOST_REVISION);
     // Menus and text dialogs retain the cursor until the user opts into look.
     rex::input::mnk::SetMouseLookActive(false);

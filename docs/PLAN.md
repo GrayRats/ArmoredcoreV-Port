@@ -1,6 +1,6 @@
 # ACV — единый план Linux и декомпиляции
 
-Актуально: 2026-10-22. Этот файл объединяет прежние PLAN, PLAN_B и TASK-XBOX.
+Актуально: 2026-10-24.
 Читать вместе с [AGENTS](../AGENTS.md), [журналом](PROGRESS.md),
 [архитектурой](ARCHITECTURE.md) и [RE evidence](REVERSE_ENGINEERING.md).
 Полная история трёх исходников сохранена без изменений в
@@ -14,14 +14,14 @@
 кадры; управление, ресурсы и устойчивость подтверждены проверками. Параллельная
 цель — понятная C/C++ реконструкция поведения по retail evidence.
 Машинный перевод PPC в C++ не является восстановленным исходником.
-Windows/Wine — только после отдельного запроса. Unity/C# необязательны.
+Windows/Wine — только после отдельного запроса.
 Текущая исполняемая линия — ReXGlue; XenonRecomp сохранён как независимая
 исследовательская линия. Не смешивать их generated code/runtime без проверки.
 
 ## Правила работы
 
-- Исходный `/home/art/DEV/DECOMP/Original/Armoredcore/iso.iso` только читать.
-  Проект: `/home/art/DEV/DECOMP/DEArmoredcore/`; выходы — tools/, tmp/, logs/, docs/.
+- Исходный `../Original/Armoredcore/iso.iso` только читать.
+  Проект: ``; выходы — tools/, tmp/, logs/, docs/.
 - Для вывода указывать guest VA или SDK file:line, источник и уверенность:
   подтверждено, гипотеза, не проверено. Отсутствие прямых xrefs не исключает
   indirect calls. Не называть неизвестные поля/функции по сходству.
@@ -70,7 +70,7 @@ node tools/decomp-logging/cli.mjs run --stage linux_probe --timeout-ms 175000 --
 | Discovery | 459 supplemental entries + 63 adjusting thunks + leaf; 625 generated files / 311 C++ units, 0 REX_FATAL в проверенном дереве | Не гарантия всех indirect runtime paths |
 | Conditional branches | 31 boundary hints; 95 branches к 19 целям проверены по XEX, 18 двухинструкционных возвратов и 0x82500F14 из 3 инструкций | У целей нет .pdata owner; ownership не восстановлен |
 | Диск | 26 файлов совпадают с XDVDFS по SHA-256 | system:/dlc_* не являются отдельными top-level файлами |
-| Исполнение | Проходит NOW LOADING; меню, intro, HUD/эффекты и 3D draw submissions наблюдались | Окружение/opaque shading остаются слишком тёмными; правильный геймплей не принят |
+| Исполнение | Проходит NOW LOADING; меню, intro, HUD/эффекты и 3D draw submissions наблюдались; пользователь подтвердил исправление чёрных текстур мехов | Регрессия миссии, прочие материалы/освещение, ввод и полная совместимость ещё не приняты |
 | Input | 61 host SDK integration checks, F8/Escape, внутренний SDL→XInput→guest menu | Gameplay camera parity и полный физический input тест открыты |
 | RenderDoc | X11 создаёт swapchain и RDC; Wayland capture был несовместим с включёнными surface extensions | Сам факт present/capture не подтверждает игровой кадр |
 | SQLite | 4 DB и execution logger работают, история сохранена | Необёрнутые операции автоматически не фиксируются |
@@ -115,9 +115,10 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
   добавляет READWRITE; 2 перехвата без bad-protection diagnostics наблюдались,
   render effect не доказан. Retail поведение не установлено. С 2026-10-23 включено в acv.config
   (`[compat] mm_wc_rw = true`) по решению пользователя: обе аллокации проходят, `bad protection bits` 0 (PROGRESS, шаги 24–25).
-- **VFS/текст.** system:, dlc_sound:, dlc_image: не смонтированы; связь с тёмным
-  кадром не доказана. Есть испорченные tutorial glyphs: decoding/font path открыт.
-  Часть текстур и BDT reads подтверждены; полный диск не означает верный shader output.
+- **VFS/текст.** Read-only `dlc_image:` теперь отдаёт четыре runtime-requested
+  TPF-файла из retail dvdbnd; 70s smoke прошёл child0 без failed dlc_image opens.
+  Остаются неизвестные DLC-запросы/отсутствующие банки `dlc_sound:` и tutorial
+  glyph decoding/font path. VFS fix не является доказанной причиной texture shading.
 - **Capture timing.** FBO run `20261021T212231576790Z` на 110/140 s содержал
   по одному выводу, не пригоден для gameplay comparison. Новый explicit
   --renderdoc-window-ms=100 в `20261021T212603387176Z` завершился device lost,
@@ -131,6 +132,33 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 
 ## Следующие действия по приоритету
 
+Текущая очередь после подтверждения texture fix пользователем:
+
+Обычная пересборка уже защищена от возврата старого GPU: retained manifest/hash
+проверены тестом и реальной сборкой. Исторические replay probes74/79 не имели
+одинакового входа; они не используются как основание для активной задачи.
+
+1. DLC/VFS: сопоставить свежие file-open failures с содержимым retail BDT,
+   устранить ошибки монтирования/извлечения и отдельно отметить отсутствующий
+   внешний DLC. `system.properties` уже классифицирован как optional loader
+   fallback; четыре `dlc_image:` контейнера восстановлены. См. audit в PROGRESS.
+2. GPU lifetime eviction исправлен: pending tickets удерживают оба staging
+   slots; actual-source ASan/UBSan regression, Release SDK/native build и
+   75s runtime smoke пройдены. Реальную eviction под принудительным queue load
+   ещё не удавалось вызвать; retail allocation/free semantics и отдельный
+   visual effect shim остаются вне этого fix.
+
+Отложено по текущему запросу пользователя: задачи прежних пунктов1 (FPS),2
+(ввод/диалог) и4 (save/load, переходы, звук/soak). Возобновлять их только после
+завершения DLC и lifetime аудита. Текущий пересобранный GPU `c2c9ae72` сохранять;
+предыдущий texture-fix checkpoint `90d8ef1a` не удалён.
+
+Причины уже установлены: выключенный Resolve readback давал пустой CPU atlas;
+неверный dword для texture exp_adjust уменьшал цвет65536 раз. Не начинать
+диагностику этих причин заново. Подробная историческая постановка ниже остаётся
+для evidence/acceptance; приоритет задаёт эта текущая очередь.
+
+
 План уточнён 2026-10-22 по [runtime evidence](../logs/acv-runtime-triage-20261022/findings.json),
 [проверке сборки](../logs/acv-test-build-20261022/verification.json) и
 [аудиту пользовательских ссылок](../logs/acv-user-references-20261022/assessment.json).
@@ -141,11 +169,18 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 
 ### 1. P0 — воспроизводимый сценарий и граница потери текстуры
 
-**Приоритет пользователя 2026-10-23:** исправить оставшиеся чёрные модели
-gameplay при рабочем full readback. Проверить конкретный opaque draw после
-восстановления текстуры: sampled inputs → lighting arithmetic → EDRAM writes →
-resolve/present. Deferred prototype имеет отдельное byte proof, но его
-обобщение/оптимизацию отложить до локализации оставшегося shading defect.
+**Принято 2026-10-24:** пользователь подтвердил улучшение рендера текстур
+после исправления Vulkan `exp_adjust` (dword4→dword3).
+[Checkpoint](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
+Эту причину считать установленной; fixed plugin90d8ef1a… сохранять при сборках.
+Дальнейшая приёмка — оставшиеся проблемные материалы/сцены, HUD и стабильность.
+
+
+**Исторический приоритет пользователя 2026-10-23:** исправить чёрные модели
+gameplay при рабочем full readback. Пользователь подтвердил исправление
+2026-10-24; этот defect закрыт. Остаточная проверка миссии относится к
+регрессии прочих материалов/эффектов, а не к повторному поиску причины чёрных
+текстур мехов.
 
 
 Сохранить текущий рабочий ELF и его manifest; использовать штатный config,
@@ -183,9 +218,10 @@ bytes; native/resource headers совпадают. ACV profile теперь вк
 --readback_resolve=full. Frame34282/event75 уже семплирует непустую BC3;
 GPU bytes равны same-run CPU upload. [Принятый fix](../logs/acv-readback-origin-20261022/accepted-fix.json).
 
-Следующая проверка — воспроизводимый gameplay/scene regression с этим профилем,
-оставшиеся тёмные материалы и FPS. Не возвращаться к гипотезе пустого входа как
-неустановленной причине и не утверждать, что вся сцена уже исправлена.
+Пользователь подтвердил исправление чёрных текстур мехов; повторная задача
+scene/material regression снята по его просьбе. Следующий активный шаг — измерить
+FPS/frame-time и p95/p99 с этим профилем. Не возвращаться к гипотезе пустого
+входа: для запечённой текстуры причина уже установлена и исправлена.
 Точный Resolve ID можно уточнить для оптимизации; потеря CPU-данных уже доказана
 переключением режима и последующим GPU sampling. Адресная async-оптимизация: отслеживать CPU-consumed dirty Resolve ranges,
 allocation/GPU/CPU-write generation, ring staging и completion ticket; сохранять
@@ -276,11 +312,13 @@ HUD и конечный вывод. Использовать RDC, raw bytes, ч�
 ### 4. P1 — Setup, текст и фактическое управление
 
 UTF-8 BOM в конфиге уже исправлен и проверен. Отдельный SDK дефект
-XamShowKeyboardUI требует проверки длины UTF-8 buffer, NUL и границ символов,
-выходной UTF-16 capacity, отмены и ошибочного ввода. Подготовить тесты ASCII,
-кириллицы, многобайтового символа на границе и некорректной последовательности;
-выбор поведения при ошибке должен соответствовать контракту API.
-Headless=true остаётся рабочей настройкой; диалог проверять отдельным тестом.
+XamShowKeyboardUI теперь ограничивает UTF-8 буфер по максимальной длине
+UTF-16, завершает строки по NUL и декодирует результат с ограничением guest
+capacity; нулевая и переполненная длины отклоняются. SDK runtime пересобран,
+non-headless smoke дошёл до вызова для ARTEM и завершился без падения.
+Проверки helper покрывают Unicode/границы/ошибочный ввод под ASan/UBSan.
+Остаётся проверить фактический ввод ASCII/Cyrillic/multibyte и Cancel через UI;
+этот smoke ввод в поле не подтверждает. Headless=true остаётся штатной настройкой.
 Испорченные tutorial glyphs проследить по text/font path, не считать BOM-fix
 их решением.
 
@@ -329,9 +367,9 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
   analysis_complete или decompiler guesses за полное восстановление.
 - Прочитать применимый [360tools skill](../tools/360tools-skill/SKILL.md) при
   ISO/STFS/ReXGlue/config/stubs; проверять реальные CLI arguments. Ghidra RPC
-  skill: /home/art/.agents/skills/ghidra-rpc/SKILL.md. Vulkan skills:
-  /home/art/.agents/skills/vulkan/SKILL.md (6 pinned Khronos references) и
-  /home/art/.codex/skills/vulkan/SKILL.md (implementation/review; PLAYBOOK отсутствует).
+  skill: ~/.agents/skills/ghidra-rpc/SKILL.md. Vulkan skills:
+  ~/.agents/skills/vulkan/SKILL.md (6 pinned Khronos references) и
+  ~/.codex/skills/vulkan/SKILL.md (implementation/review; PLAYBOOK отсутствует).
   Vulkan installation evidence: logs/vulkan-skill-install.json.
 - Xenia Edge — возможный oracle, а не доказательство по сходству. Перед запуском
   проверять доступность; новые трассы не оправдывают остановку чужой игры.

@@ -19,9 +19,9 @@ docs не является разрешением возобновить ост�
 
 ## Vulkan API и Ghidra
 
-При Vulkan использовать [implementation/API skill](/home/art/.codex/skills/vulkan/SKILL.md)
-и [локальные Khronos references](/home/art/.agents/skills/vulkan/SKILL.md).
-При PPC/XEX analysis использовать [Ghidra RPC skill](/home/art/.agents/skills/ghidra-rpc/SKILL.md):
+При Vulkan использовать implementation/API skill (локальный навык вне репозитория: `~/.codex/skills/vulkan/SKILL.md`)
+и локальные Khronos references (локальный навык вне репозитория: `~/.agents/skills/vulkan/SKILL.md`).
+При PPC/XEX analysis использовать Ghidra RPC skill (локальный навык вне репозитория: `~/.agents/skills/ghidra-rpc/SKILL.md`):
 проверить доступность MCP; fallback — scripts/ghidra-rpc.sh, правильный проект/
 бинарник и raw instructions при неполной базе. Доступность не предполагать,
 живую DB не чинить без отдельного разрешения. [Правила](../AGENTS.md).

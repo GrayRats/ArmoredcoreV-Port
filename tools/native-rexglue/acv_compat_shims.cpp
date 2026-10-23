@@ -9,6 +9,7 @@
 // established; this is an experiment toggle, not a verified fix.
 #include "acv_linux_probe_pch.h"
 #include "bake_chain_trace.h"
+#include "profile_text.h"
 
 #include <dlfcn.h>
 #include <atomic>
@@ -611,27 +612,9 @@ HostFn NextExport(const char* symbol) {
   return fn;
 }
 
-// Decodes UTF-8 leniently (invalid bytes become '?'); BMP only, longer sequences become '?'.
+// Preserve bounded guest-name handling, including complete surrogate pairs.
 std::u16string Utf8ToUtf16(const char* text, size_t max_units) {
-  std::u16string out;
-  const auto* p = reinterpret_cast<const unsigned char*>(text);
-  while (*p != 0 && out.size() < max_units) {
-    uint32_t cp = '?';
-    int extra = 0;
-    if (*p < 0x80) { cp = *p; extra = 0; }
-    else if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1F; extra = 1; }
-    else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0F; extra = 2; }
-    else { extra = -1; }
-    ++p;
-    if (extra < 0) { out.push_back(u'?'); continue; }
-    bool ok = true;
-    for (int i = 0; i < extra; ++i, ++p) {
-      if ((*p & 0xC0) != 0x80) { ok = false; break; }
-      cp = (cp << 6) | (*p & 0x3F);
-    }
-    out.push_back(ok && cp <= 0xFFFF ? static_cast<char16_t>(cp) : u'?');
-  }
-  return out;
+  return acv::profile::DecodeUtf8(text, max_units);
 }
 
 // Writes `text` as NUL-terminated big-endian UTF-16 into guest memory (capacity in char16 units).

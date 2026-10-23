@@ -37,21 +37,21 @@
 
 - Vulkan API, swapchain, pipelines, descriptors, memory, synchronization,
   render targets, shader/output or portability work: read and apply
-  [Vulkan implementation skill](/home/art/.codex/skills/vulkan/SKILL.md) and
-  [local Vulkan references](/home/art/.agents/skills/vulkan/SKILL.md).
+  Vulkan implementation skill (локальный навык вне репозитория: `~/.codex/skills/vulkan/SKILL.md`) and
+  local Vulkan references (локальный навык вне репозитория: `~/.agents/skills/vulkan/SKILL.md`).
   Check ownership/teardown, every fallible VkResult, extensions/features,
   layout/stage/access and visibility, shader/binding contracts. Use only the
   relevant pinned Khronos source; match the actual runtime/driver. Do not
   silently update references. The implementation skill's PLAYBOOK is absent.
 - PPC/XEX, disassembly, decompilation, xrefs or dataflow work: use
-  [Ghidra RPC skill](/home/art/.agents/skills/ghidra-rpc/SKILL.md).
+  Ghidra RPC skill (локальный навык вне репозитория: `~/.agents/skills/ghidra-rpc/SKILL.md`).
   Discover Ghidra MCP first; if unavailable use `scripts/ghidra-rpc.sh`.
   Check status, project and loaded binary. Reuse saved default.xex with
   --no-analyze for read-only investigation; do not reimport/auto-analyze the
   protected DB. Incomplete function bodies or noreturn metadata require raw
   instructions/.pdata fallback, not acceptance of truncated pseudocode.
 - Xbox360 recomp/ISO/STFS/imports/configs: apply relevant
-  [xbox360-decomp](/home/art/.agents/skills/xbox360-decomp/SKILL.md) and
+  xbox360-decomp (локальный навык вне репозитория: `~/.agents/skills/xbox360-decomp/SKILL.md`) and
   [360tools](tools/360tools-skill/SKILL.md) resources after reading their guidance.
   Do not assume a tool, supported PPC/XEX profile, command flag or oracle exists.
 

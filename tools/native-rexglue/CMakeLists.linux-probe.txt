@@ -22,6 +22,7 @@ set(_acv_revision_inputs
     "${ACV_HOST_SOURCE_DIR}/acv_linux_probe_app.h"
     "${ACV_HOST_SOURCE_DIR}/acv_compat_shims.cpp"
     "${ACV_HOST_SOURCE_DIR}/bake_chain_trace.h"
+    "${ACV_HOST_SOURCE_DIR}/profile_text.h"
     "${ACV_HOST_SOURCE_DIR}/renderdoc_trigger.cpp"
     "${ACV_HOST_SOURCE_DIR}/retail_leaves.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"

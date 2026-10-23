@@ -1,0 +1,65 @@
+diff --git a/src/kernel/xam/xam_ui.cpp b/src/kernel/xam/xam_ui.cpp
+index 5a572ce..5400e1a 100644
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -29,6 +29,9 @@ REXCVAR_DEFINE_BOOL(headless, false, "Kernel",
+ #include <rex/ui/window.h>
+ #include <rex/ui/windowed_app_context.h>
+
++// ACV-specific bounded UTF-8/UTF-16 conversion shared with the native profile shim.
++#include "../../../../native-rexglue/profile_text.h"
++
+ namespace rex {
+ namespace kernel {
+ namespace xam {
+@@ -357,9 +360,11 @@ class KeyboardInputDialog : public XamDialog {
+         description_ = "";
+       }
+     }
+-    text_ = default_text;
+-    text_buffer_.resize(max_length);
+-    rex::string::copy_truncating(text_buffer_.data(), default_text_, text_buffer_.size());
++    const auto safe_default = acv::profile::DecodeUtf8(
++        default_text_, max_length_ ? max_length_ - 1 : 0);
++    text_ = rex::string::to_utf8(safe_default);
++    text_buffer_.resize(acv::profile::Utf8BufferBytesForUtf16Units(max_length_));
++    rex::string::copy_truncating(text_buffer_.data(), text_, text_buffer_.size());
+   }
+
+   const std::string& text() const { return text_; }
+@@ -381,13 +386,13 @@ class KeyboardInputDialog : public XamDialog {
+       }
+       if (ImGui::InputText("##body", text_buffer_.data(), text_buffer_.size(),
+                            ImGuiInputTextFlags_EnterReturnsTrue)) {
+-        text_ = std::string(text_buffer_.data(), text_buffer_.size());
++        text_ = std::string(text_buffer_.data());
+         cancelled_ = false;
+         ImGui::CloseCurrentPopup();
+         Close();
+       }
+       if (ImGui::Button("OK")) {
+-        text_ = std::string(text_buffer_.data(), text_buffer_.size());
++        text_ = std::string(text_buffer_.data());
+         cancelled_ = false;
+         ImGui::CloseCurrentPopup();
+         Close();
+@@ -428,6 +433,9 @@ u32 XamShowKeyboardUI_entry(u32 user_index, u32 flags, mapped_wstring default_te
+   if (!buffer) {
+     return X_ERROR_INVALID_PARAMETER;
+   }
++  if (!buffer_length || buffer_length == UINT32_MAX) {
++    return X_ERROR_INVALID_PARAMETER;
++  }
+
+   assert_true(overlapped.guest_address() != 0);
+
+@@ -454,7 +462,8 @@ u32 XamShowKeyboardUI_entry(u32 user_index, u32 flags, mapped_wstring default_te
+         return X_ERROR_SUCCESS;
+       } else {
+         // Zero the output buffer.
+-        auto text = rex::string::to_utf16(dialog->text());
++        auto text = acv::profile::DecodeUtf8(
++            dialog->text(), static_cast<size_t>(buffer_length - 1));
+         rex::string::copy_and_swap_truncating(buffer, text, buffer_length);
+         extended_error = X_ERROR_SUCCESS;
+         length = 0;

@@ -72,7 +72,7 @@ host-контуре с явно указанными внешними завис
 | hedge-dev/XenonRecomp | Xbox 360 PPC -> C++ | установлен, собран (`ddd128bc…`) |
 | hedge-dev/XenosRecomp | шейдеры Xbox 360 -> HLSL (README), затем DXC -> DXIL/SPIR-V | исходники в `tools/XenosRecomp/` (коммит `990d03b2`), submodule догружаются, не собран |
 | level0rd/c-xbox_tool_2.0.7 | Windows-программа для **оригинальной Xbox** (XISO, FTP, правка XBE); не рекомпилятор | в `tools/c-xbox_tool_2.0.7/` (коммит `758a5b67`), только как справочный материал, не запускалась |
-| rexglue/rexglue-sdk | Xbox 360 PPC -> C++ и runtime | официальный Linux x86-64 SDK `v0.10.0` установлен в `/home/art/.local/opt/rexglue-sdk/0.10.0`; 360toolsUpdated и skill установлены. независимая Linux-кодогенерация ACV начата в tmp/acv-rexglue-linux; полный build/boot ещё не подтверждён |
+| rexglue/rexglue-sdk | Xbox 360 PPC -> C++ и runtime | официальный Linux x86-64 SDK `v0.10.0` установлен в `~/.local/opt/rexglue-sdk/0.10.0`; 360toolsUpdated и skill установлены. независимая Linux-кодогенерация ACV начата в tmp/acv-rexglue-linux; полный build/boot ещё не подтверждён |
 | RenderDoc (`renderdoc`, cachyos-extra-v3 1.46) | захват и разбор кадров Vulkan: draw-вызовы, render target-ы, текстуры, итоговый swapchain | разрешён пользователем 2026-10-21 для диагностики чёрного экрана; установка через `sudo pacman -S renderdoc` (нужен пароль пользователя); захват только нашего `acv_linux_probe`, файлы `.rdc` в `logs/acv-renderdoc/` |
 
 Подтверждено чтением README (2026-10-20):

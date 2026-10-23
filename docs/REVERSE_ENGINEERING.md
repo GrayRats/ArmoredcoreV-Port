@@ -2,7 +2,7 @@
 
 ## Scope and evidence rules
 
-The only currently identified source is the Armored Core V Xbox 360 image at `/home/art/DEV/DECOMP/Original/Armoredcore/iso.iso`. Original input is read-only. No function names, layouts, addresses, or behavior claims are accepted without a reproducible artifact and evidence citation (file, offset/address, and method).
+The only currently identified source is the Armored Core V Xbox 360 image at `../Original/Armoredcore/iso.iso`. Original input is read-only. No function names, layouts, addresses, or behavior claims are accepted without a reproducible artifact and evidence citation (file, offset/address, and method).
 
 ## Verified observations
 

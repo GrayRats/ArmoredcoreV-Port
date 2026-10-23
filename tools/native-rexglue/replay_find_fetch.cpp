@@ -20,9 +20,10 @@ static bool Number(const char* s,uint32_t& value){
  if(errno||end==s||*end||*s=='-'||n>UINT32_MAX)return false;value=uint32_t(n);return true;
 }
 int main(int argc,char** argv){
- uint32_t physical,elements=0;
- if((argc!=3&&argc!=4)||!Number(argv[2],physical)||(argc==4&&!Number(argv[3],elements))){
-  std::cerr<<"Usage: replay_find_fetch CAPTURE.rdc PHYSICAL_ADDRESS [ELEMENTS]\n";return 2;
+ uint32_t physical=0,elements=0;
+ const bool all_addresses=argc>=3 && std::strcmp(argv[2],"all")==0;
+ if((argc!=3&&argc!=4)||(!all_addresses&&!Number(argv[2],physical))||(argc==4&&!Number(argv[3],elements))){
+  std::cerr<<"Usage: replay_find_fetch CAPTURE.rdc PHYSICAL_ADDRESS|all [ELEMENTS]\n";return 2;
  }
  Lifetime lifetime;
  std::unique_ptr<ICaptureFile,CaptureClose> cap(RENDERDOC_OpenCaptureFile());
@@ -50,11 +51,11 @@ int main(int argc,char** argv){
    auto data=replay->GetBufferData(desc[0].resource,desc[0].byteOffset,768);if(data.size()!=768)return 1;
    for(uint32_t slot=0;slot<32;++slot){
     uint32_t w[6];std::memcpy(w,data.data()+slot*24,sizeof(w));
-    if((w[0]&3)!=2||(w[1]&0xfffff000u)!=physical)continue;
+    if((w[0]&3)!=2||(!all_addresses&&(w[1]&0xfffff000u)!=physical))continue;
     bool used=false;std::string prefix="xe_texture"+std::to_string(slot)+"_";
     for(const auto& r:refl->readOnlyResources)if(std::string(r.name.c_str()).find(prefix)==0)used=true;
     std::cout<<(first?"":",")<<"{\"event\":"<<a->eventId<<",\"elements\":"<<a->numIndices
-     <<",\"slot\":"<<slot<<",\"shader_declares_slot\":"<<(used?"true":"false")
+     <<",\"physical\":"<<(w[1]&0xfffff000u)<<",\"slot\":"<<slot<<",\"shader_declares_slot\":"<<(used?"true":"false")
      <<",\"format\":"<<(w[1]&63)<<",\"width\":"<<((w[2]&8191)+1)
      <<",\"height\":"<<(((w[2]>>13)&8191)+1)<<",\"words\":[";
     for(unsigned j=0;j<6;++j)std::cout<<(j?",":"")<<w[j];

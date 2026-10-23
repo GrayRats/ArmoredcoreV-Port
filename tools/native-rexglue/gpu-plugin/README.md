@@ -15,8 +15,8 @@ Run these commands through the project SQLite logger:
 ```bash
 cmake -S tools/native-rexglue/gpu-plugin -B tmp/acv-gpu-plugin-build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ \
-  -DCMAKE_PREFIX_PATH=/home/art/.local/opt/rexglue-sdk/0.10.0 \
-  -DACV_GLSLANG_HEADERS=/home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-gpu-deps/glslang-f4f1d8a352ca1908943aea2ad8c54b39b4879080
+  -DCMAKE_PREFIX_PATH=~/.local/opt/rexglue-sdk/0.10.0 \
+  -DACV_GLSLANG_HEADERS=tmp/acv-gpu-deps/glslang-f4f1d8a352ca1908943aea2ad8c54b39b4879080
 cmake --build tmp/acv-gpu-plugin-build --target rexgpu-xenos -j 4
 python3 tools/native-rexglue/test_shared_memory_barriers.py
 ```

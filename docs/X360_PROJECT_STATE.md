@@ -1,6 +1,6 @@
 # ACV — короткий контекст продолжения
 
-Обновлено:2026-10-23. Очередь — [PLAN](PLAN.md), технические факты —
+Обновлено:2026-10-24. Очередь — [PLAN](PLAN.md), технические факты —
 [NATIVE](NATIVE_REXGLUE_LINUX.md), этапы — [PROGRESS](PROGRESS.md).
 
 - **Цель:** корректный native Linux gameplay. Пользователь разрешил исправления,
@@ -24,7 +24,7 @@
   Первый converter snapshot и поздний upload относятся к разным обновлениям:
   не требовать их равенства. Точная визуальная корректность всей сцены не принята.
 - **Текущий пакет:** tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe,
-  ELF SHA fbf7f9ce…, normal GPU55937953…, runtime d8fb56af….
+  ELF SHAf61ee442…, fixed GPU90d8ef1a…, runtime d8fb56af….
   Resolve slot completion/reuse и invalidate-result guards интегрированы;
   staging округляется к64KiB. Full остаётся default. Последний120s run
   20261022T182231377426Z: child0,45 прежних diagnostics; global scene не принята.
@@ -37,7 +37,7 @@
   [Technical details](NATIVE_REXGLUE_LINUX.md#integrated-resolve-completion-and-resource-tracing-2026-10-23).
 - **Запуск:** tools/native-rexglue/test_linux.sh; canonical config сохранён.
   Сборка tools/native-rexglue/build_linux.py --jobs 4
-  --gpu-plugin-artifact tmp/acv-gpu-integrated/librexgpu-xenos.so.
+  --gpu-plugin-artifact tmp/acv-gpu-texture-fix/librexgpu-xenos.so.
   Без override relink может вернуть installed plugin. Диагностика opt-in.
 - **Осталось:** сопоставимый gameplay/scene regression и FPS full readback;
   VFS system:/dlc_* и две physical allocations0x40000/0x800000 protect0x20000400.
@@ -67,8 +67,8 @@ EVENT_WRITE_SHD сейчас сразу пишет guest completion, это на
 full в игре. Для немедленного CPU consumer необходимо актуальное поколение;
 готовность прошлого кадра не подходит. FPS и p95/p99 ещё не измерены.
 
-Текущая host сборка включает только opt-in bake-chain diagnostics; GPU в основном
-пакете остаётся normal55937953…. Trace plugin отдельно tmp/acv-bake-chain-test;
+GPU основного пакета теперь fixed90d8ef1a… с исправленным texture exponent;
+normal55937953… сохранён только как предыдущий checkpoint. Trace plugin отдельно tmp/acv-bake-chain-test;
 его не переносить в normal package. Raw PPC/трассы в logs/acv-resolve-consumer-20261023.
 Ghidra restarted headless, saved default.xex opened --no-analyze; DB не менялась.
 
@@ -81,3 +81,49 @@ Ghidra restarted headless, saved default.xex opened --no-analyze; DB не мен
 prototype проверен на2MiB/47 samples, но не включён в normal GPU. Продолжать
 с full capture frame37095/event69 и других opaque draws: shader inputs, lighting
 и EDRAM writes; не подменять visual fix очередной async-оптимизацией.
+
+**Подтверждено пользователем 2026-10-24:** правки помогли с рендером текстур
+в игре. Причина: `exp_adjust` ошибочно брался из dword4 вместо dword3,
+что давало множитель1/65536. Fixed GPU90d8ef1a… сохранять при пересборках.
+[Техническая запись и checkpoint](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
+Дальше — регрессии оставшихся материалов, если они проявятся;
+не считать этот исправленный descriptor bug снова неизвестной причиной.
+
+Продолжение2026-10-24: same-input replay подтвердил RGB≈0.208 вместо3e-6
+при неизменном texture sample — множитель65536 устранён.105s fixed run
+завершился child0 с одним error system.properties; gameplay model regression
+по автозахватам ещё не принят. Актуальный остаток — в текущей очереди PLAN.
+
+Обычная `build_linux.py --jobs4` теперь сохраняет выбранный GPU из manifest
+с проверкой hash: реальная сборка удержала90d8ef1a…, пять wrapper cases прошли.
+Если source artifact изменён/потерян — явно выбрать preserved texture-fix SO.
+Дополнительные event74/79 replay не приняты как same-input regression;
+следующий функциональный пункт всё ещё gameplay material coverage.
+
+system.properties классифицирован по raw PPC: missing-file ветка пропускает
+parser и штатно возвращается; это startup properties override, не текстура.
+VFS diagnostic сохранён, dummy files/mounts не добавлены. См. NATIVE section
+Missing system.properties is handled и сохранённый classification.json.
+
+Host f61ee442… содержит проверенный bounded UTF-8 profile decoder; Unicode
+scalar/guest-buffer tests прошли, ARTEM55s headless smoke child0. GPU90d8ef1a…
+и config98d1c2ed… сохранены; previous package в tmp/acv-profile-text-previous-package.
+Это не исправление non-headless SDK keyboard dialog или tutorial glyphs.
+
+
+## Resume snapshot — 2026-10-24
+
+User confirms the mech texture rendering fix; do not reopen that bug. Current
+scope is DLC file requests and GPU readback lifetimes. Final native package
+`2d112d64…` uses rebuilt GPU `c2c9ae72…`, runtime `fa27bc22…` and unchanged
+config `98d1c2ed…`; its75s X11 smoke exited0. Readback eviction now defers
+freeing either staging slot until its submission ticket completes; actual-source
+ASan/UBSan test, SDK/native build and startup runtime pass. High-pressure runtime
+eviction was not forced.
+
+All four emblem assets and indexed sound banks resolve. Latest log retains five
+unavailable sound requests (four names absent from retail BHD5 and one literal
+`$(voicelang)` with no matching locale candidates) plus optional
+`system.properties`. The missing sound payloads are not in the current ISO.
+See [DLC/GPU audit](NATIVE_REXGLUE_LINUX.md#readback-eviction-lifetime-and-file-open-audit-2026-10-24),
+[queue](PLAN.md#следующие-действия-по-приоритету), and [progress](PROGRESS.md).

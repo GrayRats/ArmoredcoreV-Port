@@ -16,7 +16,7 @@ node tools/decomp-logging/cli.mjs run python3 tools/native-host-probe/run_timeba
 The stub tests the generated leaf's structure only. It does not establish that
 host `RDTSC` has Xenon time-base frequency, wrap behavior, or epoch.
 
-From `/home/art/DEV/DECOMP/DEArmoredcore`:
+From `.`:
 
 ```sh
 node tools/decomp-logging/cli.mjs run python3 tools/native-host-probe/run.py
@@ -58,7 +58,7 @@ not selected. Windows has no UBSan in this configuration. The current Clang 23 /
 MinGW GCC 16 static link emits duplicate RTTI section-size diagnostics, although
 all 41 checks pass under Wine 11.20. This narrow result does not establish
 general C++ exception ABI compatibility or execution on an actual Windows host.
-Detailed results: [NATIVE_HOST_L3.md](../../docs/NATIVE_HOST_L3.md).
+Detailed results: [NATIVE_HOST_L3.md](../../docs/fine/NATIVE_HOST_L3.md).
 
 These are synthetic expectations checked against the five raw instructions.
 They are **not** Xenia comparisons or L4 parity. `0x83885000` is a synthetic test
@@ -85,12 +85,12 @@ separate runner, `run_clock_closure.py`. It checks the wrapper's `.pdata` extent
 all 17 raw words, call dependencies and 4,096 synthetic sample pairs (32,768
 assertions). Both native Linux/UBSan and `--target windows --wine` pass. The
 injected clock does not establish Xbox frequency or runtime parity. Details and
-saved evidence: [NATIVE_HOST_L3.md](../../docs/NATIVE_HOST_L3.md).
+saved evidence: [NATIVE_HOST_L3.md](../../docs/fine/NATIVE_HOST_L3.md).
 
 `run_clock_closure.py --frequency-import` selects the generated `0x82B8FA70`
 wrapper and one explicitly configured frequency import adapter; 44 assertions
 pass on Linux/UBSan. No default clock frequency is assumed. See
-[NATIVE_XEX_RUNTIME.md](../../docs/NATIVE_XEX_RUNTIME.md).
+[NATIVE_XEX_RUNTIME.md](../../docs/fine/NATIVE_XEX_RUNTIME.md).
 
 Current workflow builds and runs Linux only. The Windows switches above document
 earlier checks and are used only on a separate explicit user request.

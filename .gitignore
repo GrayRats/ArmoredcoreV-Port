@@ -58,7 +58,10 @@
 /tools/c-xbox_tool_2.0.7/
 /tools/xenonrecomp-bin/
 /tools/ghidra-rpc-local/
-/docs/fine/
+# docs/fine: published Markdown and JSON reports; archives stay local (*.gz above).
+!/docs/fine/
+!/docs/fine/**/*.md
+!/docs/fine/**/*.json
 
 # Generated state, captures, dependency caches, machine settings, and binaries.
 **/.git/

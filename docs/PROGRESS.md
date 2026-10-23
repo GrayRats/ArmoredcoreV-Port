@@ -1,6 +1,6 @@
 # ACV — проверенные этапы и ограничения
 
-Обновлено: 2026-10-22. Это сводка доказательств, не очередь задач.
+Обновлено: 2026-10-24. Это сводка доказательств, не очередь задач.
 Приоритеты — [PLAN](PLAN.md); быстрый вход — [состояние](X360_PROJECT_STATE.md).
 Полный прежний журнал без изменений: [originals.tar.gz](../logs/docs-context-20261022/originals.tar.gz),
 запись `docs/PROGRESS.md`; SHA-256, заголовки и ссылки — [manifest](../logs/docs-context-20261022/manifest.json).
@@ -12,7 +12,7 @@
 | Входные данные | XEX SHA-256 4fac87348f827e84633013375012284cd8c769a3c155a675b2989757e666a12b; 26 файлов XDVDFS совпадают с tmp/iso_root | Полный диск не гарантирует верное чтение/использование каждого ресурса |
 | Генерация/сборка | ReXGlue 0.10.0, Clang/Ninja ELF; 459 supplemental entries, 63 thunks, известные leafs; 0 REX_FATAL в проверенном дереве | Не полная декомпиляция или покрытие всех runtime путей |
 | Conditional targets | 95 branches / 19 targets, 31 boundary hints; audit 625 files / 311 C++ units | Инструкционные фрагменты, .pdata ownership отсутствует; logs/acv-rexglue-unresolved-20261021/conditionals/ |
-| Boot/render | NOW LOADING, меню, intro, HUD/эффекты и 3D submissions наблюдались | Opaque scene остаётся тёмной; правильный gameplay не принят |
+| Boot/render | NOW LOADING, меню, intro, HUD/эффекты и 3D submissions наблюдались; пользователь подтвердил, что чёрные текстуры мехов исправлены | Другие визуальные области отдельно не принимались; дополнительная material regression убрана из задач по просьбе пользователя |
 | RenderDoc | X11 swapchain и RDC подтверждены; Wayland surface mismatch разобран | Один present / один draw может быть повторным выводом, не игровым кадром |
 | Input | 61 SDK integration checks; F8/Escape; SDL→XInput→guest menu | OS delivery и gameplay camera parity не полностью проверены; [input](LINUX_INPUT.md) |
 | Настройки | Единый acv.config: ARTEM / ARTEM, headless=true; default reader и missing-file failure проверены | User не доказан причиной Setup; headless — обход диалога |
@@ -29,13 +29,13 @@ calls / ~2.17 млн indices; 90 s: 866 indexed calls),
 | Проверка | Факт | Вывод |
 |---|---|---|
 | protect_zero=false | В последних 150 s probes нет прежней серии guest NULL writes; без флага fault loop воспроизводился | Сохранён в ACV profile; retail смысл записей не восстановлен |
-| UTF-8 Setup | Core stack: to_utf16 ← XamShowKeyboardUI close lambda; xam_ui.cpp:384/390 берёт fixed buffer целиком, :457 декодирует | headless обход включён; корректный SDK fix ещё не принят |
-| FSI/readback | HUD/эффекты появились; fast/full readback не устранили темноту в наблюдённых опытах | Не включать readback как доказанное исправление |
-| invalid fetch | Разрешающий флаг убирает предупреждения, но прежний rich-frame опыт оставался тёмным | Причинный эффект не доказан; поздний повтор с 1 draw не является gameplay comparison |
+| UTF-8 Setup | Bounded SDK keyboard buffer/conversion fix собран; ARTEM non-headless smoke без падения | Реальное Unicode-ввод/Cancel и tutorial glyphs ещё не проверены |
+| FSI/readback | Ранние сравнения fast/full не выявили исправления затемнения на тех сценах; отдельно установлен `exp_adjust` дефект, после которого пользователь подтвердил исправление чёрных текстур мехов | Не смешивать исторические readback A/B с принятым texture fix; full остаётся штатным |
+| invalid fetch | В 5-минутном run `20261023T205031330068Z` записано 3,853 предупреждения. Повторяющийся fetch `8A000000 0F9FF097 0059E4FF 00A80D11 00000003 00000200` адресуется к `0x0F9FF000`, 1280×720, формат 23 (`24_8_FLOAT`); есть также отдельные invalid-typed константы на `0x1C1...` | Не привязан к material draw и не связывается с уже исправленными чёрными текстурами мехов; оставить отдельным runtime warning. См. [сессию 2026-10-24](NATIVE_REXGLUE_LINUX.md#manual-gameplay-capture-2026-10-24) |
 | Display gamma | SDK фиксирует BT.709; два фактических hook-вызова 2→1 подтверждены в run 20261021T211435257956Z | override не default |
 | Shared-memory compute access / CPU upload | SDK kComputeWrite исправлен READ→WRITE; host regression + negative control, private plugin build,85/110 s probes. CPU-origin524288 bytes совпали с поздним GPU mirror SHAe4428980… | writer/материал не установлен, copy event вне RDC; [evidence](../logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json) |
 | Allocation shim | Caller sites0x82AEF00C/0x82AEF028 подтверждены trace/raw PPC; два0 передаются в параметры0x82AF1D38. Override даёт ненулевые addresses, child0/110 s,12 RDC | Сцены не совпали:1/59 draws против2661; render effect неизвестен, default false; [evidence](../logs/acv-gpu-sync-20261022/allocation/ab-result.json) |
-| VFS/glyphs | system:/dlc_sound:/dlc_image: не смонтированы; отдельные tutorial glyphs искажены | Причина shading/font issue не установлена |
+| VFS/glyphs | Read-only dlc_image mount отдаёт 4 подтверждённых TPF; в финальном smoke нет failed dlc_image opens | Недостающие sound DLC и tutorial glyphs остаются; shading отдельный |
 | FIFO capture control | run20261021T220305240062Z: mode2,4 RDC,child0/150 s; frame10222:400 indexed/35 nonindexed/5 dispatch | Input histogram91–97% below1/32 per channel; source writer outside captured usage |
 | Burst capture | run20261021T220733169087Z:8 RDC,child0/140 s; frame16580:1325 indexed/682 draws/64 dispatch | Frame16581 contains copyDst90→gamma write95; final present109 reads another mailbox image; cause open |
 | Explicit capture interval | run 20261021T212603387176Z: device lost; путь Start/End удалён, rebuild 5f0c239e-76a4-4eea-b093-6dea3880f9ec прошёл | Ненулевой interval отклоняется до spawn; обычный capture run20261021T215316118397Z дал4 RDC без device-lost в логе, child0/150 s;45 прежних VFS/protect errors остались |
@@ -320,8 +320,9 @@ Private experiment built and ran twice70s, child0. First2MiB Resolve→CPU
 exactly match full oracle;51 jobs published,47 sampled CPU reads matched.
 CPU-triggered publication established; ASan/UBSan queue failure tests passed.
 [Details](NATIVE_REXGLUE_LINUX.md#private-deferred-resolve-experiment-2026-10-23).
-Normal full remains default. Global black gameplay models remain unresolved;
-user explicitly prioritizes that visual defect over asynchronous optimization.
+Normal full remains default. User confirmed on 2026-10-24 that black mech
+gameplay textures are fixed; remaining scene coverage and async performance
+measurement are separate follow-up work.
 - 2026-10-23, шаг 17 (трасса кучи, поиск DCX-декодера в живом запуске): добавлены логи-only хуки
   `NtAllocateVirtualMemory` (region size — второй аргумент, по SDK `xboxkrnl_memory.cpp`) и `ExAllocatePoolWithTag`
   в `acv_compat_shims.cpp` (сборка ee2773fa). Запуск `logs/acv-dcx-decoder-search-20261022/heap2/` (rc 1 — классификатор
@@ -349,55 +350,19 @@ user explicitly prioritizes that visual defect over asynchronous optimization.
   декодирования одной записи — отдельная доработка SDK (memory watch по динамическому адресу).
   Статус гипотезы из шага 17 (`sub_82BE7C88` → inflate): НЕ подтверждена.
 
-## Сводка успешных правок (состояние на 2026-10-23)
+## Уточнение статусов прежней сводки — 2026-10-24
 
-Статусы: **сборка ok** — код скомпилирован и слинкован (операция логгера `succeeded`, но `not_checked`);
-**проверено** — результат подтверждён `verify`; **в игре не проверено** — изменение не подтверждено запуском.
+Сводка до texture fix сохранена без изменений в
+[архиве](../logs/acv-gameplay-black-20261024/docs-before-build-retention.tar.gz),
+запись docs/PROGRESS.md, [hashes](../logs/acv-gameplay-black-20261024/docs-before-build-retention.sha256.json).
+Её утверждения «причина тёмного кадра не найдена» и «readback не проверен»
+заменены поздними milestone: full восстанавливает atlas с CPU/GPU byte proof;
+dword4→dword3 устраняет неправильный texture scale; пользователь подтвердил
+улучшение. Инвентаризация/BHD/BND3/FLVER/BC1 tools остаётся проверенной в
+указанном историческом scope. DCX guest decoder identity всё ещё не установлена.
+Шаги19–26 ниже — исторические действия; текущий статус принятой texture fix
+и очередь расположены далее и в PLAN.
 
-### Правки исходного кода (SDK и шимы)
-
-| Файл | Что изменено | Статус | Операции |
-|---|---|---|---|
-| `tools/native-rexglue/acv_compat_shims.cpp` | событие `allocate_failed` для неудачной физической аллокации (не попадает в живые регионы) | проверено (сборка) | 6eaaf8fc |
-| то же | VFS-трасса открытия: точка монтирования, путь записи, размер (`device_hex`, `entry_hex`, `entry_size`) | проверено (сборка) | aebe1c14 |
-| то же | логи-only хуки `NtAllocateVirtualMemory` (размер — второй аргумент, по SDK) и `ExAllocatePoolWithTag` | сборка ok (исправлен порядок аргументов) | c1582911 → ee2773fa |
-| то же | захват 32 байт последних виртуальных выделений при `NtClose` (`alloc_prefix`) | сборка ok | e4b81623 |
-| `tools/rexglue-sdk/src/graphics/vulkan/command_processor.cpp/.h` | синхронизация readback: `AwaitReadbackSubmission`, ожидание конкретного задания вместо очереди, защита слотов, отказ при ошибке invalidate | изменено ранее; в игре не проверено | см. сохранённые `before-*` |
-
-Все правки шимов только логирующие: поведение игры не меняется. Правки SDK readback меняют путь публикации —
-их проверка в игре ещё не сделана (см. ограничения ниже).
-
-### Инструменты и анализ (созданы)
-
-| Инструмент | Назначение | Статус | Операции |
-|---|---|---|---|
-| `tools/bhd5_extract_all.py` | распаковка всех 19 744 записей BHD5 | проверено | b1400aa0 |
-| `tools/bnd3_extract_dir.py` | распаковка BND3 (включая формат 0x2c, вложенные) | проверено | f362a6bb, c9ccf89b, 462a1dda |
-| `tools/verify_dvdbnd_extraction.py` | независимая проверка распаковки | проверено | 2a30d15b, 27270101 |
-| `tools/flver_inventory.py` | инвентаризация 7 111 FLVER-заголовков | проверено | 97073264 |
-| `tools/x360_bc_decode.py`, `tools/bc1_mean.py` | декодер BC1 и средняя яркость | проверено | a5213889 |
-| `tools/bc_tile_match.py` | точное совпадение блоков: раскладка BC1 Xbox 360 (crunch, блоки, log2=3) | подтверждено по данным (16 384/16 384) | — |
-| `tools/bc_texture_identity.py` | связь текстур draw 7180 с TPF: tex19 = m0200_006, tex20 = m0200_006_s | проверено | 9491d7a7 |
-| `tools/spirv_slice.py` | срез SPIR-V пиксельного шейдера с разрешением регистров | работает | abf8448f (succeeded) |
-| `tools/native-rexglue/replay_draw_shaders.cpp` | шейдеры draw, привязки, константы | проверено | abc9098e |
-| `tools/native-rexglue/replay_debug_pixel.cpp` | отладчик пикселя RenderDoc, режим скана | работает на FBO-draw; FSI не поддерживается | — |
-| `tools/native-rexglue/replay_texture_dump.cpp`, `replay_buffer_dump.cpp` | дампы текстур и буферов из RDC | работают | — |
-| `tools/flver_probe/` (патч SoulsFormats и программа) | чтение FLVER: тип 0x14 (касательные [w,x,y,z] sbyte/127), 0x12 (индексы палитры) | проверено | d919af23 |
-
-### Результаты в игре (пробы)
-
-- Эталон тёмного кадра (`--renderdoc-at 110`): выход 2560×1080 ≈ 0,24–0,91 %. Операция 7f9934c2 — проверено.
-- `gpu_allow_invalid_fetch_constants=true`: тьма без изменений (0,81 / 0,69 / 0,28 %). Операция 1e8f50cb — проверено, гипотеза отклонена.
-- Пробы с `gamma_render_target_as_unorm16=false`: запущены по ошибке (отказ не остановил запуск), RDC нет — яркость не измерена.
-- Трассы кучи и префиксов (`heap2`, `heap3`): 45 пар «чтение заголовка DCX → выделение» по адресам `0x830F3A80 → 0x82B9AF60`; префиксы выделений не совпали ни с одной DCX-сигнатурой. Гипотеза о декодере `sub_82BE7C88` **не подтверждена**.
-
-### Открыто (ограничения)
-
-1. Личность декодера DCX не подтверждена: нужен write-watch по динамическому адресу выделения (доработка SDK).
-2. Трассы `heap*` и `dcx_decoder_*` помечены `failed` классификатором шума dlc; логгер их не верифицирует.
-3. Правки readback в SDK не проверены в игре; сравнение текстур режимов full/fast не выполнено.
-4. Причина тёмного кадра не найдена. Исключены: `color_exp_bias`, `c19`, неверные fetch-константы. Не исключено: затемнение в интерполяторах или координатах выборок.
-5. Пробы с `gamma_render_target_as_unorm16` нужно повторить по явному разрешению.
 - 2026-10-23, шаг 19 (прочие проблемы по логам, без запуска игры). Анализ последних `runtime.log`
   (20261023T141452… … 155744…):
   1. Не смонтированы `dlc_sound:` и `dlc_image:` — `ResolvePath` ошибка ~30 и ~8 раз за прогон; игра
@@ -468,3 +433,145 @@ user explicitly prioritizes that visual defect over asynchronous optimization.
   которых нет в индексе dvdbnd (`ch09.fsb`, `dlc_se.fsb`, `acv_dlc_dlc_se.fev`, `acv_bgm_title.fev`,
   `acv_talk_$(voicelang).fev` — переменная языка). Данных в образе нет: нужен образ с DLC.
   `dlc_image:` (эмблемы) не затронут — данных изображений в образе тоже нет.
+
+## Рендер текстур — подтверждено пользователем, 2026-10-24
+
+Пользователь подтвердил: предыдущие правки помогли именно с текстурами
+в gameplay. Исправлено чтение `exp_adjust` из неверного dword4 в Vulkan
+SPIR-V translator: теперь используется dword3. Ошибка уменьшала цвет
+в65536 раз и превращала его в чёрный при упаковке.2048 regression cases,
+ASan/UBSan и negative control прошли; fixed GPU90d8ef1a… собран и установлен.
+[Правка, сборка, checkpoint и предел проверки](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
+Полная визуальная parity всех материалов/сцен этим подтверждением не установлена.
+
+## Проверка цвета на одинаковом входе — 2026-10-24
+
+После dword4→dword3 один и тот же texture sample и девять входов шейдера
+дают итоговый RGB≈[0.208,0.206,0.189] вместо≈3e-6. Множитель ошибки65536
+устранён; числовой packed RGB больше не0.
+[Доказательство и ограничения replay](NATIVE_REXGLUE_LINUX.md#same-input-texture-colour-regression-2026-10-24).
+Последний105s fixed-plugin run: child0, один error о system.properties;
+автозахваты не подтверждают проверку всех моделей в миссии.
+
+## Сохранение fixed GPU при обычной пересборке — 2026-10-24
+
+`build_linux.py` без override сохраняет прежний `gpu_plugin_override` из
+manifest, проверяет путь/ELF/hash до сборки и hash перед staging. Изменённый
+или отсутствующий artifact требует явного повторного выбора; старый
+installed SDK plugin больше не подставляется молча.
+[Тест](../tools/native-rexglue/test_build_gpu_retention.py): explicit/default
+staging, подмена до/во время сборки, явный перевыбор — passed. Реальная plain
+incremental build сохранила host8b10aa52… и fixed GPU90d8ef1a…;
+[manifest](../logs/acv-gameplay-black-20261024/retained-build.json).
+
+Дополнительная material regression пока ограничена: event79 до/после выбирает
+разные interpolated inputs даже при запросе primitive0; event74 не дал pixel
+trace. Эти попытки не приняты как same-input proof. Подтверждённая пара
+event69 и пользовательская проверка остаются действительными.
+
+## system.properties — обработанный запрос, 2026-10-24
+
+Read-only PPC: строка0x8210FA38 и pointer0x83573270 задают default properties
+path. Loader0x82C22B90 при недействительном файле пропускает parser и штатно
+возвращается через0x82C22C8C; caller продолжает инициализацию. Это
+необязательный startup override с предусмотренным отсутствием, не texture
+payload. [Evidence и пределы](NATIVE_REXGLUE_LINUX.md#missing-systemproperties-is-handled-2026-10-24).
+VFS error не скрыт, файлов/монтирований для маскировки не добавлено.
+
+## Границы UTF-8/UTF-16 имён профиля — 2026-10-24
+
+Shim декодирует допустимые Unicode scalars, отклоняет overlong/surrogate
+UTF-8 с прежней заменой '?', сохраняет UTF-16 пары целиком на границе длины.
+1112063 valid scalar cases и actual guest store проверены ASan/UBSan.
+Host f61ee442… собран;55s headless smoke исполнил ARTEM name path, child0.
+Fixed GPU90d8ef1a… и config98d1c2ed… сохранены.
+[Evidence/ограничения](NATIVE_REXGLUE_LINUX.md#bounded-profile-utf-8-decoding-2026-10-24).
+Non-headless SDK dialog и tutorial glyphs остаются отдельными открытыми задачами.
+
+## Что ещё исправить — срез 2026-10-24
+
+Чёрные текстуры мехов пользователь подтвердил как исправленные 2026-10-24.
+Эту визуальную проверку пользователь попросил убрать из активных задач.
+Принятый texture fix не менять: same-input replay подтверждает исправленный
+множитель.
+
+Далее остаются замер frame-time/FPS и p95/p99 с full Resolve; реальный ввод и
+камера, non-headless keyboard UI и tutorial glyphs; DLC/VFS и корректность
+lifetime освобождения GPU; save/load, переходы меню/миссия, звук и soak20–30min.
+Короткая очередь и критерии — в [PLAN](PLAN.md#следующие-действия-по-приоритету).
+Evidence по текущему захвату: `logs/acv-gameplay-black-20261024/fixed-capture-neighbor-coverage.json`.
+
+Уточнение по draw309 из этого захвата: 3129 индексов, declared BC1 fetch
+512×512; captured exp_adjust dword3 даёт exponent0/scale1. Raw текстура не
+нулевая (122691 nonzero-luma pixels), но имя материала неизвестно и pixel
+trace для EDRAM/interlock не получен. Это подтверждает только путь данных в
+shader, не внешний вид меха. Подробности: [NATIVE capture note](NATIVE_REXGLUE_LINUX.md#fixed-build-material-capture-follow-up-2026-10-24).
+
+
+## Non-headless keyboard dialog bounds — 2026-10-24
+
+В SDK `XamShowKeyboardUI` исправлена оценка размера UTF-8 поля из лимита
+UTF-16, обрезка default/result на границе символа, чтение фактической NUL-
+terminated строки и ограниченная запись результата в guest capacity. Нулевой
+и переполняющий размер отклоняется. Portable patch: `tools/native-rexglue/
+patches/keyboard-dialog-utf8-boundaries.patch` (SDK base c94f5ebd). Тест
+`test_profile_text.py` прошёл 1,112,063 Unicode scalars плюс malformed/truncated,
+capacity и guest big-endian canaries под ASan/UBSan. Пересобран private SDK
+`rexruntime` SHA40b0e134…; staged package host799f0054…, GPU90d8ef1a…,
+config98d1c2ed… зафиксирован в manifest. Non-headless105s smoke
+`logs/acv-native-linux/20261023T202212361942Z/`: XamShowKeyboardUI для ARTEM,
+child0, без abort/exception; далее Setup завершился, но реальный ввод/Cancel не
+проверен. Headless smoke `20261023T202535711425Z` child0, 13 ожидаемых
+`system.properties`/отсутствующих `dlc_image` запросов.
+[Подробности и ограничения](NATIVE_REXGLUE_LINUX.md#bounded-keyboard-dialog-conversion-2026-10-24).
+
+По текущему запросу активны DLC file-open audit и GPU readback lifetime fix.
+FPS, input и save/load/soak отложены; texture fix и просьба убрать дополнительную
+mission/material regression остаются принятыми ограничениями.
+
+
+## Retail emblem VFS recovery — 2026-10-24
+
+Четыре запрашиваемых Setup-контейнера (`im9000.tpf`, `im9001.tpf`,
+`piece00.tpf.dcx`, `piece01.tpf.dcx`) найдены в BHD5/BDT основного диска.
+Добавлен ограниченный extractor `tools/build_dlc_image_dir.py` и read-only
+`dlc_image:` mount; оригинальные DCX bytes сохранены. Package тест прошёл
+по хешам/магии/внутренним именам; incremental build host`2d112d64…` сохранил
+GPU`90d8ef1a…` и SDK runtime`40b0e134…`. Финальный 70s smoke
+`logs/acv-native-linux/20261023T203303169143Z/`: child0, лишь optional
+`system.properties` error, failed `dlc_image` opens отсутствуют. Неизвестные
+asset paths этим не покрыты; VFS mount не считается исправлением shading мехов.
+[Технические детали](NATIVE_REXGLUE_LINUX.md#recovered-dlc_image-emblem-assets-from-retail-dvdbnd-2026-10-24).
+
+## DLC file-open и GPU readback lifetime audit — 2026-10-24
+
+Добавлен полный счётчик явных `NtCreateFile FAILED` по117 сохранённым runtime
+логам:3241 сообщений,35 уникальных guest paths. Это включает старые прогоны до
+VFS mount; четыре `dlc_image:` пути впоследствии восстановлены и в финальном
+image smoke больше не падают. Последний финальный runtime после SDK rebuild
+`20261023T212444919696Z`
+содержит семь DLC sound failures по пяти именам и один optional
+`system:\system.properties`. Все доступные sound banks из
+`tmp/acv-dlc-sound/manifest.json` присутствуют; оставшиеся четыре обычных имени
+не имеют совпадающего `/sound/NAME` hash в индексе BHD5 основного retail
+`dvdbnd`: `acv_bgm_title.fev`, `acv_dlc_dlc_se.fev`, `ch09.fsb`, `dlc_se.fsb`.
+Пятый запрос содержит нераскрытый literal `$(voicelang)`. Данных отсутствующего
+DLC в текущем ISO не обнаружено; пустые файлы/неподтверждённые alias скрыли бы
+ошибку, но не восстановили бы контент. `system.properties` — optional loader
+fallback по PPC-trace. Полный срез: [audit JSON](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json),
+[scanner](../tools/audit_runtime_file_misses.py).
+
+В SDK `EvictOldReadbackBuffers` теперь сохраняет ресурсы, пока любой из двух
+submission tickets не завершён, и отмечает отложенное вытеснение для следующего
+кадра. Это предотвращает unmap/destroy/free staging memory, пока queued Vulkan
+transfer ещё может в неё писать, без ожидания на eviction пути. Actual-source
+ASan/UBSan test покрывает завершённый/незавершённый ticket, лимит map и
+повторное вытеснение после completion:
+[`test_readback_eviction.py`](../tools/native-rexglue/test_readback_eviction.py).
+Release SDK `librexgpu-xenos.so` и `librexruntime.so` пересобраны; native host
+package также пересобран и запустился в финальном75s X11 smoke
+`logs/acv-native-linux/20261023T212444919696Z/` (child0, лимит времени,
+без device loss). Ошибки file-open повторили только те же sound/DLC запросы и
+optional `system.properties`. Реальный high-pressure eviction в этом smoke не
+форсировался; safe lifetime подтверждён actual-source test, но не заявляется
+как наблюдённая реальная GPU eviction.

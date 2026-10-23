@@ -3,10 +3,17 @@
 // Build with the same flags as tools/native-rexglue/replay_inspect.cpp.
 // Usage: replay_debug_pixel CAPTURE.rdc EVENT X Y OUT_FILE
 //        replay_debug_pixel CAPTURE.rdc EVENT W H STEP
-// Append --debug-relax-rte for diagnostic replay without the explicit RTE requirement.        (scan grid, prints covered pixels)
+// Scan mode prints covered pixels. Diagnostic replay flags:
+// --debug-relax-rte: remove the explicit RTE requirement for RenderDoc's interpreter.
+// --debug-relax-fsi: also remove interlock; only pre-EDRAM arithmetic is meaningful.
+// --debug-fix-fetch-exp: additionally correct the diagnosed texture exponent word
+//   in a saved old capture. This never patches the game/runtime.
+// ACV_REPLAY_PRIMITIVE=N requests a primitive, but always compare actual input
+// values: selection can still differ for storage-writing shaders in replay.
 // Output file: "INPUT name=v0,v1,.." lines, then "STEP n name=v0,.. (before->after)" per change.
 #include "renderdoc_replay.h"
 #include <spirv/unified1/spirv.hpp>
+#include "replay_fetch_exponent_patch.h"
 #include <vector>
 #include <cstdlib>
 #include <cstring>
@@ -44,7 +51,8 @@ int main(int argc, char** argv) {
   if(end == argv[4] || *end) return 2;
   // Replay-only probe. Disabling interlock is NOT valid rendering semantics;
   // use only pre-EDRAM shader arithmetic, never as an output/parity oracle.
-  const bool relax_fsi = argc == 7 && std::strcmp(argv[6], "--debug-relax-fsi") == 0;
+  const bool fix_fetch = argc == 7 && std::strcmp(argv[6], "--debug-fix-fetch-exp") == 0;
+  const bool relax_fsi = fix_fetch || (argc == 7 && std::strcmp(argv[6], "--debug-relax-fsi") == 0);
   const bool relax_fp = relax_fsi || (argc == 7 && std::strcmp(argv[6], "--debug-relax-rte") == 0);
   if(argc == 7 && !relax_fp) return 2;
   ReplayLifetime lifetime;
@@ -115,6 +123,10 @@ int main(int argc, char** argv) {
       else filtered.insert(filtered.end(), words.begin() + i, words.begin() + i + count);
       i += count;
     }
+    if(fix_fetch) {
+      try {std::cerr << "Replay texture exponents corrected: " << FixReplayFetchExponent(filtered) << "\n";}
+      catch(const std::exception& e) {std::cerr << e.what() << "\n";return 2;}
+    }
     bytebuf source;
     source.resize(filtered.size() * 4);
     std::memcpy(source.data(), filtered.data(), source.size());
@@ -162,6 +174,14 @@ int main(int argc, char** argv) {
     return 0;
   }
   DebugPixelInputs inputs;
+  // Replaying a storage-writing shader may change which overlapping fragment
+  // the debugger chooses. Pin the primitive for a same-input comparison.
+  if(const char* primitive=std::getenv("ACV_REPLAY_PRIMITIVE")) {
+    char* tail=nullptr;const auto value=std::strtoull(primitive,&tail,10);
+    if(!*primitive || *primitive=='-' || tail==primitive || *tail || value>UINT32_MAX)return 2;
+    inputs.primitive=uint32_t(value);
+    std::cerr << "Diagnostic primitive: " << inputs.primitive << "\n";
+  }
   ShaderDebugTrace* trace = replay->DebugPixel(x, y, inputs);
   if(!trace || !trace->debugger) {
     std::cerr << "DebugPixel returned no trace (pixel outside draw or unsupported)\n";
