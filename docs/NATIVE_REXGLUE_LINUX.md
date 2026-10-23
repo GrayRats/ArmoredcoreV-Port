@@ -168,7 +168,8 @@ Ordinary TriggerCapture produced four RDCs. At110 s, frame73703 records
 after device loss; nonzero `--renderdoc-window-ms` is rejected before spawn.
 
 [replay_inspect.cpp](../tools/native-rexglue/replay_inspect.cpp) uses RenderDoc1.46
-public virtual replay APIs; [header provenance](../logs/renderdoc-replay-headers.json).
+public virtual replay APIs; local header provenance is in
+`logs/renderdoc-replay-headers.json` (runtime evidence stays outside the source repository).
 Build (through SQLite logger):
 
 ```bash
@@ -305,7 +306,7 @@ writes texture2 (2560×1080) and reads texture3 (1280×720), which has no write
 usage anywhere in the capture. This is a binding-level candidate chain
 (draws → EDRAM → dispatch 5156/5211 → texture load → PS), not proven resolve
 semantics: shader identity and data direction are unchecked.
-[Buffers](../logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.event7302.edram_usage.json),
+Local buffer evidence: `logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.event7302.edram_usage.json`,
 operations ea22716b-7d7b-4b0f-a154-ce208f6f691c (verified) and
 26ececb7-28a3-4eb0-ab50-f959a8da2d32 (textures). An earlier note here claimed
 "no read usage, so no resolve"; that inference was wrong for the reason above.
@@ -1181,9 +1182,9 @@ the ticket completes, including map-cap pressure. Evidence is logger stage
 explicit `NtCreateFile FAILED` records only, excluding VFS root-resolution
 noise. Across117 runtime logs it found3241 historical failures/35 unique paths.
 Most were repeated requests before the `dlc_image:` and `dlc_sound:` mounts
-were added. Final post-rebuild log `20261023T212444919696Z` is post-mount: all four known
-image files and all indexed sound banks resolve; only the unavailable sound
-names below and optional `system.properties` still fail.
+were added. Final post-rebuild log `20261023T212444919696Z` is post-mount: all
+four known image files resolve, and no manifest-backed sound bank fails to open.
+Only the unavailable sound names below and optional `system.properties` still fail.
 
 The five unresolved sound names are `acv_bgm_title.fev`,
 `acv_dlc_dlc_se.fev`, `ch09.fsb`, `dlc_se.fsb`, and literal
