@@ -590,4 +590,10 @@ executable `acv_linux_probe` `2d112d64471913c64c88d127aa83f81a84a612ad06989f6a4c
 В runtime нет строк Resolve/MEMEXPORT/readback, поэтому smoke не проверил
 этот путь; зафиксированы лишь отсутствующие на диске sound banks и optional
 `system.properties`. Все восемь targeted readback/VFS/texture/build regressions
-прошли. Реальную high-pressure eviction GPU smoke по-прежнему не форсировали.
+прошли. По указанию пользователя перечисленные остаточные сигналы пропускать в
+текущем triage: пять отсутствующих DLC sound requests, optional
+`system.properties`, отсутствие gameplay readback в smoke и нефорсированную
+high-pressure eviction. Не считать их блокерами релиза/следующего этапа и не
+возобновлять расследование без нового запроса или новых данных. Это решение
+фиксирует приоритет triage; оно не создаёт отсутствующие аудиоданные и не
+утверждает, что последние два сценария были проверены в runtime.

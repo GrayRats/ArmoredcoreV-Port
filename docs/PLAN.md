@@ -131,7 +131,7 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
   [summarize_capture.py](../tools/native-rexglue/summarize_capture.py) считает
   команды XML; regression согласуется с 235 draws / 1184 indexed / 18 dispatches.
 
-## Следующие действия по приоритету
+## Статус DLC и GPU readback
 
 Текущая очередь после подтверждения texture fix пользователем:
 
@@ -151,7 +151,14 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
    caller. Actual-source ASan/UBSan regressions, SDK Release/native package и
    75s startup smoke прошли. Smoke не заходил в gameplay и не вызывал
    Resolve/MEMEXPORT, поэтому end-to-end readback надо подтвердить в игровом
-   сценарии. Реальную eviction под queue pressure также требуется наблюдать.
+   сценарии. Реальную eviction под queue pressure также не наблюдали.
+
+**Triage decision (user, 2026-10-24): пропускать эти остаточные сигналы.** Не
+держать план открытым из-за пяти отсутствующих DLC sound banks, optional
+`system.properties`, отсутствия gameplay readback в startup smoke или отсутствия
+forced queue-pressure eviction. Не возвращаться к ним без нового запроса или
+новых данных; это не меняет факты о неполученном DLC и непроверенных runtime
+сценариях.
 
 Отложено по текущему запросу пользователя: задачи прежних пунктов1 (FPS),2
 (ввод/диалог) и4 (save/load, переходы, звук/soak). Возобновлять их только после

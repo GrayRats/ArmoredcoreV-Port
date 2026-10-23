@@ -1213,6 +1213,13 @@ and optional `system.properties`; `ch09.fsb` was not requested in this menu run.
 All targeted readback/VFS/texture/build regressions passed. Real GPU eviction
 under forced queue pressure remains unobserved.
 
+User triage instruction (2026-10-24): skip these remaining signals in routine
+triage and do not reopen them without new evidence or a new request: the five
+missing DLC sound requests, optional `system.properties`, no gameplay readback
+in the startup smoke, and no forced queue-pressure eviction. This is a priority
+decision only; it does not claim the absent audio payloads or runtime scenarios
+were supplied or verified.
+
 ### Manual gameplay capture, 2026-10-24
 
 The 300-second RenderDoc run `logs/acv-native-linux/20261023T205031330068Z/`
