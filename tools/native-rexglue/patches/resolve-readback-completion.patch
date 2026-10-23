@@ -1,0 +1,143 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -4400,6 +4400,16 @@
+   return IssueCopy_ReadbackResolvePath();
+ }
+ 
++bool VulkanCommandProcessor::AwaitReadbackSubmission(uint64_t submission) {
++  if (!submission || device_lost_) {
++    return false;
++  }
++  CheckSubmissionFenceAndDeviceLoss(submission);
++  // EndSubmission or a fence wait may fail without reporting device loss.
++  // Check the requested ticket rather than treating a non-lost device as ready.
++  return !device_lost_ && submission_completed_ >= submission;
++}
++
+ bool VulkanCommandProcessor::IssueCopy_ReadbackResolvePath() {
+   const ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+@@ -4448,7 +4458,8 @@
+     }
+ 
+     if (readback.buffers[index] != VK_NULL_HANDLE || readback.memories[index] != VK_NULL_HANDLE) {
+-      if (!AwaitAllQueueOperationsCompletion()) {
++      if (readback.submission_written[index] &&
++          !AwaitReadbackSubmission(readback.submission_written[index])) {
+         dfn.vkUnmapMemory(device, new_memory);
+         dfn.vkDestroyBuffer(device, new_buffer, nullptr);
+         dfn.vkFreeMemory(device, new_memory, nullptr);
+@@ -4469,6 +4480,8 @@
+     readback.memories[index] = new_memory;
+     readback.mapped_data[index] = new_mapping;
+     readback.sizes[index] = size;
++    readback.submission_written[index] = 0;
++    readback.written_size[index] = 0;
+     return true;
+   };
+ 
+@@ -4477,9 +4490,22 @@
+   ReadbackBuffer& readback = readback_buffers_[resolve_key];
+   readback.last_used_frame = frame_current_;
+   uint32_t write_index = readback.current_index;
+-  uint32_t readback_size = AlignReadbackBufferSize(written_length);
++  // Resolve ranges are typically small; dedicated allocations need not reserve
++  // the 16 MiB MEMEXPORT growth increment for each half of every range.
++  uint32_t readback_size = rex::round_up(written_length, uint32_t(64 * 1024));
+   if (!ensure_readback_slot(readback, write_index, readback_size)) {
+-    return true;
++    return false;
++  }
++  // A ring index alone does not establish completion. Never overwrite or free
++  // a staging slot whose previous GPU copy is still in flight.
++  if (readback.submission_written[write_index] &&
++      !AwaitReadbackSubmission(readback.submission_written[write_index])) {
++    return false;
++  }
++  // Waiting may close the current submission; record Resolve's copy in a new
++  // submission on the same queue if needed, preserving shared-memory hazards.
++  if (!BeginSubmission(true)) {
++    return false;
+   }
+ 
+   if (is_scaled) {
+@@ -4548,6 +4574,10 @@
+       resolve_downscale_buffer_ = new_buffer;
+       resolve_downscale_buffer_memory_ = new_memory;
+       resolve_downscale_buffer_size_ = downscale_buffer_size;
++      // Reallocation may have submitted the preceding Resolve work.
++      if (!BeginSubmission(true)) {
++        return false;
++      }
+     }
+     if (resolve_downscale_buffer_ == VK_NULL_HANDLE) {
+       return true;
+@@ -4649,23 +4679,29 @@
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                           VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+ 
+-  bool use_delayed_sync =
++  readback.submission_written[write_index] = GetCurrentSubmission();
++  readback.written_size[write_index] = written_length;
++  const bool use_delayed_sync =
+       readback_mode == ReadbackResolveMode::kFast || readback_mode == ReadbackResolveMode::kSome;
+-  uint32_t read_index = write_index;
+-  if (use_delayed_sync) {
+-    read_index = 1 - write_index;
+-  } else if (!AwaitAllQueueOperationsCompletion()) {
+-    return true;
+-  }
+-
+-  bool is_cache_miss = false;
+-  if (use_delayed_sync && (readback.buffers[read_index] == VK_NULL_HANDLE ||
+-                           written_length > readback.sizes[read_index] ||
+-                           readback.mapped_data[read_index] == nullptr)) {
+-    is_cache_miss = true;
++  uint32_t read_index = use_delayed_sync ? 1 - write_index : write_index;
++  CheckSubmissionFenceAndDeviceLoss(0);
++  if (device_lost_) {
++    return false;
++  }
++  const bool previous_ready =
++      readback.buffers[read_index] != VK_NULL_HANDLE &&
++      readback.memories[read_index] != VK_NULL_HANDLE &&
++      readback.mapped_data[read_index] != nullptr &&
++      readback.written_size[read_index] >= written_length &&
++      readback.submission_written[read_index] != 0 &&
++      readback.submission_written[read_index] <= submission_completed_;
++  const bool is_cache_miss = use_delayed_sync && !previous_ready;
++  if (!use_delayed_sync || is_cache_miss) {
+     read_index = write_index;
+-    if (!AwaitAllQueueOperationsCompletion()) {
+-      return true;
++    // Full mode publishes this Resolve's generation. Fast/some retain their
++    // explicitly delayed semantics only when the previous slot is complete.
++    if (!AwaitReadbackSubmission(readback.submission_written[read_index])) {
++      return false;
+     }
+   }
+ 
+@@ -4677,7 +4713,12 @@
+     readback_memory_range.memory = readback.memories[read_index];
+     readback_memory_range.offset = 0;
+     readback_memory_range.size = VK_WHOLE_SIZE;
+-    dfn.vkInvalidateMappedMemoryRanges(device, 1, &readback_memory_range);
++    const VkResult invalidate_result =
++        dfn.vkInvalidateMappedMemoryRanges(device, 1, &readback_memory_range);
++    if (invalidate_result != VK_SUCCESS) {
++      REXGPU_ERROR("Resolve readback invalidate failed: {}", int32_t(invalidate_result));
++      return false;  // Never publish stale host cache bytes as a successful readback.
++    }
+ 
+     uint8_t* destination = memory_->TranslatePhysical(written_address);
+     if (destination) {
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -426,6 +426,7 @@
+ 
+   void ClearTransientDescriptorPools();
+   bool IssueCopy_ReadbackResolvePath();
++  bool AwaitReadbackSubmission(uint64_t submission);
+   bool IssueDraw_MemexportReadbackFullPath(uint32_t total_size);
+   bool IssueDraw_MemexportReadbackFastPath(uint32_t total_size);
+ 

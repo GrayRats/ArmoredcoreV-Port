@@ -1,0 +1,13 @@
+long[] ticks = {0,1000000,3000000,6000000,12000000,-1000000,1,1,1};
+uint[] frequencies = {60000000,60000000,60000000,60000000,60000000,60000000,61,59,0};
+float[] expected = {0f,1f/60f,0.05f,0.1f,0.1f,-1f/60f,1f/60f,0f,0f};
+var results = new System.Collections.Generic.List<object>();
+bool allPassed = true;
+for (int i = 0; i < ticks.Length; ++i) {
+    float actual;
+    bool valid = ArmoredCoreReconstruction.Reference.ACV.AcvTimingReference.TryConvertElapsedTicks(ticks[i], frequencies[i], out actual);
+    bool passed = valid == (i < 7) && System.Math.Abs(actual - expected[i]) <= 0.000001f;
+    allPassed &= passed;
+    results.Add(new { ticks = ticks[i], frequency = frequencies[i], valid, actual, expected = expected[i], passed });
+}
+return new { passed = allPassed, count = results.Count, cases = results };

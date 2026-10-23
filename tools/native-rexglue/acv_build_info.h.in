@@ -1,0 +1,2 @@
+#pragma once
+#define ACV_HOST_REVISION "@ACV_HOST_REVISION@"

@@ -1,0 +1,23 @@
+# Instruction-derived continuation fragments for unresolved relative PPC `bc`
+# edges. Every entry is exactly two original instructions ending in `blr`.
+# These are analysis boundaries, not recovered retail function symbols.
+[functions]
+0x82500f14 = { size = 12, name = "__acv_branch_target_82500F14" }
+0x826b1778 = { size = 8, name = "__acv_branch_target_826B1778" }
+0x82fdaccc = { size = 8, name = "__acv_branch_target_82FDACCC" }
+0x82fdb27c = { size = 8, name = "__acv_branch_target_82FDB27C" }
+0x82fdc3f4 = { size = 8, name = "__acv_branch_target_82FDC3F4" }
+0x82fe016c = { size = 8, name = "__acv_branch_target_82FE016C" }
+0x82fe0de4 = { size = 8, name = "__acv_branch_target_82FE0DE4" }
+0x82fe389c = { size = 8, name = "__acv_branch_target_82FE389C" }
+0x82fe3fac = { size = 8, name = "__acv_branch_target_82FE3FAC" }
+0x82fe4ac4 = { size = 8, name = "__acv_branch_target_82FE4AC4" }
+0x82fe67d4 = { size = 8, name = "__acv_branch_target_82FE67D4" }
+0x82fe6ebc = { size = 8, name = "__acv_branch_target_82FE6EBC" }
+0x82fea96c = { size = 8, name = "__acv_branch_target_82FEA96C" }
+0x82feb764 = { size = 8, name = "__acv_branch_target_82FEB764" }
+0x83073bd4 = { size = 8, name = "__acv_branch_target_83073BD4" }
+0x830757ec = { size = 8, name = "__acv_branch_target_830757EC" }
+0x830795a4 = { size = 8, name = "__acv_branch_target_830795A4" }
+0x8307b42c = { size = 8, name = "__acv_branch_target_8307B42C" }
+0x83081234 = { size = 8, name = "__acv_branch_target_83081234" }

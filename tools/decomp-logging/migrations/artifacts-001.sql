@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, session_id TEXT, operation_id TEXT, path TEXT NOT NULL, kind TEXT, sha256 TEXT, provenance_json TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY, path TEXT NOT NULL, source_sha256 TEXT NOT NULL, stored_sha256 TEXT NOT NULL, content_id TEXT NOT NULL, source_bytes INTEGER NOT NULL, stored_bytes INTEGER NOT NULL, transformed INTEGER NOT NULL, mtime_ms REAL NOT NULL, imported_at TEXT NOT NULL, verified_at TEXT, UNIQUE(path,source_sha256));
+CREATE INDEX IF NOT EXISTS files_source_hash ON files(source_sha256);
+CREATE TABLE IF NOT EXISTS cleanup(id TEXT PRIMARY KEY, path TEXT NOT NULL, kept_path TEXT NOT NULL, source_sha256 TEXT NOT NULL, content_id TEXT NOT NULL, planned_at TEXT NOT NULL, deleted_at TEXT, restored_at TEXT, status TEXT NOT NULL, reason TEXT);

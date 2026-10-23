@@ -1,0 +1,32 @@
+# ACV Linux probe configuration (read by tools/native-rexglue/probe_linux.py).
+# Command-line options override these values. Lines starting with # or ; are comments.
+
+[profile]
+# Pilot name returned by the game's "Enter a pilot name" prompt (XamShowKeyboardUI).
+# Needs headless = true below, which makes the SDK answer the prompt without a dialog.
+pilot_name = User
+# Xbox profile name (gamertag) returned by XamUserGetName / XamUserGetGamerTag.
+# The SDK default is "User". At most 15 characters.
+gamertag = User
+
+[sdk]
+# Passed to the SDK as --key=value. Paths and logging keys are reserved by the probe.
+# headless = true answers prompts with their defaults and avoids the host keyboard dialog
+# whose UTF-8 conversion aborts the process (see docs/PLAN.md).
+headless = true
+user_language = 1
+user_country = 103
+# Examples (uncomment to use):
+# vulkan_async_skip_incomplete_frames = false
+# gamma_render_target_as_unorm16 = false
+# gpu_allow_invalid_fetch_constants = true
+
+[compat]
+# Experiment toggles implemented in tools/native-rexglue/acv_compat_shims.cpp.
+# Add READWRITE to MmAllocatePhysicalMemoryEx protect = LARGE_PAGES | WRITECOMBINE.
+mm_wc_rw = false
+
+[capture]
+# RenderDoc frame captures. renderdoc_at is a comma-separated list of seconds.
+renderdoc = false
+renderdoc_at = 80,140

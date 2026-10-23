@@ -1,0 +1,9 @@
+{
+  "name": "xboxdecomp-logging",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "better-sqlite3": "13.0.3" },
+  "scripts": { "init": "node cli.mjs init", "status": "node cli.mjs status", "test": "node --test" }
+}

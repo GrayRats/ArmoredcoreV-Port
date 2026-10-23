@@ -1,0 +1,65 @@
+# acv_linux_probe - ReXGlue Recompiled Project
+#
+# SDK boilerplate lives in generated/rexglue.cmake.
+
+cmake_minimum_required(VERSION 3.25)
+project(acv_linux_probe LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(generated/rexglue.cmake)
+include("/home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/codegen-override.cmake")
+
+# Copy the canonical host header whenever it changes; keep private builds in sync.
+set(ACV_HOST_SOURCE_DIR "/home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue")
+configure_file("${ACV_HOST_SOURCE_DIR}/acv_linux_probe_app.h"
+               "${CMAKE_CURRENT_SOURCE_DIR}/src/acv_linux_probe_app.h" COPYONLY)
+
+# Identify the handwritten host changes in each test log.
+set(_acv_revision_inputs
+    "${ACV_HOST_SOURCE_DIR}/CMakeLists.linux-probe.txt"
+    "${ACV_HOST_SOURCE_DIR}/acv_linux_probe_app.h"
+    "${ACV_HOST_SOURCE_DIR}/acv_compat_shims.cpp"
+    "${ACV_HOST_SOURCE_DIR}/bake_chain_trace.h"
+    "${ACV_HOST_SOURCE_DIR}/renderdoc_trigger.cpp"
+    "${ACV_HOST_SOURCE_DIR}/retail_leaves.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+    "/home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-native-adjusting-thunks.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_acv_revision_inputs})
+set(_acv_revision_data "")
+foreach(_acv_revision_input IN LISTS _acv_revision_inputs)
+    file(SHA256 "${_acv_revision_input}" _acv_input_hash)
+    string(APPEND _acv_revision_data "${_acv_input_hash}
+")
+endforeach()
+string(SHA256 ACV_HOST_REVISION "${_acv_revision_data}")
+configure_file("${ACV_HOST_SOURCE_DIR}/acv_build_info.h.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/acv_build_info.h" @ONLY)
+
+# Sources
+set(ACVLINUXPROBE_SOURCES
+    src/main.cpp
+    /home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-native-adjusting-thunks.cpp
+    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/retail_leaves.cpp
+    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/renderdoc_trigger.cpp
+    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/acv_compat_shims.cpp
+)
+
+if(WIN32)
+    add_executable(acv_linux_probe WIN32 ${ACVLINUXPROBE_SOURCES})
+else()
+    add_executable(acv_linux_probe ${ACVLINUXPROBE_SOURCES})
+endif()
+
+target_include_directories(acv_linux_probe PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+rexglue_setup_target(acv_linux_probe GPU_PLUGINS xenos)
+
+# Linux SDK helper supplies $ORIGIN but stages runtime only on Windows/macOS.
+# Keep the Linux probe self-contained without changing loader configuration.
+if(UNIX AND NOT APPLE)
+    add_custom_command(TARGET acv_linux_probe POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:rex::runtime> $<TARGET_FILE_DIR:acv_linux_probe>
+        VERBATIM)
+endif()

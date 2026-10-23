@@ -1,0 +1,34 @@
+# Analysis hints: original-byte CFG checked; not recovered symbols or retail parity.
+# Evidence: logs/acv-rexglue-unresolved-20261021/boundary-validation.json
+[functions]
+0x822e03e8 = { size = 16 }
+0x822e63f8 = { size = 8 }
+0x822e6400 = { size = 24 }
+0x822f8d00 = { size = 8 }
+0x822f8d08 = { size = 24 }
+0x82324498 = { size = 28 }
+0x82364298 = { size = 8 }
+0x82368660 = { size = 8 }
+0x823690d8 = { size = 8 }
+0x823690e0 = { size = 8 }
+0x824525c8 = { size = 8 }
+0x82494140 = { size = 8 }
+0x82495030 = { size = 8 }
+0x8264e408 = { size = 28 }
+0x8267ea68 = { size = 4 }
+0x827416c8 = { size = 8 }
+0x827ecc10 = { size = 124 }
+0x828d83f0 = { size = 16 }
+0x82931c10 = { size = 8 }
+0x829a5f80 = { size = 8 }
+0x829f75b8 = { size = 8 }
+0x82a2feb0 = { size = 124 }
+0x82b00a80 = { size = 16 }
+0x82c9dd20 = { size = 48 }
+0x82c9dd50 = { size = 8 }
+0x82c9dd98 = { size = 8 }
+0x82c9de38 = { size = 24 }
+0x82ce9bd8 = { size = 4 }
+0x82dad3b8 = { size = 144 }
+0x82e2e628 = { size = 136 }
+0x82e2e740 = { size = 136 }

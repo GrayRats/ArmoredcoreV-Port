@@ -1,0 +1,66 @@
+diff --color -ru -x bin -x obj soulsformats_src/SoulsFormats/Formats/FLVER/LayoutMember.cs sf_probe/SoulsFormats/Formats/FLVER/LayoutMember.cs
+--- soulsformats_src/SoulsFormats/Formats/FLVER/LayoutMember.cs	2026-10-22 04:26:52.823681498 +0500
++++ sf_probe/SoulsFormats/Formats/FLVER/LayoutMember.cs	2026-10-22 04:36:28.375287272 +0500
+@@ -9,6 +9,9 @@
+         /// </summary>
+         public class LayoutMember
+         {
++            public static int ProbeMaxBoneIndex = -1;
++            public static System.Collections.Generic.List<byte[]> Unk14Samples = new System.Collections.Generic.List<byte[]>();
++            public static int ProbeUnk14Size = int.Parse(System.Environment.GetEnvironmentVariable("ACV_UNK14_SIZE") ?? "4");
+             /// <summary>
+             /// Unknown; 0, 1, or 2.
+             /// </summary>
+@@ -40,6 +43,8 @@
+                     {
+                         case LayoutType.EdgeCompressed:
+                             return 1;
++                        case LayoutType.Unk14:
++                            return ProbeUnk14Size;
+ 
+                         case LayoutType.Byte4A:
+                         case LayoutType.Byte4B:
+@@ -180,6 +185,7 @@
+             /// Unknown but appears to be another form of edge compression; not actually supported.
+             /// </summary>
+             EdgeCompressed = 0xF0,
++            Unk14 = 0x14,
+         }
+ 
+         /// <summary>
+diff --color -ru -x bin -x obj soulsformats_src/SoulsFormats/Formats/FLVER/Vertex.cs sf_probe/SoulsFormats/Formats/FLVER/Vertex.cs
+--- soulsformats_src/SoulsFormats/Formats/FLVER/Vertex.cs	2026-10-22 04:26:52.823681498 +0500
++++ sf_probe/SoulsFormats/Formats/FLVER/Vertex.cs	2026-10-22 04:36:28.375196299 +0500
+@@ -113,6 +113,16 @@
+             {
+                 foreach (LayoutMember member in layout)
+                 {
++                    if (member.Type == LayoutType.Unk14)
++                    {
++                        var unk14 = br.ReadBytes(LayoutMember.ProbeUnk14Size);
++                        if (member.Semantic == LayoutSemantic.Tangent)
++                        {
++                            // Measured encoding: byte0 = bitangent sign (+/-127), bytes1..3 = xyz, sbyte/127 each.
++                            Tangents.Add(new System.Numerics.Vector4((sbyte)unk14[1] / 127f, (sbyte)unk14[2] / 127f, (sbyte)unk14[3] / 127f, (sbyte)unk14[0] / 127f));
++                        }
++                        continue;
++                    }
+                     if (member.Semantic == LayoutSemantic.Position)
+                     {
+                         if (member.Type == LayoutType.Float3)
+@@ -173,6 +183,15 @@
+                             for (int i = 0; i < 4; i++)
+                                 BoneIndices[i] = br.ReadByte();
+                         }
++                        else if (member.Type == LayoutType.Short2toFloat2)
++                        {
++                            // Probe hypothesis: the 4 bytes are four bone indices (like Byte4B/Byte4E).
++                            for (int i = 0; i < 4; i++)
++                            {
++                                BoneIndices[i] = br.ReadByte();
++                                if (BoneIndices[i] > LayoutMember.ProbeMaxBoneIndex) LayoutMember.ProbeMaxBoneIndex = BoneIndices[i];
++                            }
++                        }
+                         else
+                             throw new NotImplementedException($"Read not implemented for {member.Type} {member.Semantic}.");
+                     }
