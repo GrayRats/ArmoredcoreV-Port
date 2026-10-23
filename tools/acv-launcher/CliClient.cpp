@@ -27,11 +27,14 @@ QString CliClient::probeScript() const { return m_root + "/tools/native-rexglue/
 QString CliClient::cliScript() const { return m_root + "/tools/native-rexglue/acv_profile_cli.py"; }
 
 QStringList CliClient::sessionArguments(const QString &profileUuid, const QString &settingsFile,
-                                        bool allowExperimental) const {
+                                        bool allowExperimental, const QString &executable,
+                                        const QString &videoDriver) const {
     QStringList args{"-I", probeScript(), "--session", "--profile", profileUuid,
                      "--profiles-root", m_profiles};
     if (!settingsFile.isEmpty()) args << "--settings" << settingsFile;
     if (allowExperimental) args << "--allow-experimental";
+    if (!executable.isEmpty()) args << "--executable" << executable;
+    if (!videoDriver.isEmpty() && videoDriver != "auto") args << "--video-driver" << videoDriver;
     return args;
 }
 

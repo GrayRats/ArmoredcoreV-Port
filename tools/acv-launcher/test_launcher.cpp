@@ -1,4 +1,5 @@
 #include <QJsonObject>
+#include <QComboBox>
 #include <QLabel>
 #include <QProcess>
 #include <QPushButton>
@@ -40,7 +41,7 @@ private slots:
         QVERIFY(root.isValid());
         const QString tools = root.path() + "/tools/native-rexglue";
         QVERIFY(QDir().mkpath(tools));
-        for (const char *f : {"acv_profile_cli.py", "acv_profiles.py", "acv_settings.py"})
+        for (const char *f : {"acv_profile_cli.py", "acv_profiles.py", "acv_settings.py", "acv_shm.py"})
             QVERIFY(QFile::copy(QString(NATIVE_DIR) + "/" + f, tools + "/" + f));
         const QString argvFile = root.path() + "/argv.txt";
         QFile probe(tools + "/probe_linux.py");
@@ -53,6 +54,16 @@ private slots:
         exitCode.write("0");
         exitCode.close();
 
+        // A usable build and game data, as the launcher requires before enabling Play.
+        const QString build = root.path() + "/tmp/acv-rexglue-linux-indexed/out/build/linux-release";
+        QVERIFY(QDir().mkpath(build));
+        QVERIFY(QDir().mkpath(root.path() + "/tmp/iso_root"));
+        for (const QString &f : {build + "/acv_linux_probe", build + "/librexruntime.so",
+                                 root.path() + "/tmp/iso_root/default.xex"}) {
+            QFile file(f);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("x");
+        }
         qputenv("ACV_ROOT", root.path().toUtf8());
         const QString profiles = root.path() + "/profiles-root";
         CliClient cli(root.path(), profiles);
@@ -65,6 +76,12 @@ private slots:
         auto *play = window.findChild<QPushButton *>("play");
         auto *state = window.findChild<QLabel *>("state");
         QTRY_VERIFY_WITH_TIMEOUT(play->isEnabled(), 10000);
+        QVERIFY(window.findChild<QPushButton *>("stop") != nullptr);
+        QVERIFY(!window.findChild<QPushButton *>("stop")->isEnabled());  // nothing to stop yet
+        auto *preset = window.findChild<QComboBox *>("preset");
+        QVERIFY(preset != nullptr);
+        preset->setCurrentIndex(preset->findData("quality"));
+        emit preset->activated(preset->currentIndex());  // user-driven selection applies the preset
         QTest::mouseClick(play, Qt::LeftButton);
         QTRY_COMPARE_WITH_TIMEOUT(state->text(), QString("Игра завершена"), 10000);
         QTRY_VERIFY(play->isEnabled());
@@ -79,6 +96,8 @@ private slots:
         const auto doc = QJsonDocument::fromJson(settings.readAll()).object();
         QCOMPARE(doc.value("schema_version").toInt(), 1);
         QCOMPARE(doc.value("graphics").toObject().value("fps_limit").toInt(), 60);
+        QCOMPARE(doc.value("graphics").toObject().value("anisotropy").toInt(), 16);  // from the Quality preset
+        QCOMPARE(doc.value("graphics").toObject().value("dither").toBool(), true);
 
         // A failing start (e.g. profile busy, exit 2) reports the error and leaves Play usable.
         QVERIFY(exitCode.open(QIODevice::WriteOnly | QIODevice::Truncate));

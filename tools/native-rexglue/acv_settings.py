@@ -7,6 +7,7 @@ choice -> per-launch overrides. Unsupported values are rejected, never clamped s
 import configparser, copy, json, os, re, tempfile, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from pathlib import Path
 
 SCHEMA_VERSION = 1
 
@@ -22,7 +23,8 @@ GRAPHICS_SCHEMA = {
     "anisotropy": ("game", ("game", "off", 2, 4, 8, 16)),
     "antialiasing": ("off", ("off", "fxaa", "fxaa_extreme")),
     "dither": (False, (True, False)),
-    "output_effect": ("bilinear", ("bilinear",)),
+    "sharpness": ("default", ("default", 0.0, 0.25, 0.5, 0.75, 1.0)),
+    "output_effect": ("bilinear", ("bilinear", "cas", "fsr", "fsr2", "fsr3")),
     "color_encoding": ("rgb_full", ("rgb_full", "ycbcr444", "ycbcr422", "ycbcr420")),
     "color_depth": (8, (8, 10)),
 }
@@ -39,11 +41,15 @@ _UNAVAILABLE = {
     ("color_encoding", "ycbcr422"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
     ("color_encoding", "ycbcr420"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
     ("color_depth", 10): "10-bit swapchain path is not implemented in the runtime",
+    ("output_effect", "fsr2"): "temporal FSR needs verified motion vectors, depth and frame history",
+    ("output_effect", "fsr3"): "temporal FSR needs verified motion vectors, depth and frame history",
 }
 _EXPERIMENTAL = {
     ("render_scale", 2): "SDK scale support depends on device limits; not verified for ACV",
     ("render_scale", 3): "SDK scale support depends on device limits; not verified for ACV",
     ("render_scale", 4): "SDK scale support depends on device limits; not verified for ACV",
+    ("output_effect", "cas"): "needs a runtime built with REXGLUE_ENABLE_FIDELITYFX; visual result not verified",
+    ("output_effect", "fsr"): "needs a runtime built with REXGLUE_ENABLE_FIDELITYFX; visual result not verified",
     ("antialiasing", "fxaa"): "final-pass FXAA is not verified against the ACV HUD",
     ("antialiasing", "fxaa_extreme"): "final-pass FXAA is not verified against the ACV HUD",
 }
@@ -151,6 +157,17 @@ def rename_profile(profile, display_name):
     return renamed.validate()
 
 
+def set_names(profile, gamertag=None, pilot_name=None):
+    """Change gamertag and/or pilot name only; UUID and XUID (the save owner) stay. A pilot name
+    already written inside a save is not rewritten by this."""
+    changed = copy.copy(profile)
+    if gamertag is not None:
+        changed.gamertag = gamertag
+    if pilot_name is not None:
+        changed.pilot_name = pilot_name
+    return changed.validate()
+
+
 def migrate_legacy_config(path):
     """Build a profile from an existing acv.config [profile] section without touching the file."""
     parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
@@ -209,9 +226,35 @@ def runtime_env(profile):
     return {"ACV_PILOT_NAME": profile.pilot_name, "ACV_GAMERTAG": profile.gamertag}
 
 
-def graphics_to_cvars(values, allow_experimental=False):
+def dedupe_options(options):
+    """The SDK's CLI parser rejects a repeated --key: the whole cvar parse fails and every option,
+    including --gpu_plugin, is dropped (seen 2026-10-24 with a doubled --user_language).
+    Keep the last occurrence, because later layers outrank earlier ones."""
+    last = {}
+    for index, option in enumerate(options):
+        if option.startswith("--"):
+            last[option.split("=", 1)[0]] = index
+    return [o for i, o in enumerate(options) if not o.startswith("--") or last[o.split("=", 1)[0]] == i]
+
+
+def runtime_features(directory):
+    """Features of the libraries staged in `directory`, found by their cvar/env names."""
+    wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness"),
+              "librexgpu-xenos.so": ("frame_limit_fps",)}
+    found = set()
+    for library, names in wanted.items():
+        path = Path(directory) / library
+        data = path.read_bytes() if path.is_file() else b""
+        found.update(name for name in names if name.encode() in data)
+    if "cas_additional_sharpness" in found:  # cvar exists only when REX_HAS_FIDELITYFX_SDK is compiled in
+        found.add("fidelityfx")
+    return found
+
+
+def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
     """Translate resolved graphics settings into SDK --cvar=value arguments.
-    Unavailable values raise; experimental ones need allow_experimental."""
+    Unavailable values raise; experimental ones need allow_experimental.
+    `features` names runtime capabilities (e.g. "frame_limit_fps") detected in the staged runtime."""
     values = resolve_graphics(values)
     for key, value in values.items():
         if (key, value) in _UNAVAILABLE:
@@ -225,6 +268,15 @@ def graphics_to_cvars(values, allow_experimental=False):
             f"--anisotropic_override={_ANISO_CVAR[values['anisotropy']]}",
             f"--swap_post_effect={'none' if values['antialiasing'] == 'off' else values['antialiasing']}",
             f"--present_dither={str(values['dither']).lower()}"]
+    if values["output_effect"] != "bilinear":
+        if "fidelityfx" not in features:
+            raise SettingsError(f"output_effect={values['output_effect']!r} needs a FidelityFX-enabled runtime")
+        args.append(f"--present_effect={values['output_effect']}")
+        if values["output_effect"] == "cas" and values["sharpness"] != "default":
+            args.append(f"--present_cas_additional_sharpness={values['sharpness']}")
+    if "frame_limit_fps" in features:
+        # Only 60 can be selected (see _UNAVAILABLE); pacing keeps VSync-off from running the game fast.
+        args.append(f"--frame_limit_fps={values['fps_limit']}")
     if values["resolution"] != "auto":
         args.append(f"--resolution={values['resolution']}")
     return args

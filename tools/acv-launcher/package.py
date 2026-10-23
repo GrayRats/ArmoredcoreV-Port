@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = ROOT / "tools/native-rexglue"
 BUILD = ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release"
-TOOL_FILES = ["RUNTIME_BASELINE.json", "probe_linux.py", "acv_settings.py", "acv_profiles.py", "acv_profile_cli.py",
+TOOL_FILES = ["RUNTIME_BASELINE.json", "acv_shm.py", "probe_linux.py", "acv_settings.py", "acv_profiles.py", "acv_profile_cli.py",
               "acv.config", "input-profile.json"]
 
 ap = argparse.ArgumentParser()

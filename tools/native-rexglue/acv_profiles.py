@@ -122,6 +122,12 @@ class ProfileStore:
         s.save_profile(self.root, profile)
         return profile
 
+    def set_names(self, profile_uuid, gamertag=None, pilot_name=None):
+        with self.lock(profile_uuid):  # not while the game runs: the runtime reads names at start
+            profile = s.set_names(self.get(profile_uuid), gamertag, pilot_name)
+            s.save_profile(self.root, profile)
+        return profile
+
     def lock(self, profile_uuid):
         return ProfileLock(self._dir(profile_uuid))
 

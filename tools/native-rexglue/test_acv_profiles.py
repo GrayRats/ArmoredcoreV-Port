@@ -90,6 +90,15 @@ class StoreTests(unittest.TestCase):
         with self.store.lock(a.uuid):
             pass
 
+    def test_set_names_keeps_identity(self):
+        a = self.store.create("A")
+        b = self.store.set_names(a.uuid, gamertag="NEW", pilot_name="Pilot X")
+        self.assertEqual((b.uuid, b.xuid, b.display_name), (a.uuid, a.xuid, a.display_name))
+        self.assertEqual(self.store.get(a.uuid).gamertag, "NEW")
+        with self.assertRaises(s.SettingsError):
+            self.store.set_names(a.uuid, gamertag="x" * 16)
+        self.assertEqual(self.store.get(a.uuid).gamertag, "NEW")
+
     def test_import(self):
         a = self.store.create("A")
         with tempfile.TemporaryDirectory() as src:

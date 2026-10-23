@@ -22,7 +22,8 @@ public:
     QString cliScript() const;
     // Argument list for a normal play session; never joined into a shell string.
     QStringList sessionArguments(const QString &profileUuid, const QString &settingsFile,
-                                 bool allowExperimental) const;
+                                 bool allowExperimental, const QString &executable = {},
+                                 const QString &videoDriver = {}) const;
 
     void run(const QStringList &cliArguments, Callback callback);
 

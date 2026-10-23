@@ -33,6 +33,34 @@ class CvarTests(unittest.TestCase):
                      "--swap_post_effect=fxaa"):
             self.assertIn(want, a)
 
+    def test_limiter_only_with_runtime_support(self):
+        self.assertFalse(any(a.startswith("--frame_limit_fps") for a in s.graphics_to_cvars({})))
+        self.assertIn("--frame_limit_fps=60", s.graphics_to_cvars({"vsync": False}, features={"frame_limit_fps"}))
+
+    def test_dedupe_keeps_last_value(self):
+        self.assertEqual(s.dedupe_options(["--a=1", "--user_language=1", "--b", "--user_language=2", "x"]),
+                         ["--a=1", "--b", "--user_language=2", "x"])
+
+    def test_runtime_features_detected_from_libraries(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(s.runtime_features(d), set())
+            (Path(d) / "librexruntime.so").write_bytes(b"\0cas_additional_sharpness\0ACV_XUID\0")
+            (Path(d) / "librexgpu-xenos.so").write_bytes(b"frame_limit_fps")
+            self.assertEqual(s.runtime_features(d), {"ACV_XUID", "cas_additional_sharpness", "fidelityfx", "frame_limit_fps"})
+
+    def test_output_effect_needs_fidelityfx_runtime(self):
+        with self.assertRaises(s.SettingsError):
+            s.graphics_to_cvars({"output_effect": "cas"}, allow_experimental=True)
+        a = s.graphics_to_cvars({"output_effect": "fsr"}, True, {"fidelityfx"})
+        self.assertIn("--present_effect=fsr", a)
+        with self.assertRaises(s.SettingsError):
+            s.graphics_to_cvars({"output_effect": "fsr2"}, True, {"fidelityfx"})
+        a = s.graphics_to_cvars({"output_effect": "cas", "sharpness": 0.5}, True, {"fidelityfx"})
+        self.assertIn("--present_cas_additional_sharpness=0.5", a)
+        self.assertNotIn("--present_effect=bilinear", s.graphics_to_cvars({}, features={"fidelityfx"}))
+
     def test_unavailable_and_experimental_rejected(self):
         for bad in ({"fps_limit": 144}, {"color_encoding": "ycbcr420"}, {"color_depth": 10}):
             with self.assertRaises(s.SettingsError):

@@ -1,0 +1,90 @@
+diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
+index b52bf39..5d853f1 100644
+--- a/src/core/memory_posix.cpp
++++ b/src/core/memory_posix.cpp
+@@ -483,6 +483,9 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
+     shm_unlink(full_path.c_str());
+     return kFileMappingHandleInvalid;
+   }
++  // The name is only needed to create the object: all later access uses the descriptor. Unlink it
++  // now so a hard exit (_exit, crash, SIGKILL) cannot leave a multi-GB file behind in /dev/shm.
++  shm_unlink(full_path.c_str());
+   return static_cast<FileMappingHandle>(ret);
+ #endif
+ }
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index a744375..726f457 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -12,6 +12,7 @@
+ #include <algorithm>
+ #include <cinttypes>
+ #include <cmath>
++#include <chrono>
+ #include <cstring>
+ #include <string_view>
+ 
+@@ -37,6 +38,12 @@
+ 
+ REXCVAR_DEFINE_BOOL(vsync, true, "GPU", "Enable vertical sync");
+ 
++REXCVAR_DEFINE_INT32(frame_limit_fps, 0, "GPU",
++                     "Cap presented guest frames per second by pacing swaps (0 = off). "
++                     "Paces the swap only; guest timestep is not changed.")
++    .range(0, 1000)
++    .lifecycle(rex::cvar::Lifecycle::kHotReload);
++
+ REXCVAR_DEFINE_BOOL(clear_memory_page_state, true, "GPU",
+                     "Refresh page-valid state from GPU-written memory at frame end. "
+                     "Disable for minor CPU overhead reduction, but may break memory coherency.")
+@@ -958,6 +965,20 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
+   uint32_t frontbuffer_height = reader->ReadAndSwap<uint32_t>();
+   reader->AdvanceRead((count - 4) * sizeof(uint32_t));
+ 
++  if (const int32_t limit = REXCVAR_GET(frame_limit_fps); limit > 0) {
++    // Absolute-deadline pacing: sleeping to a schedule (not for a fixed delay) keeps the average
++    // rate exact. After a long stall the schedule restarts instead of bursting to catch up.
++    static std::chrono::steady_clock::time_point next_swap;
++    const auto period = std::chrono::nanoseconds(1000000000LL / limit);
++    const auto now = std::chrono::steady_clock::now();
++    if (next_swap < now - period) {
++      next_swap = now;
++    } else if (next_swap > now) {
++      rex::thread::Sleep(std::chrono::duration_cast<std::chrono::microseconds>(next_swap - now));
++    }
++    next_swap += period;
++  }
++
+   IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);
+ 
+   ++counter_;
+diff --git a/src/system/xam/user_profile.cpp b/src/system/xam/user_profile.cpp
+index a77f5e6..c725fb9 100644
+--- a/src/system/xam/user_profile.cpp
++++ b/src/system/xam/user_profile.cpp
+@@ -17,6 +17,9 @@
+ #include <rex/system/kernel_state.h>
+ #include <rex/system/xam/user_profile.h>
+ 
++#include <cstdlib>
++#include <cstring>
++
+ namespace rex {
+ namespace system {
+ namespace xam {
+@@ -26,6 +29,15 @@ UserProfile::UserProfile() {
+   // if non-zero, it prevents the user from playing the game.
+   // "You do not have permissions to perform this operation."
+   xuid_ = 0xB13EBABEBABEBABE;
++  // ACV launcher: stable per-profile XUID as 16 hex digits. The mask check above still applies, so
++  // values with bits in 0x00C0000000000000 set are rejected and the default is kept.
++  if (const char* env = std::getenv("ACV_XUID"); env != nullptr && std::strlen(env) == 16) {
++    char* end = nullptr;
++    const uint64_t value = std::strtoull(env, &end, 16);
++    if (*end == '\0' && (value & 0x00C0000000000000ull) == 0) {
++      xuid_ = value;
++    }
++  }
+   name_ = "User";
+ 
+   // https://cs.rin.ru/forum/viewtopic.php?f=38&t=60668&hilit=gfwl+live&start=195

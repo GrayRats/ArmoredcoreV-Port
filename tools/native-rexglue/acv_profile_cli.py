@@ -4,6 +4,7 @@ import argparse, dataclasses, json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import acv_profiles as P
+import acv_shm
 import acv_settings as S
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +16,16 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
     sub.add_parser("capabilities")
+    sub.add_parser("shm-status")
+    sub.add_parser("shm-clean", help="remove orphaned xenia_memory_* files not mapped by a live process")
+    ft = sub.add_parser("features", help="runtime features of a staged build")
+    ft.add_argument("--executable", type=Path)
+    sn = sub.add_parser("set-names"); sn.add_argument("uuid")
+    sn.add_argument("--gamertag"); sn.add_argument("--pilot")
+    ck = sub.add_parser("check", help="validate saved settings against a build before launching")
+    ck.add_argument("--settings", type=Path, required=True)
+    ck.add_argument("--executable", type=Path)
+    ck.add_argument("--allow-experimental", action="store_true")
     c = sub.add_parser("create"); c.add_argument("name"); c.add_argument("--gamertag"); c.add_argument("--pilot")
     r = sub.add_parser("rename"); r.add_argument("uuid"); r.add_argument("name")
     m = sub.add_parser("migrate-legacy", help="create a profile from acv.config [profile], optionally importing a user_data_root")
@@ -27,7 +38,26 @@ def main(argv=None):
     a = ap.parse_args(argv)
     store = P.ProfileStore(a.profiles_root.resolve())
     try:
-        if a.cmd == "capabilities":
+        if a.cmd == "shm-status":
+            out = acv_shm.status()
+        elif a.cmd == "shm-clean":
+            removed = acv_shm.clean()
+            out = {"removed": len(removed), "freed_bytes": sum(r["allocated"] for r in removed)}
+        elif a.cmd == "features":
+            exe = a.executable or ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe"
+            data = exe.parent / "librexruntime.so"
+            out = {"executable": str(exe), "exists": exe.is_file(),
+                   "features": sorted(S.runtime_features(exe.parent)),
+                   "runtime_sha256": P._digest(data) if data.is_file() else None,
+                   "game_data": (ROOT / "tmp/iso_root/default.xex").is_file()}
+        elif a.cmd == "set-names":
+            out = dataclasses.asdict(store.set_names(a.uuid, a.gamertag, a.pilot))
+        elif a.cmd == "check":
+            exe_dir = a.executable.parent if a.executable else ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release"
+            saved = S.load_json(a.settings, "settings")
+            S.graphics_to_cvars(saved.get("graphics", {}), a.allow_experimental, S.runtime_features(exe_dir))
+            out = {"ok": True}
+        elif a.cmd == "capabilities":
             out = S.capabilities()
         elif a.cmd == "list":
             out = [dataclasses.asdict(p) for p in store.list()]

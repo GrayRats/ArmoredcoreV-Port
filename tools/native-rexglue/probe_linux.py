@@ -125,11 +125,12 @@ input_options = ["--"+name+"="+(str(value).lower() if isinstance(value, bool) el
 compatibility_options = (["--protect_zero=false", "--render_target_path_vulkan=fsi",
                           "--readback_resolve=full"]
                          if args.graphics_profile == "acv-fsi" else [])
+features = acv_settings.runtime_features(exe.parent)
 settings_options = []
 if args.settings:
     try:
         saved = acv_settings.load_json(args.settings, "settings")
-        settings_options = acv_settings.graphics_to_cvars(saved.get("graphics", {}), args.allow_experimental)
+        settings_options = acv_settings.graphics_to_cvars(saved.get("graphics", {}), args.allow_experimental, features)
     except (acv_settings.SettingsError, OSError, ValueError) as error:
         parser.error(f"--settings: {error}")
 profile_options = [f"--user_language={selected_profile.language}"] if selected_profile else []
@@ -137,7 +138,9 @@ command = [str(exe), "--game_data_root="+str(game), "--user_data_root="+str(user
            "--cache_root="+str(cache_dir or user / "cache"), "--gpu_plugin=xenos",
            "--log_file="+str(output / "runtime.log"), "--log_level="+args.log_level,
            *input_options, *compatibility_options, *config_sdk_options, *profile_options, *settings_options, *args.extra]
+command = [command[0], *acv_settings.dedupe_options(command[1:])]
 report = {"scope": "bounded native launch; duration/alive alone does not establish boot, graphics or gameplay", "command": command, "binary_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(), "duration_limit_seconds": None if args.session else args.seconds, "user_root": str(user)}
+report["runtime_features"] = sorted(features)
 report["settings_file"] = str(args.settings) if args.settings else None
 report["settings_cvars"] = settings_options
 report["controls"] = args.controls
@@ -168,14 +171,19 @@ for variable, option in (("ACV_PILOT_NAME", "pilot_name"), ("ACV_GAMERTAG", "gam
         env[variable] = value
 if selected_profile:
     env.update(acv_settings.runtime_env(selected_profile))
-    # The pinned runtime fixes the guest XUID (SDK user_profile.cpp:28); saves are isolated by the
-    # per-profile user_data_root instead. The profile XUID is recorded but not applied.
+    # Runtimes without ACV_XUID support keep the SDK XUID; saves stay isolated by user_data_root.
+    if "ACV_XUID" in features:
+        env["ACV_XUID"] = selected_profile.xuid
     report["profile"] = {"uuid": selected_profile.uuid, "profile_xuid": selected_profile.xuid,
-                         "runtime_xuid": "B13EBABEBABEBABE"}
+                         "runtime_xuid": selected_profile.xuid if "ACV_XUID" in features else "B13EBABEBABEBABE"}
 report["config"] = {"file": str(args.config), "sha256": hashlib.sha256(config_bytes).hexdigest(),
                     "sdk_options": config_sdk_options,
                     "pilot_name": env.get("ACV_PILOT_NAME"), "gamertag": env.get("ACV_GAMERTAG")}
 video_driver = args.video_driver
+if video_driver == "auto" and not env.get("SDL_VIDEODRIVER") and env.get("DISPLAY"):
+    # Wayland backend: the game window is never shown and ignores close (no frame is presented);
+    # X11/XWayland works (observed 2026-10-24). Pass --video-driver wayland to override.
+    video_driver = "x11"
 if video_driver == "auto" and args.renderdoc:
     # RenderDoc capture on this host filters VK_KHR_wayland_surface. SDL must
     # create an X11 window to match the remaining VK_KHR_xcb_surface support.
