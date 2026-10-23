@@ -9,7 +9,7 @@ LIMIT = 512 * 1024
 ALLOWED_ROOT = {'.gitignore','README.md','AGENTS.md','TASK-SQL.MD'}
 FORBIDDEN = {'node_modules','__pycache__','.venv','build','out','bin','obj','target','dist',
              'generated','thirdparty','third_party','vendor','logs','cache','temp','tmp',
-             'rexglue-sdk','XenonRecomp','XenosRecomp','360toolsUpdated','360tools-skill','ghidra-rpc-local','fine'}
+             'rexglue-sdk','XenonRecomp','XenosRecomp','360toolsUpdated','360tools-skill','ghidra-rpc-local'}
 SECRETS = [re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
            re.compile(rb'gh[pousr]_[A-Za-z0-9]{30,}'),
            re.compile(rb'github_pat_[A-Za-z0-9_]{60,}'),
@@ -22,9 +22,11 @@ for raw in paths:
     name=indexed_name.decode();p=Path(name);count+=1
     if mode.split()[0] not in {b'100644',b'100755'}:
         issues.append((name,'not a regular source file'));continue
-    if name not in ALLOWED_ROOT and p.parts[0] not in {'tools','scripts','docs'}:
+    if name not in ALLOWED_ROOT and p.parts[0] not in {'tools','scripts','docs','fine'}:
         issues.append((name,'outside allowed source directories'))
     if any(part in FORBIDDEN for part in p.parts):issues.append((name,'excluded directory'))
+    if p.parts[0]=='fine' and (len(p.parts)!=2 or p.suffix.lower()!='.md'):
+        issues.append((name,'fine/ may contain only root-level Markdown reports'))
     if p.is_symlink():issues.append((name,'symlink'));continue
     data=subprocess.check_output(['git','show',':'+name]);total+=len(data)
     if len(data)>largest[1]:largest=(name,len(data))
