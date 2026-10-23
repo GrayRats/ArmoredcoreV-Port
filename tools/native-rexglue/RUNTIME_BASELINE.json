@@ -1,0 +1,42 @@
+{
+  "recorded_utc": "20261023T224447Z",
+  "project": {
+    "branch": "main",
+    "head": "6ff7c7cdd86005108b0cced39fa77b976e627a7e",
+    "subject": "Plan ACV profiles saves and Qt LTS launcher"
+  },
+  "rexglue_sdk": {
+    "head": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
+    "describe": "Release v0.10.0",
+    "working_diff_sha256": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
+    "working_diff_files": [
+      "include/rex/graphics/vulkan/command_processor.h",
+      "src/graphics/pipeline/shader/spirv_translator_fetch.cpp",
+      "src/graphics/vulkan/command_processor.cpp",
+      "src/graphics/vulkan/shared_memory.cpp",
+      "src/kernel/xam/xam_ui.cpp"
+    ],
+    "reproducible_patches": {
+      "keyboard-dialog-utf8-boundaries.patch": "9ef2a52520bc12af91bb7e87a160c336a9e24e9e27ae7ea1a88a3be395d79c35",
+      "resolve-readback-completion.patch": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
+      "shared-memory-compute-write.patch": "cfee8c7da6c29a8c282226d6537f996f40b0087e1993d7459753324c060564f7",
+      "texture-fetch-exponent-word.patch": "c712d3ad8752ad365d8596429426b4556fc92158ce965b7ba2fc5c4954d11bfb"
+    }
+  },
+  "runtime_artifacts": {
+    "librexruntime.so": {
+      "source": "tmp/acv-gpu-lifetime/librexruntime.so",
+      "sha256": "fa27bc225e91aa96224fb0380d0b8fdc442362ec36bae84d7d0d3427c2529ddc"
+    },
+    "librexgpu-xenos.so": {
+      "source": "tmp/acv-gpu-lifetime/librexgpu-xenos.so",
+      "sha256": "78231562bdd4fb268d8ac94185e893d9eaa10111c01be7c8496e0ff6c6d055bc"
+    },
+    "acv_linux_probe": {
+      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
+      "sha256": "2d112d64471913c64c88d127aa83f81a84a612ad06989f6a4cb0e3e2056c5aeb"
+    }
+  },
+  "backup_dir": "tmp/acv-backups/20261023T224447Z",
+  "restore": "git apply rexglue-sdk-working.diff on SDK c94f5eb; copy artifacts/* back to their source paths"
+}

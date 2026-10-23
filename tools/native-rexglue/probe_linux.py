@@ -3,6 +3,8 @@
 import argparse, collections, configparser, datetime, hashlib, json, os, re, signal, subprocess, sys, threading
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import acv_profiles, acv_settings
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--executable", type=Path, default=ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe")
 parser.add_argument("--seconds", type=int, default=60)
@@ -31,6 +33,16 @@ parser.add_argument("--graphics-profile", choices=("acv-fsi", "sdk"), default="a
                     help="ACV compatibility defaults (FSI, protect_zero=false), or unmodified SDK defaults; --extra overrides")
 parser.add_argument("--user-root", type=Path,
                     help="optional persistent profile directory inside workspace tmp/")
+parser.add_argument("--profile", metavar="UUID",
+                    help="persistent profile from --profiles-root: its own user_data_root, cache, XUID and names; locked while running")
+parser.add_argument("--profiles-root", type=Path, default=ROOT / "tmp/acv-user-data",
+                    help="profile store root inside workspace tmp/")
+parser.add_argument("--settings", type=Path,
+                    help="launcher settings JSON (schema_version 1, \"graphics\" object); validated by acv_settings.py")
+parser.add_argument("--allow-experimental", action="store_true",
+                    help="permit settings marked experimental in acv_settings.capabilities()")
+parser.add_argument("--session", action="store_true",
+                    help="normal play session: no time limit (--seconds is ignored); the exit code is the game's")
 parser.add_argument("--screenshot-every", type=int, default=0,
                     help="deprecated; only 0 is accepted (analysis screenshots disabled)")
 args = parser.parse_args()
@@ -60,7 +72,11 @@ if args.renderdoc_frames is None:
     args.renderdoc_frames = config.getint("capture", "renderdoc_frames", fallback=1)
 if not 1 <= args.renderdoc_frames <= 8:
     parser.error("[capture] renderdoc_frames must be 1..8")
-if not 1 <= args.seconds <= 300:
+if args.session and args.seconds != 60:
+    parser.error("--session has no time limit; do not combine it with --seconds")
+if args.profile and args.user_root:
+    parser.error("--profile and --user-root are mutually exclusive")
+if not args.session and not 1 <= args.seconds <= 300:
     parser.error("Probe duration must be 1..300 seconds")
 exe = args.executable.resolve()
 if not exe.is_relative_to(ROOT / "tmp") or not exe.is_file():
@@ -75,10 +91,29 @@ if hashlib.sha256(xex.read_bytes()).hexdigest() != "4fac87348f827e84633013375012
 run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 output = ROOT / "logs/acv-native-linux" / run_id
 output.mkdir(parents=True, exist_ok=False)
-user = args.user_root.resolve() if args.user_root else ROOT / "tmp/acv-native-linux-user" / run_id
+profile_lock = None
+selected_profile = None
+cache_dir = None
+if args.profile:
+    store_root = args.profiles_root.resolve()
+    if not store_root.is_relative_to(ROOT / "tmp"):
+        parser.error("Profile store must remain inside workspace tmp/")
+    store = acv_profiles.ProfileStore(store_root)
+    try:
+        selected_profile = store.get(args.profile)
+        profile_lock = store.lock(args.profile).acquire()
+    except (acv_settings.SettingsError, OSError, ValueError) as error:
+        parser.error(f"profile {args.profile}: {error}")
+    except acv_profiles.ProfileBusy as error:
+        parser.error(str(error))
+    user = store.userdata(args.profile)
+    cache_dir = store.cache(args.profile)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+else:
+    user = args.user_root.resolve() if args.user_root else ROOT / "tmp/acv-native-linux-user" / run_id
 if not user.is_relative_to(ROOT / "tmp"):
     parser.error("User profile must remain inside workspace tmp/")
-user.mkdir(parents=True, exist_ok=bool(args.user_root))
+user.mkdir(parents=True, exist_ok=bool(args.user_root or args.profile))
 profile = json.loads((ROOT / "tools/native-rexglue/input-profile.json").read_text())
 if args.controls == "gamepad":
     profile = {"mnk_mode": False, "mnk_mouse": False}
@@ -90,11 +125,21 @@ input_options = ["--"+name+"="+(str(value).lower() if isinstance(value, bool) el
 compatibility_options = (["--protect_zero=false", "--render_target_path_vulkan=fsi",
                           "--readback_resolve=full"]
                          if args.graphics_profile == "acv-fsi" else [])
+settings_options = []
+if args.settings:
+    try:
+        saved = acv_settings.load_json(args.settings, "settings")
+        settings_options = acv_settings.graphics_to_cvars(saved.get("graphics", {}), args.allow_experimental)
+    except (acv_settings.SettingsError, OSError, ValueError) as error:
+        parser.error(f"--settings: {error}")
+profile_options = [f"--user_language={selected_profile.language}"] if selected_profile else []
 command = [str(exe), "--game_data_root="+str(game), "--user_data_root="+str(user),
-           "--cache_root="+str(user / "cache"), "--gpu_plugin=xenos",
+           "--cache_root="+str(cache_dir or user / "cache"), "--gpu_plugin=xenos",
            "--log_file="+str(output / "runtime.log"), "--log_level="+args.log_level,
-           *input_options, *compatibility_options, *config_sdk_options, *args.extra]
-report = {"scope": "bounded native launch; duration/alive alone does not establish boot, graphics or gameplay", "command": command, "binary_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(), "duration_limit_seconds": args.seconds, "user_root": str(user)}
+           *input_options, *compatibility_options, *config_sdk_options, *profile_options, *settings_options, *args.extra]
+report = {"scope": "bounded native launch; duration/alive alone does not establish boot, graphics or gameplay", "command": command, "binary_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(), "duration_limit_seconds": None if args.session else args.seconds, "user_root": str(user)}
+report["settings_file"] = str(args.settings) if args.settings else None
+report["settings_cvars"] = settings_options
 report["controls"] = args.controls
 report["graphics_profile"] = args.graphics_profile
 env = dict(os.environ)
@@ -121,6 +166,12 @@ for variable, option in (("ACV_PILOT_NAME", "pilot_name"), ("ACV_GAMERTAG", "gam
     value = config.get("profile", option, fallback="").strip()
     if value:
         env[variable] = value
+if selected_profile:
+    env.update(acv_settings.runtime_env(selected_profile))
+    # The pinned runtime fixes the guest XUID (SDK user_profile.cpp:28); saves are isolated by the
+    # per-profile user_data_root instead. The profile XUID is recorded but not applied.
+    report["profile"] = {"uuid": selected_profile.uuid, "profile_xuid": selected_profile.xuid,
+                         "runtime_xuid": "B13EBABEBABEBABE"}
 report["config"] = {"file": str(args.config), "sha256": hashlib.sha256(config_bytes).hexdigest(),
                     "sdk_options": config_sdk_options,
                     "pilot_name": env.get("ACV_PILOT_NAME"), "gamertag": env.get("ACV_GAMERTAG")}
@@ -214,7 +265,7 @@ runtime_thread.start()
 for t in threads:
     t.start()
 try:
-    child.wait(timeout=args.seconds)
+    child.wait(timeout=None if args.session else args.seconds)
     report["limit_reached"] = False
 except subprocess.TimeoutExpired:
     report["limit_reached"] = True
@@ -236,6 +287,8 @@ report["runtime_error_counts"] = dict(runtime_error_counts)
 report["runtime_errors_truncated"] = report["runtime_error_count"] > len(runtime_errors)
 report["child_returncode"] = child.returncode
 report["runtime_errors"] = runtime_errors
+if profile_lock is not None:
+    profile_lock.release()
 (output / "launch.json").write_text(json.dumps(report,indent=2)+"\n")
 print(json.dumps({"evidence":str(output), "child_returncode":child.returncode, "duration_limit_reached":report["limit_reached"], "isError":bool(runtime_errors), "runtime_errors":runtime_errors}))
 # A bounded live process is an observation, not a successful-game assertion.
