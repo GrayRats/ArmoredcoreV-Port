@@ -1,6 +1,7 @@
 # ACV — короткий контекст продолжения
 
-Обновлено:2026-10-24. Очередь — [PLAN](PLAN.md), технические факты —
+Обновлено:2026-10-24. Очередь реализации — [PLAN_GUI](../PLAN_GUI.MD), краткий
+статус — [PLAN](PLAN.md), технические факты —
 [NATIVE](NATIVE_REXGLUE_LINUX.md), этапы — [PROGRESS](PROGRESS.md).
 
 - **Цель:** корректный native Linux gameplay. Пользователь разрешил исправления,
@@ -126,4 +127,4 @@ unavailable sound requests (four names absent from retail BHD5 and one literal
 `$(voicelang)` with no matching locale candidates) plus optional
 `system.properties`. The missing sound payloads are not in the current ISO.
 See [DLC/GPU audit](NATIVE_REXGLUE_LINUX.md#readback-eviction-lifetime-and-file-open-audit-2026-10-24),
-[queue](PLAN.md#следующие-действия-по-приоритету), and [progress](PROGRESS.md).
+[queue](../PLAN_GUI.MD), and [progress](PROGRESS.md).

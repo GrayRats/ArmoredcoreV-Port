@@ -3,10 +3,11 @@
 Applies to active docs; docs/fine is preserved historical material and is
 excluded from routine rewrites/optimization. Root AGENTS.md remains authoritative.
 
-- Begin with README.md and X360_PROJECT_STATE.md; choose one open PLAN.md item.
-  Do not create another plan, task list or chronological dump in a technical doc.
-- PLAN owns priorities/rules/acceptance; PROGRESS owns checked milestones and
-  limits; STATE owns only a short resume pointer. ARCHITECTURE owns boundaries,
+- Begin with README.md and X360_PROJECT_STATE.md; choose one open PLAN_GUI.MD item.
+  Do not create another task list or chronological dump in a technical doc.
+- PLAN_GUI.MD owns priorities and acceptance for the current launcher/profile
+  implementation; docs/PLAN.md is a compact native status index. PROGRESS owns
+  checked milestones and limits; STATE owns only a short resume pointer. ARCHITECTURE owns boundaries,
   technical documents own detailed claims and sources. README routes readers.
 - Read the relevant Vulkan API/reference skills for GPU work and Ghidra RPC skill
   for PPC/XEX work (absolute links in README/root AGENTS). Discover MCP/RPC

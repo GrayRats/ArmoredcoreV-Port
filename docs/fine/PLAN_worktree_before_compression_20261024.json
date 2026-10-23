@@ -1,0 +1,10 @@
+{
+  "source": "docs/PLAN.md worktree before compression",
+  "captured_at": "2026-10-24",
+  "bytes": 46312,
+  "sha256": "d7722bbcd176b0ee9b17a89f4e8fd61a2817eb6ae2c31c3b429d20e131f55f1d",
+  "head_commit": "3e0d997153191e3646124e00078b91c16cf65bd0",
+  "head_blob": "ec37a63c9f3bedcd6fd66e5208f1ba4c9a1e2474",
+  "captured_worktree_sha256": "37f19e6e13ff2f2b1d433aca455ecca013634c2aed387a115fae5e72ab4f8f07",
+  "normalization": "Trimmed trailing horizontal whitespace from historical snapshot; source hash retained."
+}

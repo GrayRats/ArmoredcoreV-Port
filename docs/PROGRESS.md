@@ -498,7 +498,7 @@ Non-headless SDK dialog и tutorial glyphs остаются отдельными
 Далее остаются замер frame-time/FPS и p95/p99 с full Resolve; реальный ввод и
 камера, non-headless keyboard UI и tutorial glyphs; DLC/VFS и корректность
 lifetime освобождения GPU; save/load, переходы меню/миссия, звук и soak20–30min.
-Короткая очередь и критерии — в [PLAN](PLAN.md#следующие-действия-по-приоритету).
+Очередь реализации и критерии — в [PLAN_GUI](../PLAN_GUI.MD); краткий статус — [PLAN](PLAN.md).
 Evidence по текущему захвату: `logs/acv-gameplay-black-20261024/fixed-capture-neighbor-coverage.json`.
 
 Уточнение по draw309 из этого захвата: 3129 индексов, declared BC1 fetch
