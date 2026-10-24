@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 LIMIT = 512 * 1024
-ALLOWED_ROOT = {'.gitignore','README.md','AGENTS.md','TASK-SQL.MD','PLAN_GUI.MD'}
+ALLOWED_ROOT = {'.gitignore','README.md','AGENTS.md','TASK-SQL.MD','PLAN_GUI.MD','ABOUT_DE-AC5.MD','LICENSE'}
 FORBIDDEN = {'node_modules','__pycache__','.venv','build','out','bin','obj','target','dist',
              'generated','thirdparty','third_party','vendor','logs','cache','temp','tmp',
              'rexglue-sdk','XenonRecomp','XenosRecomp','360toolsUpdated','360tools-skill','ghidra-rpc-local'}
@@ -31,7 +31,7 @@ for raw in paths:
     data=subprocess.check_output(['git','show',':'+name]);total+=len(data)
     if len(data)>largest[1]:largest=(name,len(data))
     if len(data)>LIMIT:issues.append((name,'larger than 512 KiB'))
-    if b'\0' in data:issues.append((name,'binary data'))
+    if b'\0' in data and not (p.parts[:2]==('docs','images') and p.suffix.lower()=='.jpg'):issues.append((name,'binary data'))
     if any(pattern.search(data) for pattern in SECRETS):issues.append((name,'credential pattern'))
     if name=='tools/native-rexglue/acv.config':issues.append((name,'personal profile'))
 for name,reason in issues:print(f'{name}: {reason}',file=sys.stderr)

@@ -6,6 +6,9 @@
 
 *Static recompilation of Armored Core V (Xbox 360) into a native Linux port. Research project; no game data included.*
 
+![Сцена из игры на нативной Linux-сборке с Vulkan-рендером](docs/images/gameplay-vulkan.jpg)
+
+
 Репозиторий: <https://github.com/GrayRats/DEArmoredcoreV>
 
 > **Важно.** В репозитории нет игры: ни ISO, ни XEX, ни распакованных ресурсов, ни DLC.

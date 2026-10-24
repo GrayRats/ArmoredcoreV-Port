@@ -114,3 +114,7 @@
 **/*.exe
 **/.env*
 /tools/native-rexglue/acv.config
+
+# Project screenshots for README (JPEG only, see check_repository_payload.py).
+!/docs/images/
+!/docs/images/*.jpg
