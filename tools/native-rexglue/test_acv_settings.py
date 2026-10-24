@@ -29,13 +29,43 @@ class CvarTests(unittest.TestCase):
         self.assertNotIn("--resolution", " ".join(x.split("=")[0] for x in a if x == "--resolution"))
         a = s.graphics_to_cvars({"anisotropy": 16, "resolution": "2560x1080", "window_mode": "fullscreen",
                                  "antialiasing": "fxaa"}, allow_experimental=True)
-        for want in ("--anisotropic_override=5", "--resolution=2560x1080", "--fullscreen=true",
+        for want in ("--anisotropic_override=5", "--window_width=2560", "--window_height=1080", "--fullscreen=true",
                      "--swap_post_effect=fxaa"):
             self.assertIn(want, a)
+
+    def test_host_resolution_preserves_guest_mode_and_no_crop(self):
+        for resolution in ("1920x1200", "2560x1080", "3440x1440"):
+            args = s.graphics_to_cvars({"resolution": resolution})
+            self.assertIn("--resolution=1280x720", args)
+            self.assertIn("--present_letterbox=true", args)
+            self.assertIn("--present_safe_area_x=100", args)
+            self.assertIn("--present_safe_area_y=100", args)
+
+    def test_vsync_selects_fifo(self):
+        for enabled in (True, False):
+            args = s.graphics_to_cvars({"vsync": enabled})
+            for mode in ("immediate", "mailbox"):
+                self.assertIn(f"--vulkan_allow_present_mode_{mode}={str(not enabled).lower()}", args)
+            self.assertIn("--vulkan_allow_present_mode_fifo_relaxed=false", args)
+
+    def test_ten_bit_requires_patched_runtime_and_no_8bit_dither(self):
+        args = s.graphics_to_cvars({"color_depth": 10}, True, {"present_output_bits"})
+        self.assertIn("--present_output_bits=10", args)
+        with self.assertRaises(s.SettingsError):
+            s.graphics_to_cvars({"color_depth": 10, "dither": True}, True, {"present_output_bits"})
+
+    def test_fsr_sharpness_reaches_rcas(self):
+        args = s.graphics_to_cvars({"output_effect": "fsr", "fsr_sharpness": 1.5}, True, {"fidelityfx"})
+        self.assertIn("--present_fsr_sharpness_reduction=1.5", args)
 
     def test_limiter_only_with_runtime_support(self):
         self.assertFalse(any(a.startswith("--frame_limit_fps") for a in s.graphics_to_cvars({})))
         self.assertIn("--frame_limit_fps=60", s.graphics_to_cvars({"vsync": False}, features={"frame_limit_fps"}))
+
+    def test_known_harmless_error_is_not_fatal(self):
+        harmless = "[2026-10-24 17:09:21.196] [error] [fs] [t17429] ResolvePath(system:\\) failed - device not found"
+        self.assertFalse(s.is_fatal_runtime_error(harmless))
+        self.assertTrue(s.is_fatal_runtime_error("[error] [gpu] vkQueueSubmit failed: VK_ERROR_DEVICE_LOST"))
 
     def test_dedupe_keeps_last_value(self):
         self.assertEqual(s.dedupe_options(["--a=1", "--user_language=1", "--b", "--user_language=2", "x"]),
@@ -59,7 +89,7 @@ class CvarTests(unittest.TestCase):
             s.graphics_to_cvars({"output_effect": "fsr2"}, True, {"fidelityfx"})
         a = s.graphics_to_cvars({"output_effect": "cas", "sharpness": 0.5}, True, {"fidelityfx"})
         self.assertIn("--present_cas_additional_sharpness=0.5", a)
-        self.assertNotIn("--present_effect=bilinear", s.graphics_to_cvars({}, features={"fidelityfx"}))
+        self.assertIn("--present_effect=bilinear", s.graphics_to_cvars({}, features={"fidelityfx"}))
 
     def test_unavailable_and_experimental_rejected(self):
         for bad in ({"fps_limit": 144}, {"color_encoding": "ycbcr420"}, {"color_depth": 10}):

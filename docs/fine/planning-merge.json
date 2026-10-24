@@ -1,0 +1,477 @@
+{
+  "canonical": "docs/PLAN.md",
+  "date": "2026-10-22",
+  "archive": "docs/fine/planning-originals-20261022.tar.gz",
+  "archive_sha256": "258e7a5a3d3b0d90985ba661e1942796e8493b56caa3622cda973c9ad5e428ed",
+  "originals": [
+    {
+      "path": "docs/PLAN.md",
+      "bytes": 55791,
+      "sha256": "bb8978378dccd66b519b00a0b01c6455785d3f7d57ed6a75a46593068be5e2b2",
+      "headings": [
+        {
+          "line": 1,
+          "text": "# Master plan"
+        },
+        {
+          "line": 31,
+          "text": "## Milestones"
+        },
+        {
+          "line": 41,
+          "text": "## Current sprint"
+        },
+        {
+          "line": 148,
+          "text": "## Открытые вопросы после проверки 2026-10-19 (TASK-XBOX)"
+        },
+        {
+          "line": 160,
+          "text": "## Checkpoint после разрешённых трасс — 2026-10-19"
+        },
+        {
+          "line": 171,
+          "text": "## XenonRecomp установлен — 2026-10-20"
+        },
+        {
+          "line": 177,
+          "text": "## Завершение анализа потребителя шага — 2026-10-20"
+        },
+        {
+          "line": 181,
+          "text": "### Архитектура (инструкции)"
+        },
+        {
+          "line": 188,
+          "text": "### Рабочая гипотеза (не подтверждена)"
+        },
+        {
+          "line": 191,
+          "text": "### Открыто"
+        },
+        {
+          "line": 199,
+          "text": "## Результат XenonRecomp ACV"
+        },
+        {
+          "line": 208,
+          "text": "## SQLite project control — implemented 2026-10-20"
+        },
+        {
+          "line": 235,
+          "text": "## Возобновлённое исследование FileManager.BindRead — 2026-10-20"
+        },
+        {
+          "line": 239,
+          "text": "## Итог по потребителю шага `0x82460848` — 2026-10-20"
+        },
+        {
+          "line": 243,
+          "text": "## Рекомпиляция как основной инструментальный путь — 2026-10-20"
+        },
+        {
+          "line": 261,
+          "text": "## Изолированный native L3 milestone — 2026-10-20"
+        },
+        {
+          "line": 269,
+          "text": "## R2 and readable native decomp checkpoint — 2026-10-20"
+        },
+        {
+          "line": 275,
+          "text": "## ReXGlue and 360tools installed — 2026-10-20"
+        },
+        {
+          "line": 279,
+          "text": "## Открытые вопросы — актуально на 2026-10-21"
+        },
+        {
+          "line": 287,
+          "text": "## ReXGlue Linux — current state, 2026-10-21"
+        },
+        {
+          "line": 330,
+          "text": "### Rough effort estimate (2026-10-21; judgment, not a measured completion metric)"
+        },
+        {
+          "line": 351,
+          "text": "## ReXGlue Linux — update 2026-10-21 (later)"
+        }
+      ],
+      "links": [
+        {
+          "line": 3,
+          "target": "fine/README.md"
+        },
+        {
+          "line": 7,
+          "target": "PLAN_B.md"
+        },
+        {
+          "line": 12,
+          "target": "LINUX_INPUT.md"
+        },
+        {
+          "line": 24,
+          "target": "../X360_PROJECT_STATE.md"
+        },
+        {
+          "line": 30,
+          "target": "fine/NATIVE_DECOMP_82303138.md"
+        },
+        {
+          "line": 30,
+          "target": "fine/NATIVE_DECOMP_82300948.md"
+        },
+        {
+          "line": 50,
+          "target": "fine/NATIVE_HOST_L3.md"
+        },
+        {
+          "line": 57,
+          "target": "fine/NATIVE_XEX_RUNTIME.md"
+        },
+        {
+          "line": 64,
+          "target": "../tools/360tools-skill/SKILL.md"
+        },
+        {
+          "line": 82,
+          "target": "fine/NATIVE_SCALAR_830D6AB0.md"
+        },
+        {
+          "line": 99,
+          "target": "fine/NATIVE_SCALAR_830D68F0.md"
+        },
+        {
+          "line": 112,
+          "target": "../logs/acv-lookup-20261020/followup-20261021.md"
+        },
+        {
+          "line": 173,
+          "target": "fine/XENONRECOMP.md"
+        },
+        {
+          "line": 203,
+          "target": "../logs/acv-switch-correction-20261020/audit.json"
+        },
+        {
+          "line": 203,
+          "target": "../logs/acv-switch-correction-20261020/switch.toml"
+        },
+        {
+          "line": 228,
+          "target": "../TASK-SQL.MD"
+        },
+        {
+          "line": 228,
+          "target": "SQLITE_LOGGING.md"
+        },
+        {
+          "line": 229,
+          "target": "../AGENTS.md"
+        },
+        {
+          "line": 245,
+          "target": "fine/REXGLUE_INSTALL.md"
+        },
+        {
+          "line": 251,
+          "target": "fine/XENON_MORE_INSTRUCTIONS.md"
+        },
+        {
+          "line": 263,
+          "target": "fine/NATIVE_HOST_L3.md"
+        },
+        {
+          "line": 271,
+          "target": "fine/XENON_MORE_INSTRUCTIONS.md"
+        },
+        {
+          "line": 273,
+          "target": "fine/NATIVE_DECOMP_8245FA20.md"
+        },
+        {
+          "line": 277,
+          "target": "fine/REXGLUE_INSTALL.md"
+        },
+        {
+          "line": 304,
+          "target": "../logs/acv-rexglue-unresolved-20261021/conditionals/config-validation.json"
+        },
+        {
+          "line": 307,
+          "target": "NATIVE_REXGLUE_LINUX.md"
+        },
+        {
+          "line": 308,
+          "target": "../logs/acv-rexglue-unresolved-20261021/conditionals/inventory.json"
+        }
+      ]
+    },
+    {
+      "path": "docs/PLAN_B.md",
+      "bytes": 30615,
+      "sha256": "85cf0bc7ee1ef777da929b2a351737ac0b4459f9aa44c0031081e7798b545039",
+      "headings": [
+        {
+          "line": 1,
+          "text": "# PLAN B — ACV Linux native launch: process and progress"
+        },
+        {
+          "line": 8,
+          "text": "## Resume checkpoint — 2026-10-21, RenderDoc presentation corrected"
+        },
+        {
+          "line": 38,
+          "text": "## Keyboard/mouse checkpoint — 2026-10-21"
+        },
+        {
+          "line": 51,
+          "text": "## Goal"
+        },
+        {
+          "line": 56,
+          "text": "## Verified so far (2026-10-21)"
+        },
+        {
+          "line": 71,
+          "text": "## Open"
+        },
+        {
+          "line": 88,
+          "text": "## Process (in order)"
+        },
+        {
+          "line": 105,
+          "text": "## Rules"
+        },
+        {
+          "line": 112,
+          "text": "## Status (2026-10-21, end of session)"
+        },
+        {
+          "line": 128,
+          "text": "## UTF-8 reproduction attempt — 2026-10-21"
+        },
+        {
+          "line": 140,
+          "text": "## SDL-to-menu validation — 2026-10-21, 15:23 UTC"
+        },
+        {
+          "line": 153,
+          "text": "## Black-frame investigation — 2026-10-21, continued"
+        },
+        {
+          "line": 187,
+          "text": "## FSI visible gameplay checkpoint — 2026-10-21"
+        },
+        {
+          "line": 201,
+          "text": "## Vulkan reference skill"
+        },
+        {
+          "line": 234,
+          "text": "## Frame measurement and text check — 2026-10-21"
+        },
+        {
+          "line": 246,
+          "text": "## Textures and shaders check — 2026-10-21"
+        },
+        {
+          "line": 253,
+          "text": "## Gameplay render: capture analysis, I/O and kernel allocation — 2026-10-21"
+        },
+        {
+          "line": 290,
+          "text": "## Root-cause findings: crash and render, 2026-10-21 (evening)"
+        },
+        {
+          "line": 318,
+          "text": "## Compact state — 2026-10-21 (context summary)"
+        },
+        {
+          "line": 333,
+          "text": "## Ghidra and Vulkan skill check — 2026-10-21"
+        },
+        {
+          "line": 344,
+          "text": "## Draw timeline, one run — 2026-10-21 (run `20261021T175546161473Z`)"
+        },
+        {
+          "line": 359,
+          "text": "## Findings to date — 2026-10-21 (late session, recorded in background)"
+        },
+        {
+          "line": 381,
+          "text": "## Gamma diagnostic — 2026-10-22"
+        },
+        {
+          "line": 415,
+          "text": "## Read-only Ghidra RPC and rendering checkpoint — 2026-10-22"
+        },
+        {
+          "line": 446,
+          "text": "## Capture sampling correction — 2026-10-22"
+        },
+        {
+          "line": 466,
+          "text": "## Canonical launch configuration — 2026-10-22"
+        }
+      ],
+      "links": [
+        {
+          "line": 5,
+          "target": "PLAN.md"
+        },
+        {
+          "line": 5,
+          "target": "ARCHITECTURE.md"
+        },
+        {
+          "line": 6,
+          "target": "PROGRESS.md"
+        },
+        {
+          "line": 16,
+          "target": "https://github.com/baldurk/renderdoc/issues/3376"
+        },
+        {
+          "line": 43,
+          "target": "LINUX_INPUT.md"
+        }
+      ]
+    },
+    {
+      "path": "TASK-XBOX.md",
+      "bytes": 11341,
+      "sha256": "1704ce86f5bd9e7a20278700f45fa1712c34a88b8c2e336626c84da0a1c9a6c6",
+      "headings": [
+        {
+          "line": 1,
+          "text": "# TASK-XBOX — Armored Core V (Xbox 360)"
+        },
+        {
+          "line": 6,
+          "text": "## Цель"
+        },
+        {
+          "line": 13,
+          "text": "## Правила"
+        },
+        {
+          "line": 22,
+          "text": "## Состояние"
+        },
+        {
+          "line": 35,
+          "text": "## Ближайшие действия"
+        },
+        {
+          "line": 46,
+          "text": "## ReXGlue Linux — current state, 2026-10-21"
+        }
+      ],
+      "links": [
+        {
+          "line": 3,
+          "target": "docs/PLAN_B.md"
+        },
+        {
+          "line": 4,
+          "target": "docs/LINUX_INPUT.md"
+        },
+        {
+          "line": 20,
+          "target": "TASK-SQL.MD"
+        },
+        {
+          "line": 26,
+          "target": "docs/fine/NATIVE_HOST_L3.md"
+        },
+        {
+          "line": 27,
+          "target": "docs/ACV_TIMING.md"
+        },
+        {
+          "line": 27,
+          "target": "logs/acv-lookup-20261020/setter-audit.md"
+        },
+        {
+          "line": 30,
+          "target": "docs/fine/NATIVE_DECOMP_82303138.md"
+        },
+        {
+          "line": 31,
+          "target": "docs/fine/NATIVE_SCALAR_830D68F0.md"
+        },
+        {
+          "line": 32,
+          "target": "logs/acv-math-followup-20261021/"
+        },
+        {
+          "line": 33,
+          "target": "docs/fine/NATIVE_DECOMP_82300948.md"
+        },
+        {
+          "line": 37,
+          "target": "docs/fine/NATIVE_DECOMP_82300948.md"
+        },
+        {
+          "line": 38,
+          "target": "docs/fine/NATIVE_DECOMP_82300948.md"
+        },
+        {
+          "line": 39,
+          "target": "logs/acv-lookup-20261020/followup-20261021.md"
+        },
+        {
+          "line": 42,
+          "target": "X360_PROJECT_STATE.md"
+        },
+        {
+          "line": 44,
+          "target": "docs/PLAN.md"
+        },
+        {
+          "line": 44,
+          "target": "docs/PROGRESS.md"
+        },
+        {
+          "line": 44,
+          "target": "docs/ARCHITECTURE.md"
+        },
+        {
+          "line": 70,
+          "target": "docs/NATIVE_REXGLUE_LINUX.md"
+        },
+        {
+          "line": 71,
+          "target": "docs/PLAN.md"
+        }
+      ]
+    }
+  ],
+  "original_bytes": 97747,
+  "merged_bytes": 26414,
+  "merged_sha256": "9e519fd53206069391f0baf97536420323ae6fb9cb939bbf679ff54f7800ac80",
+  "updated_references": [
+    "X360_PROJECT_STATE.md",
+    "AGENTS.md",
+    "docs/PROGRESS.md",
+    "docs/LINUX_INPUT.md",
+    "docs/fine/REXGLUE_INSTALL.md",
+    "docs/fine/UNITY_ARCHITECTURE.md",
+    "docs/fine/XENONRECOMP.md",
+    "docs/fine/XENON_MORE_INSTRUCTIONS.md",
+    "docs/fine/NATIVE_HOST_L3.md",
+    "docs/fine/NATIVE_XEX_RUNTIME.md",
+    "docs/fine/NATIVE_DECOMP_82300948.md",
+    "docs/fine/NATIVE_DECOMP_82303138.md",
+    "docs/fine/NATIVE_DECOMP_8245FA20.md",
+    "docs/fine/NATIVE_SCALAR_830D68F0.md",
+    "docs/fine/NATIVE_SCALAR_830D6AB0.md",
+    "docs/fine/README.md"
+  ],
+  "runtime_started": false
+}

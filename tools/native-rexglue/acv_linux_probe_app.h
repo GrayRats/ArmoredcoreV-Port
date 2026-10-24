@@ -80,6 +80,24 @@ class AcvLinuxProbeApp : public rex::ReXApp {
         REXLOG_ERROR("[acv-vfs] ACV_DLC_IMAGE_ROOT is not a directory: {}", root_path.string());
       }
     }
+    // system: is an optional startup-properties device (system:\system.properties, loader 0x82C22B90). The file
+    // does not exist in the retail image and the guest skips parsing when it is missing, so this mounts an EMPTY
+    // read-only directory: the request still fails with "no such file" (same guest-visible result as before),
+    // but the SDK no longer logs "ResolvePath(system:\) failed - device not found". No content is invented.
+    if (const char* system_root = std::getenv("ACV_SYSTEM_ROOT"); system_root && *system_root) {
+      const std::filesystem::path root_path(system_root);
+      auto* vfs = runtime()->file_system();
+      if (vfs && std::filesystem::is_directory(root_path)) {
+        const char* mount = "\\Device\\AcvSystem";
+        auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, root_path, true);
+        if (device->Initialize() && vfs->RegisterDevice(std::move(device)) &&
+            vfs->RegisterSymbolicLink("system:", mount)) {
+          REXLOG_INFO("[acv-vfs] system: mounted as an empty read-only device from {}", root_path.string());
+        } else {
+          REXLOG_ERROR("[acv-vfs] system: mount failed for {}", root_path.string());
+        }
+      }
+    }
     REXLOG_INFO("[acv-build] Host source revision {}", ACV_HOST_REVISION);
     // Menus and text dialogs retain the cursor until the user opts into look.
     rex::input::mnk::SetMouseLookActive(false);

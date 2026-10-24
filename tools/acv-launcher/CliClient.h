@@ -18,6 +18,7 @@ public:
 
     QString projectRoot() const { return m_root; }
     QString profilesRoot() const { return m_profiles; }
+    QString logsRoot() const;
     QString probeScript() const;
     QString cliScript() const;
     // Argument list for a normal play session; never joined into a shell string.

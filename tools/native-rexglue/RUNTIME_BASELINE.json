@@ -1,42 +1,104 @@
 {
-  "recorded_utc": "20261023T224447Z",
+  "recorded_utc": "20261024T135636Z",
+  "note": "re-recorded deliberately after the mission-2 freeze investigation: accepted set = ELF with system: mount + FidelityFX-enabled runtime with RenderDoc opt-in, bounded paint waits, shm unlink, frame limiter",
   "project": {
-    "branch": "main",
-    "head": "6ff7c7cdd86005108b0cced39fa77b976e627a7e",
-    "subject": "Plan ACV profiles saves and Qt LTS launcher"
+    "branch": "acv-profiles-launcher",
+    "head": "043b34d750294f33165517f0c2fffc3685fff997",
+    "subject": "Compress legacy ACV plan and route to GUI roadmap",
+    "uncommitted": true
   },
   "rexglue_sdk": {
     "head": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
     "describe": "Release v0.10.0",
-    "working_diff_sha256": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
+    "working_diff_sha256": "3cb3d5eecbf501060631d8286d2d514f86701010866dd005a01578055e40dc5c",
     "working_diff_files": [
+      "include/rex/graphics/command_processor.h",
       "include/rex/graphics/vulkan/command_processor.h",
+      "include/rex/ui/vulkan/submission_tracker.h",
+      "src/core/memory_posix.cpp",
+      "src/graphics/command_processor.cpp",
       "src/graphics/pipeline/shader/spirv_translator_fetch.cpp",
+      "src/graphics/pipeline/texture/cache.cpp",
       "src/graphics/vulkan/command_processor.cpp",
       "src/graphics/vulkan/shared_memory.cpp",
-      "src/kernel/xam/xam_ui.cpp"
+      "src/kernel/xam/xam_ui.cpp",
+      "src/kernel/xboxkrnl/xboxkrnl_video.cpp",
+      "src/system/xam/user_profile.cpp",
+      "src/ui/renderdoc_api.cpp",
+      "src/ui/vulkan/vulkan_presenter.cpp",
+      "src/ui/vulkan/vulkan_submission_tracker.cpp",
+      "src/ui/window_sdl.cpp"
     ],
     "reproducible_patches": {
       "keyboard-dialog-utf8-boundaries.patch": "9ef2a52520bc12af91bb7e87a160c336a9e24e9e27ae7ea1a88a3be395d79c35",
+      "launcher-display-output.patch": "2e751e9b7d15fefd03e993300ed792117f7c94daa66a1668753527e57d8da830",
+      "launcher-runtime-limiter-xuid-shm.patch": "7ddcd746b9e54fc35458324855bd544b47c3f8f03c9a14a9eef05e7a96ef2a64",
+      "present-acquire-timeout-and-fetch-warning.patch": "d10ec65234d5f62eb298af40233699a58082e8924282d2ae75bca19082f89dfe",
+      "renderdoc-opt-in.patch": "39f3cb4344cd23e6f1c6159b12c3e4baa2c87ee4762986a111b6069c7f825dbc",
       "resolve-readback-completion.patch": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
       "shared-memory-compute-write.patch": "cfee8c7da6c29a8c282226d6537f996f40b0087e1993d7459753324c060564f7",
       "texture-fetch-exponent-word.patch": "c712d3ad8752ad365d8596429426b4556fc92158ce965b7ba2fc5c4954d11bfb"
     }
   },
   "runtime_artifacts": {
-    "librexruntime.so": {
-      "source": "tmp/acv-gpu-lifetime/librexruntime.so",
-      "sha256": "fa27bc225e91aa96224fb0380d0b8fdc442362ec36bae84d7d0d3427c2529ddc"
-    },
-    "librexgpu-xenos.so": {
-      "source": "tmp/acv-gpu-lifetime/librexgpu-xenos.so",
-      "sha256": "78231562bdd4fb268d8ac94185e893d9eaa10111c01be7c8496e0ff6c6d055bc"
-    },
     "acv_linux_probe": {
       "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
-      "sha256": "2d112d64471913c64c88d127aa83f81a84a612ad06989f6a4cb0e3e2056c5aeb"
+      "sha256": "08045fae38fba7923e6dd8631ef5902e81e8f95676b6b6124b05a7a908c935bf"
+    },
+    "librexruntime.so": {
+      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexruntime.so",
+      "sha256": "0472a30eb9aea62982bc1151d234a9804ab81dd29d47661262ba07b26e309397"
+    },
+    "librexgpu-xenos.so": {
+      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexgpu-xenos.so",
+      "sha256": "fe3b0dc4ecf4dba3a13ea50d121853c8dd69c47a07a6832b333c6509900e48ac"
+    },
+    "libamd_fidelityfx_vk.so": {
+      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/libamd_fidelityfx_vk.so",
+      "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
     }
   },
-  "backup_dir": "tmp/acv-backups/20261023T224447Z",
-  "restore": "git apply rexglue-sdk-working.diff on SDK c94f5eb; copy artifacts/* back to their source paths"
+  "build_notes": [
+    "librexruntime.so has an absolute RUNPATH into tools/rexglue-sdk/out/linux-amd64 (needs libamd_fidelityfx_vk.so); not relocatable without patchelf"
+  ],
+  "previous": {
+    "recorded_utc": "20261023T224447Z",
+    "project": {
+      "branch": "main",
+      "head": "6ff7c7cdd86005108b0cced39fa77b976e627a7e",
+      "subject": "Plan ACV profiles saves and Qt LTS launcher"
+    },
+    "rexglue_sdk": {
+      "head": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
+      "describe": "Release v0.10.0",
+      "working_diff_sha256": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
+      "working_diff_files": [
+        "include/rex/graphics/vulkan/command_processor.h",
+        "src/graphics/pipeline/shader/spirv_translator_fetch.cpp",
+        "src/graphics/vulkan/command_processor.cpp",
+        "src/graphics/vulkan/shared_memory.cpp",
+        "src/kernel/xam/xam_ui.cpp"
+      ],
+      "reproducible_patches": {
+        "keyboard-dialog-utf8-boundaries.patch": "9ef2a52520bc12af91bb7e87a160c336a9e24e9e27ae7ea1a88a3be395d79c35",
+        "resolve-readback-completion.patch": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
+        "shared-memory-compute-write.patch": "cfee8c7da6c29a8c282226d6537f996f40b0087e1993d7459753324c060564f7",
+        "texture-fetch-exponent-word.patch": "c712d3ad8752ad365d8596429426b4556fc92158ce965b7ba2fc5c4954d11bfb"
+      }
+    },
+    "runtime_artifacts": {
+      "librexruntime.so": {
+        "source": "tmp/acv-gpu-lifetime/librexruntime.so",
+        "sha256": "fa27bc225e91aa96224fb0380d0b8fdc442362ec36bae84d7d0d3427c2529ddc"
+      },
+      "librexgpu-xenos.so": {
+        "source": "tmp/acv-gpu-lifetime/librexgpu-xenos.so",
+        "sha256": "78231562bdd4fb268d8ac94185e893d9eaa10111c01be7c8496e0ff6c6d055bc"
+      },
+      "acv_linux_probe": {
+        "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
+        "sha256": "2d112d64471913c64c88d127aa83f81a84a612ad06989f6a4cb0e3e2056c5aeb"
+      }
+    }
+  }
 }

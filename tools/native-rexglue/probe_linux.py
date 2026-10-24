@@ -4,9 +4,9 @@ import argparse, collections, configparser, datetime, hashlib, json, os, re, sig
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import acv_profiles, acv_settings
+import acv_profiles, acv_settings, acv_shm, acv_paths, acv_display
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--executable", type=Path, default=ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe")
+parser.add_argument("--executable", type=Path, default=acv_paths.EXECUTABLE)
 parser.add_argument("--seconds", type=int, default=60)
 parser.add_argument("--extra", action="append", default=[], metavar="--cvar=VALUE",
                     help="repeat --extra=--cvar=VALUE for additional SDK options")
@@ -35,12 +35,16 @@ parser.add_argument("--user-root", type=Path,
                     help="optional persistent profile directory inside workspace tmp/")
 parser.add_argument("--profile", metavar="UUID",
                     help="persistent profile from --profiles-root: its own user_data_root, cache, XUID and names; locked while running")
-parser.add_argument("--profiles-root", type=Path, default=ROOT / "tmp/acv-user-data",
+parser.add_argument("--profiles-root", type=Path, default=acv_paths.PROFILES,
                     help="profile store root inside workspace tmp/")
 parser.add_argument("--settings", type=Path,
                     help="launcher settings JSON (schema_version 1, \"graphics\" object); validated by acv_settings.py")
 parser.add_argument("--allow-experimental", action="store_true",
                     help="permit settings marked experimental in acv_settings.capabilities()")
+parser.add_argument("--startup-profile", action="store_true",
+                    help="sample startup with GDB on X11 using this same launch configuration")
+parser.add_argument("--projection-trace", type=Path, metavar="LAYOUT_JSON",
+                    help="bounded GDB projection argument trace using a binary-pinned PPCContext layout")
 parser.add_argument("--session", action="store_true",
                     help="normal play session: no time limit (--seconds is ignored); the exit code is the game's")
 parser.add_argument("--screenshot-every", type=int, default=0,
@@ -72,6 +76,10 @@ if args.renderdoc_frames is None:
     args.renderdoc_frames = config.getint("capture", "renderdoc_frames", fallback=1)
 if not 1 <= args.renderdoc_frames <= 8:
     parser.error("[capture] renderdoc_frames must be 1..8")
+if args.projection_trace:
+    args.startup_profile = True
+if args.startup_profile and args.session:
+    parser.error("--startup-profile requires a bounded run")
 if args.session and args.seconds != 60:
     parser.error("--session has no time limit; do not combine it with --seconds")
 if args.profile and args.user_root:
@@ -79,25 +87,23 @@ if args.profile and args.user_root:
 if not args.session and not 1 <= args.seconds <= 300:
     parser.error("Probe duration must be 1..300 seconds")
 exe = args.executable.resolve()
-if not exe.is_relative_to(ROOT / "tmp") or not exe.is_file():
-    parser.error("Expected existing private executable inside workspace tmp/")
+if not exe.is_file():
+    parser.error("Expected an existing Linux executable")
 with exe.open("rb") as f:
     if f.read(4) != b"\x7fELF":
         parser.error("Expected a Linux ELF executable")
-game = ROOT / "tmp/iso_root"
+game = acv_paths.GAME
 xex = game / "default.xex"
 if hashlib.sha256(xex.read_bytes()).hexdigest() != "4fac87348f827e84633013375012284cd8c769a3c155a675b2989757e666a12b":
     parser.error("Extracted XEX hash differs from pinned input")
 run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-output = ROOT / "logs/acv-native-linux" / run_id
+output = acv_paths.LOGS / "acv-native-linux" / run_id
 output.mkdir(parents=True, exist_ok=False)
 profile_lock = None
 selected_profile = None
 cache_dir = None
 if args.profile:
     store_root = args.profiles_root.resolve()
-    if not store_root.is_relative_to(ROOT / "tmp"):
-        parser.error("Profile store must remain inside workspace tmp/")
     store = acv_profiles.ProfileStore(store_root)
     try:
         selected_profile = store.get(args.profile)
@@ -110,9 +116,7 @@ if args.profile:
     cache_dir = store.cache(args.profile)
     cache_dir.mkdir(parents=True, exist_ok=True)
 else:
-    user = args.user_root.resolve() if args.user_root else ROOT / "tmp/acv-native-linux-user" / run_id
-if not user.is_relative_to(ROOT / "tmp"):
-    parser.error("User profile must remain inside workspace tmp/")
+    user = args.user_root.resolve() if args.user_root else acv_paths.PROFILES / "diagnostics" / run_id
 user.mkdir(parents=True, exist_ok=bool(args.user_root or args.profile))
 profile = json.loads((ROOT / "tools/native-rexglue/input-profile.json").read_text())
 if args.controls == "gamepad":
@@ -146,6 +150,8 @@ report["settings_cvars"] = settings_options
 report["controls"] = args.controls
 report["graphics_profile"] = args.graphics_profile
 env = dict(os.environ)
+# Prefer the selected build over absolute SDK RUNPATHs and inherited library search paths.
+env["LD_LIBRARY_PATH"] = str(exe.parent) + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
 display_gamma = args.display_gamma_type or config.get("compat", "display_gamma_type", fallback=None)
 if display_gamma is not None:
     if display_gamma not in ("sdk", "0", "1", "2", "3"):
@@ -157,11 +163,16 @@ if display_gamma is not None:
 report["display_gamma_type_override"] = env.get("ACV_DISPLAY_GAMMA_TYPE")
 if args.compat_mm_wc_rw:
     env["ACV_COMPAT_MM_WC_RW"] = "1"
-dlc_sound_root = ROOT / "tmp/acv-dlc-sound"
+dlc_sound_root = acv_paths.DATA / "acv-dlc-sound"
 if dlc_sound_root.is_dir():
     env["ACV_DLC_SOUND_ROOT"] = str(dlc_sound_root)
+# Empty on purpose: the guest's optional system:\\system.properties stays absent, only the device exists.
+system_root = ROOT / "tmp/acv-system-root"
+system_root.mkdir(exist_ok=True)
+env["ACV_SYSTEM_ROOT"] = str(system_root)
+report["system_root"] = str(system_root)
 report["dlc_sound_root"] = env.get("ACV_DLC_SOUND_ROOT")
-dlc_image_root = ROOT / "tmp/acv-dlc-image"
+dlc_image_root = acv_paths.DATA / "acv-dlc-image"
 if dlc_image_root.is_dir():
     env["ACV_DLC_IMAGE_ROOT"] = str(dlc_image_root)
 report["dlc_image_root"] = env.get("ACV_DLC_IMAGE_ROOT")
@@ -194,7 +205,7 @@ if video_driver != "auto":
     env["SDL_VIDEODRIVER"] = video_driver
 report["video_driver"] = env.get("SDL_VIDEODRIVER", "auto")
 if args.renderdoc:
-    captures = ROOT / "logs/acv-renderdoc" / run_id
+    captures = acv_paths.LOGS / "acv-renderdoc" / run_id
     captures.mkdir(parents=True, exist_ok=False)
     env.update({"LD_PRELOAD": "/usr/lib/librenderdoc.so", "ENABLE_VULKAN_RENDERDOC_CAPTURE": "1",
                 "ACV_RENDERDOC_CAPTURE_PATH": str(captures / "acv"),
@@ -205,7 +216,40 @@ if args.renderdoc:
     report["renderdoc_frames"] = args.renderdoc_frames
     report["renderdoc_window_ms"] = args.renderdoc_window_ms
 report["compat_mm_wc_rw"] = args.compat_mm_wc_rw
-child = subprocess.Popen(command, cwd=exe.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+report["shm_before"] = acv_shm.status()
+if report["shm_before"]["free"] < 6 * 1024**3:
+    parser.error("At least 6 GiB free in /dev/shm is required")
+launch_command = command
+if args.startup_profile:
+    import shutil
+    if not shutil.which("gdb"):
+        parser.error("Startup profiling requires gdb")
+    if report["video_driver"] != "x11" or report["shm_before"]["orphans"]:
+        parser.error("Startup profiling requires X11 and no orphaned xenia_memory files")
+    if args.projection_trace:
+        layout = json.loads(args.projection_trace.read_text())
+        if layout.get("binary_sha256") != report["binary_sha256"]:
+            parser.error("Projection layout is not pinned to this executable")
+        env["ACV_PROJECTION_LAYOUT"] = json.dumps(layout)
+        report["projection_trace"] = str(output / "projection.json")
+    env["ACV_PROFILE_INNER"] = "1"
+    env["ACV_PROFILE_CFG"] = json.dumps({"seconds": args.seconds, "interval": 1.0,
+                                         "depth": 10, "out": str(output / "samples.json")})
+    launch_command = ["gdb", "-batch", "-nx", "-x",
+                      str(Path(__file__).with_name("profile_startup.py")), "--args", *command]
+    report["startup_profile"] = {"samples": str(output / "samples.json"),
+                                  "scope": "GDB sampling adds overhead; not an FPS benchmark"}
+# The runtime retains the flock if this supervisor is killed while the game is still writing.
+if os.environ.get("ACV_PROBE_DRYRUN"):
+    # Used by hang_watch.py: record the exact game command and environment, then stop without starting.
+    Path(os.environ["ACV_PROBE_DRYRUN"]).write_text(json.dumps({"command": launch_command, "cwd": str(exe.parent),
+                                                                "env": env}, ensure_ascii=False))
+    if profile_lock is not None:
+        profile_lock.release()
+    sys.exit(0)
+child = subprocess.Popen(launch_command, cwd=exe.parent, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, env=env,
+                         pass_fds=(profile_lock.fd,) if profile_lock is not None else ())
 report["owned_pid"] = child.pid
 # No new session: the outer SQLite runner can also terminate this child group.
 for sig in (signal.SIGTERM, signal.SIGINT):
@@ -221,6 +265,9 @@ threads = [threading.Thread(target=pump, args=(child.stdout,sys.stdout.buffer,"s
            threading.Thread(target=pump, args=(child.stderr,sys.stderr.buffer,"stderr.txt"))]
 runtime_stop = threading.Event()
 runtime_errors = []
+# Harmless errors (acv_settings.BENIGN_RUNTIME_ERRORS) are logged and counted, but do not make the probe
+# exit non-zero: the launcher showed "код 1" after a normal close because of the first one.
+fatal_error_count = 0
 runtime_error_counts = collections.Counter()
 fault_count = 0
 abort_reason = None
@@ -247,6 +294,8 @@ def follow_runtime():
                     runtime_error_counts[key] += 1
                     if len(runtime_errors) < 32:
                         runtime_errors.append(message)
+                    if acv_settings.is_fatal_runtime_error(message):
+                        fatal_error_count += 1
                     forward = runtime_error_counts[key] <= 8
                     if runtime_error_counts[key] == 9:
                         sys.stdout.buffer.write(b"[probe] Repeated error forwarding suppressed; full evidence in runtime.log\n")
@@ -273,7 +322,7 @@ runtime_thread.start()
 for t in threads:
     t.start()
 try:
-    child.wait(timeout=None if args.session else args.seconds)
+    child.wait(timeout=None if args.session else args.seconds + (20 if args.startup_profile else 0))
     report["limit_reached"] = False
 except subprocess.TimeoutExpired:
     report["limit_reached"] = True
@@ -294,10 +343,14 @@ report["runtime_error_count"] = sum(runtime_error_counts.values())
 report["runtime_error_counts"] = dict(runtime_error_counts)
 report["runtime_errors_truncated"] = report["runtime_error_count"] > len(runtime_errors)
 report["child_returncode"] = child.returncode
+report["shm_after"] = acv_shm.status()
 report["runtime_errors"] = runtime_errors
+report["fatal_error_count"] = fatal_error_count
+runtime_log = output / "runtime.log"
+report["display"] = acv_display.summarize(runtime_log.read_text(errors="replace") if runtime_log.exists() else "")
 if profile_lock is not None:
     profile_lock.release()
 (output / "launch.json").write_text(json.dumps(report,indent=2)+"\n")
-print(json.dumps({"evidence":str(output), "child_returncode":child.returncode, "duration_limit_reached":report["limit_reached"], "isError":bool(runtime_errors), "runtime_errors":runtime_errors}))
+print(json.dumps({"evidence":str(output), "child_returncode":child.returncode, "duration_limit_reached":report["limit_reached"], "isError":bool(fatal_error_count), "runtime_errors":runtime_errors, "fatal_error_count":fatal_error_count}))
 # A bounded live process is an observation, not a successful-game assertion.
-sys.exit(1 if runtime_errors else (0 if report["limit_reached"] else (child.returncode if child.returncode >= 0 else 128-child.returncode)))
+sys.exit(1 if fatal_error_count else (0 if report["limit_reached"] else (child.returncode if child.returncode >= 0 else 128-child.returncode)))

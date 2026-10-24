@@ -25,6 +25,7 @@ set(_acv_revision_inputs
     "${ACV_HOST_SOURCE_DIR}/profile_text.h"
     "${ACV_HOST_SOURCE_DIR}/renderdoc_trigger.cpp"
     "${ACV_HOST_SOURCE_DIR}/retail_leaves.cpp"
+    "${ACV_HOST_SOURCE_DIR}/scene_aspect_experiment.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
     "/home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-native-adjusting-thunks.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_acv_revision_inputs})
@@ -43,6 +44,7 @@ set(ACVLINUXPROBE_SOURCES
     src/main.cpp
     /home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-native-adjusting-thunks.cpp
     /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/retail_leaves.cpp
+    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/scene_aspect_experiment.cpp
     /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/renderdoc_trigger.cpp
     /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/acv_compat_shims.cpp
 )

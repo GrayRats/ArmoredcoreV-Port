@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = ROOT / "tools/native-rexglue"
 BUILD = ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release"
-TOOL_FILES = ["RUNTIME_BASELINE.json", "acv_shm.py", "probe_linux.py", "acv_settings.py", "acv_profiles.py", "acv_profile_cli.py",
+TOOL_FILES = ["RUNTIME_BASELINE.json", "acv_paths.py", "acv_display.py", "profile_startup.py", "acv_shm.py", "probe_linux.py", "acv_settings.py", "acv_profiles.py", "acv_profile_cli.py",
               "acv.config", "input-profile.json"]
 
 ap = argparse.ArgumentParser()
@@ -30,6 +30,9 @@ for name in ("acv_linux_probe", "librexruntime.so", "librexgpu-xenos.so"):
     if sha(path) != override.get("sha256", record["artifacts"][name]["sha256"]):
         sys.exit(f"{path}: hash differs from build record")
     sources[name] = path
+
+# librexruntime.so links libamd_fidelityfx_vk.so (FidelityFX-enabled accepted runtime): ship it next to it.
+sources["libamd_fidelityfx_vk.so"] = BUILD / "libamd_fidelityfx_vk.so"
 
 # The recorded baseline (RUNTIME_BASELINE.json) pins the accepted runtime: refuse to package drift.
 baseline = json.loads((NATIVE / "RUNTIME_BASELINE.json").read_text())
@@ -63,6 +66,8 @@ for name, src in sources.items():
 1. Extract the game files to tmp/iso_root (default.xex is checked by SHA-256). They are NOT included.
 2. Start bin/acv-launcher (Qt 6.12 runtime required), create a profile, press Play.
 Saves live in tmp/acv-user-data/profiles/<uuid>/userdata; caches in .../cache.
+Note: librexruntime.so has an absolute RUNPATH into the SDK output directory of the build machine; set it to $ORIGIN
+(patchelf) before running this package elsewhere.
 Unavailable in this build: >60 FPS, Y'CbCr output, 10-bit output (see the launcher's options).
 """)
 files["README.txt"] = {"sha256": sha(args.out / "README.txt"), "size": (args.out / "README.txt").stat().st_size}

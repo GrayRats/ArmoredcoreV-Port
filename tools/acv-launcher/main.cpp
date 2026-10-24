@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QStandardPaths>
 
@@ -18,7 +19,11 @@ int main(int argc, char **argv) {
         return 2;
     }
     // Development layout (PLAN_GUI.MD B1). An installed package would use QStandardPaths instead.
-    const QString profiles = qEnvironmentVariable("ACV_PROFILES_ROOT", root + "/tmp/acv-user-data");
+    const bool packaged = QFileInfo::exists(root + "/acv-package.json");
+    const QString defaultProfiles = packaged
+        ? QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/DEArmoredcore/acv"
+        : root + "/tmp/acv-user-data";
+    const QString profiles = qEnvironmentVariable("ACV_PROFILES_ROOT", defaultProfiles);
     CliClient cli(root, profiles);
     MainWindow window(&cli);
     window.show();

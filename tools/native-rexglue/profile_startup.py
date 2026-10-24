@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Sampling profile of the game's start-up under gdb (no perf/strace on this host).
+"""Sample a canonical probe launch with GDB (X11, clean /dev/shm required).
 
-Runs the pinned executable as a child of gdb (ptrace_scope=1 forbids attaching to unrelated
-processes), interrupts it every --interval seconds, records the top frames of every thread and
-writes a JSON report. Guest functions appear as sub_82XXXXXX. Output: logs/acv-startup-profile/<id>/
-Usage: python3 profile_startup.py --seconds 120   (outer driver)   |   gdb -batch -x <this> (inner)"""
+The outer driver delegates all configuration to probe_linux.py. GDB writes samples.json
+next to launch.json/runtime.log. Sampling adds overhead and is not an FPS benchmark.
+Usage: python3 profile_startup.py --seconds 120 [probe options]
+"""
 import json, os, subprocess, sys, time
 from pathlib import Path
 
@@ -22,6 +22,11 @@ def inner():
     gdb.execute("starti")  # stops at the first instruction; we only need the pid
     pid = gdb.selected_inferior().pid
     t0 = time.monotonic()
+    projection = None
+    if os.environ.get("ACV_PROJECTION_LAYOUT"):
+        import runpy
+        projection = runpy.run_path(str(Path(__file__).with_name("trace_projection.py")))["install"](
+            json.loads(os.environ["ACV_PROJECTION_LAYOUT"]), Path(cfg["out"]).with_name("projection.json"))
     def interrupt():
         try: os.kill(pid, signal.SIGINT)
         except ProcessLookupError: pass
@@ -42,7 +47,16 @@ def inner():
                 frames.append(f.name() or hex(f.pc())); f = f.older()
             snap[f"{th.num}:{th.name}"] = frames
         samples.append((round(time.monotonic() - t0, 2), snap))
-    Path(cfg["out"]).write_text(json.dumps({"samples": samples}))
+        if projection is not None:
+            projection.tick()
+    import collections
+    tops = collections.Counter(frames[0] for _, threads in samples
+                               for frames in threads.values() if frames)
+    Path(cfg["out"]).write_text(json.dumps({"samples": samples,
+        "sample_count": len(samples), "top_frames": tops.most_common(),
+        "elapsed_seconds": time.monotonic() - t0}, indent=2))
+    if projection is not None:
+        projection()
     try: gdb.execute("kill")
     except gdb.error: pass
     gdb.execute("quit")
@@ -50,24 +64,6 @@ def inner():
 if "gdb" in sys.modules or __name__ == "__main__" and os.environ.get("ACV_PROFILE_INNER"):
     inner()
 elif __name__ == "__main__":
-    import argparse
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--seconds", type=int, default=120)
-    ap.add_argument("--interval", type=float, default=1.0)
-    ap.add_argument("--depth", type=int, default=10)
-    ap.add_argument("--executable", type=Path, default=ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe")
-    args = ap.parse_args()
-    out = ROOT / "logs/acv-startup-profile" / time.strftime("%Y%m%dT%H%M%S"); out.mkdir(parents=True)
-    user = ROOT / "tmp/acv-profile-user"; user.mkdir(exist_ok=True)
-    cmd = [str(args.executable), f"--game_data_root={ROOT/'tmp/iso_root'}", f"--user_data_root={user}",
-           f"--cache_root={user/'cache'}", "--gpu_plugin=xenos", f"--log_file={out/'runtime.log'}",
-           "--protect_zero=false", "--render_target_path_vulkan=fsi", "--readback_resolve=full", "--headless=true"]
-    env = dict(os.environ, ACV_PROFILE_INNER="1", ACV_PILOT_NAME="ARTEM", ACV_GAMERTAG="ARTEM",
-               ACV_PROFILE_CFG=json.dumps({"seconds": args.seconds, "interval": args.interval,
-                                           "depth": args.depth, "out": str(out / "samples.json")}))
-    for name, var in (("acv-dlc-sound", "ACV_DLC_SOUND_ROOT"), ("acv-dlc-image", "ACV_DLC_IMAGE_ROOT")):
-        if (ROOT / "tmp" / name).is_dir(): env[var] = str(ROOT / "tmp" / name)
-    r = subprocess.run(["gdb", "-batch", "-nx", "-x", str(Path(__file__).resolve()), "--args", *cmd],
-                       cwd=args.executable.parent, env=env, capture_output=True, text=True)
-    (out / "gdb.txt").write_text(r.stdout + r.stderr)
-    print(out)
+    # Reuse the canonical config/profile/input/compatibility path instead of a divergent launch.
+    sys.exit(subprocess.call([sys.executable, "-I", str(Path(__file__).with_name("probe_linux.py")),
+                              "--startup-profile", "--video-driver", "x11", *sys.argv[1:]]))

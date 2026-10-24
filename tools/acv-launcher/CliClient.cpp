@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QProcess>
+#include <QStandardPaths>
 
 CliClient::CliClient(QString projectRoot, QString profilesRoot, QObject *parent)
     : QObject(parent), m_root(std::move(projectRoot)), m_profiles(std::move(profilesRoot)) {}
@@ -21,6 +22,12 @@ QString CliClient::findProjectRoot(const QString &start) {
         } while (dir.cdUp());
     }
     return {};
+}
+
+QString CliClient::logsRoot() const {
+    if (!QFileInfo::exists(m_root + "/acv-package.json")) return m_root + "/logs";
+    return qEnvironmentVariable("XDG_STATE_HOME", QDir::homePath() + "/.local/state")
+        + "/DEArmoredcore/acv/logs";
 }
 
 QString CliClient::probeScript() const { return m_root + "/tools/native-rexglue/probe_linux.py"; }

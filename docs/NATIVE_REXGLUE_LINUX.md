@@ -1393,3 +1393,249 @@ Fixes:
 
 Start-up profile (previous section): the "all threads waiting" picture was measured while the arena was already
 short of tmpfs, so treat the absence of progress in it as unreliable until re-measured on a clean `/dev/shm`.
+
+### Ultrawide output and exit code, 2026-10-24 (`logs/acv-ultrawide-2560x1080-20261024/`)
+
+- Output: `acv-display output source_width=1280 source_height=720 x=0 y=0 width=2560 height=1080`, swapchain
+  2560×1080, FIFO. An earlier run had `x=320 width=1920` because `--letterbox=false` is not a cvar; the
+  correct name is `--present_letterbox=false`. Full-rectangle output is accepted as confirmed.
+- Projection experiment: `acv-aspect-experiment Enabled aspect=2.3703703703703702` (64:27). Projection only;
+  HUD, reticle, culling and output geometry are NOT verified and need a human visual check.
+- Performance: the heavy-scene cadence of ~15.5 FPS against a 60 FPS limit is recorded only in `result.json`
+  (`swap_cadence_*`). Its source is not in `runtime.log` (no XE_SWAP lines there), so the number must be
+  re-measured before it is used.
+- Exit code: the probe returned 1 after normal closes because of the harmless
+  `ResolvePath(system:\) failed` error, and the launcher reported "процесс завершён, код 1". The pattern now lives
+  in `acv_settings.BENIGN_RUNTIME_ERRORS`; the probe counts only fatal errors (`fatal_error_count`). Verified with a
+  15 s launch: child 0, fatal 0, one harmless error logged.
+
+### Freeze on mission 2 load, session 20261024T121958909808Z
+
+- The game was started through the launcher (X11, profile ARTEM, build `acv-ffx-test`, settings with FSR).
+- Log timeline: start 17:19:59; swapchain 2560×1080 at 17:20:00; `dlc_sound` misses at 17:20:00–01 (known) and
+  at 17:20:53 (`ch09.fsb`, `dlc_se.fsb`, `acv_dlc_dlc_se.fev`); one `Skipping Vulkan frame presentation` at
+  17:21:14; a burst of pipeline creation at 17:24 (716 lines in that minute); **no line after 17:24:40**;
+  window closed by the user at 17:26:16 (`Window closing`, exit 0).
+- So about 90 s with no log output while the game was supposed to load mission 2. No pacing line was ever
+  written (it needs 300 presented frames), so no FPS was measured in this session.
+- Possible cause, NOT proven: `ch09.fsb` is a sound payload the retail image does not contain (see the DLC
+  section above; the project refuses to fabricate banks). Whether mission 2 is the request that wait on it was
+  not established: the request happened before the pipeline burst, not at the freeze. The next freeze needs a
+  stack dump of the running game. `gdb -p` on a launcher-started game fails under `ptrace_scope=1` (not a
+  descendant of the debugger); `profile_startup.py` runs the game as gdb's child and can be used for a repro.
+- Launcher changes made from this: a hang indicator (no log line for 60 s is shown as a possible freeze), and the
+  session summary reports "вывод не зафиксирован" instead of `0×0` when no output record exists.
+
+### Mission-2 freeze: stacks captured, cause found in the host main thread, 2026-10-24
+
+- Capture: `tools/native-rexglue/hang_watch.py` runs the game under gdb (game = gdb child, so ptrace is allowed) and
+  writes `thread apply all bt 40` when runtime.log is silent for 90 s. Session `logs/acv-hang-watch/20261024T173613/`
+  (`bt.txt`, `hang.json`: reason silence, log 553996 bytes, 17:40:40). The game was detached, not killed, and was
+  stopped by hand afterwards.
+- Finding: the host process main thread (LWP 27347, "acv_linux_probe") is blocked in `__lll_lock_wait_private` inside
+  `pthread_create` **called from `librenderdoc.so`**. The window cannot process events while the main thread is
+  blocked, which is what "зависла" looked like. The guest threads were waiting on NtWaitForSingleObjectEx
+  (`Main XThread`, `ResourceBuild`, `FileMan`, `Core.Res.*`), so the guest was waiting on a host worker.
+- Why RenderDoc is in every run: `RenderDocAPI::CreateIfConnected()` calls `Load("librenderdoc.so")`, which succeeds
+  on this host, then `RENDERDOC_GetAPI`, which installs RenderDoc's in-process hooks. The implicit Vulkan layer
+  is NOT the cause (it is only enabled by `ENABLE_VULKAN_RENDERDOC_CAPTURE`, which the game did not have).
+- Change: `tools/native-rexglue/patches/renderdoc-opt-in.patch` makes CreateIfConnected() opt-in via
+  `ENABLE_VULKAN_RENDERDOC_CAPTURE` (the variable `probe_linux.py --renderdoc` already sets). Rebuilt with
+  `build_sdk_ffx.py`; staged into `tmp/acv-ffx-test/`. Check: without the variable, `librenderdoc` is not in the
+  process maps and a Vulkan device is created (25 s run).
+- Not yet verified: that this removes the mission-2 freeze. This is the hypothesis to test by playing mission 2.
+  The earlier freeze was not caused by the reported "invalid" texture-fetch warnings alone; those repeated in the
+  same session but the stacks show the host thread, not a shader loop.
+
+### Mission-2 freeze, second capture (renderdoc opt-in build), 2026-10-24
+
+- Capture `logs/acv-hang-watch/20261024T174322/bt.txt` (silence 90 s, 17:51:03). `librenderdoc` is no longer in the
+  process: the earlier pthread_create block is gone.
+- Host main thread (LWP 35700, process main): `main` -> `SDLWindowedAppContext::RunMainMessageLoop` ->
+  `ProcessEvent` -> `Window::OnPaint` -> `Presenter::PaintFromUIThread` -> `VulkanPresenter::PaintAndPresentImpl`
+  -> NVIDIA driver -> `drmSyncobjTimelineWait`. The presenter calls `vkAcquireNextImageKHR(..., UINT64_MAX, ...)`
+  (src/ui/vulkan/vulkan_presenter.cpp:1605), so it waits without a timeout for a swapchain image that the
+  presentation engine never returns.
+- Guest threads wait on host work (`Main XThread`, `ResourceBuild`, `FileMan`, `DrawThread`); the pipeline
+  creation threads are idle; GPU utilisation was ~4% at the time (nvidia-smi), so no GPU work was running.
+- Common factor of the three freeze sessions (20261024T121958, T122900, T124322): `--present_effect=fsr`, i.e. the
+  FidelityFX guest-output pass on the UI presenter. The clean accepted-build run (T234857, 99 s, no FSR) did not
+  reach mission 2, so it does not clear this.
+- Next test (not run): the same build with output bilinear (no FSR) and `hang_watch.py`, playing to mission 2.
+
+### Session 20261024T124322094949Z: mission 2 reached, freeze at 17:49:30 (pacing available)
+
+- Pacing (`[acv-display] pacing`, 300-frame windows, limit 60, VSync on, output FSR): 17:44:24 35 FPS;
+  17:44:51–17:47:20 about 17–19 FPS; 17:47:34 21 FPS; 17:48–17:49:20 19–30 FPS. So frames were presented at
+  low frame rate for ~5 minutes, which means the FSR output pass was running and the FSR-only hypothesis is
+  weaker than it looked: the swapchain worked for minutes before the stall.
+- Pipeline-creation burst at 17:47:35 (load of the new scene), then at 17:49:11–17:49:30 the log filled with the
+  `Texture fetch constant (8A000000 0F9FF097 ...) has "invalid" type` warning (1925 lines in the minute). After
+  17:49:30 nothing was logged; the main thread stack (bt.txt of 20261024T174322) is in
+  `vkAcquireNextImageKHR` with an infinite timeout.
+- The same constant (`8A000000 0F9FF097 0059E4FF 00A80D11`) is the one the earlier notes called a depth/stencil-like
+  surface (base 0x0F9FF000). Its burst preceded the freeze in both mission-2 sessions.
+- Next test (not run): the same build with `--gpu_allow_invalid_fetch_constants=true` (the SDK's own suggestion in
+  the warning), plus `hang_watch.py`, playing to mission 2. The docs record earlier A/B evidence that this flag did
+  not fix dark gameplay; it was never tested against the freeze.
+
+### Invalid fetch constant warning and the unbounded present wait, 2026-10-24
+
+What the warning means (checked in the SDK):
+- `TextureCache::BindingInfoFromFetchConstant` (`src/graphics/pipeline/texture/cache.cpp`): for
+  `kInvalidTexture` without `--gpu_allow_invalid_fetch_constants` it warns and returns. The key stays invalid, and the
+  Vulkan texture cache binds its null image (`texture_cache.cpp:104,511`: R8G8B8A8, zero colour). So the shader reads
+  zeros: the warning does not by itself mean a wrong binding, and the flag, which makes the SDK bind the constant as a
+  real texture, is the less safe choice.
+- The constant in the freeze (`8A000000 0F9FF097 ...`) has dword_0 low bits 0 (invalid type) and a real-looking base
+  address. The game draws with it every frame; that is why the warning repeated 1900 times a minute.
+
+Changes made (rebuilt with `build_sdk_ffx.py`, smoke run 60 s: child 0, fatal 0, pacing 18–32 FPS):
+1. `src/ui/vulkan/vulkan_presenter.cpp`: `vkAcquireNextImageKHR` uses a 2 s bound instead of `UINT64_MAX`. On
+   `VK_TIMEOUT`/`VK_NOT_READY` the paint is skipped and one error is logged ("no swapchain image was released within
+   2 s"). The window's event loop keeps running; before, the main thread stayed in the driver forever.
+2. `src/graphics/pipeline/texture/cache.cpp`: the invalid-fetch warning is printed once per distinct constant
+   (dword_0 and dword_1), not per draw.
+
+What is NOT solved: why the presentation engine stopped returning images. The stacks show the GPU idle (~4%) while the
+UI thread waited for a swapchain image, so a submission or semaphore is never signalled. The timeout turns the freeze
+into a visible, recoverable error; it does not remove the cause. Verification still needed: play to mission 2 with
+`hang_watch.py` and see whether frames resume or the "no swapchain image" error repeats.
+
+### Error register: black screen and mission-2 load freeze, 2026-10-24
+
+Sessions (all: X11/XWayland, profile ARTEM, `tmp/acv-ffx-test` runtime, VSync on, limit 60):
+
+| Session | Output | Result |
+|---|---|---|
+| `20261024T121958909808Z`, `T122900263727Z` | FSR | Freeze during mission-2 load; log silent after a burst of `invalid` fetch warnings |
+| `T123613325669Z` | FSR | Freeze; stacks: main host thread blocked in `pthread_create` inside `librenderdoc.so` (fixed by opt-in patch) |
+| `T124322094949Z` | FSR | Mission 2 reached, 17–35 FPS for ~5 min, freeze at 17:49:30; stacks: main thread in `PaintAndPresentImpl` -> `drmSyncobjTimelineWait` |
+| `T125707099398Z` | FSR | Black screen reported by the user; frames presented (pacing 19–25 FPS) |
+| `T130129215018Z` | bilinear, no FXAA/dither/CAS/FSR | Black screen again; freeze in mission-2 load, stacks `logs/acv-hang-watch/20261024T180129/bt.txt` |
+
+Errors:
+
+1. **Main host thread blocks forever in the paint path.** Capture `20261024T180129`: `RunMainMessageLoop` ->
+   `Window::OnPaint` -> `VulkanPresenter::PaintAndPresentImpl` -> NVIDIA -> `drmSyncobjTimelineWait`. The 2 s bound on
+   `vkAcquireNextImageKHR` (present in the binary, never logged) did not fire, so the wait is another one:
+   `VulkanSubmissionTracker::AwaitSubmissionCompletion` calls `vkWaitForFences(..., UINT64_MAX)`
+   (`src/ui/vulkan/vulkan_submission_tracker.cpp:122`), reached from `PaintAndPresentImpl` before drawing
+   (`vulkan_presenter.cpp:1573`). The previous paint submission waits on the acquire semaphore
+   (`vulkan_presenter.cpp:2246`), which the display server signals when it releases the swapchain image. If the image is
+   never released, that fence never signals and the next paint blocks the window's thread for good.
+   Guest threads (`Main XThread`, `DrawThread`, `FileMan`, `ResourceBuild`) were all waiting; the GPU was idle (~4%).
+   Not established: why the image is not released.
+2. **Black screen is independent of FSR.** Present effect bilinear, no post effects, still black. Pacing shows frames
+   being presented, so the black picture is produced upstream or shown by the display server; the cause is not found.
+3. **Window state of a frozen session** (X properties, not a screenshot): game window `0x1e0002f` 2560x1080+0+0,
+   `_NET_WM_STATE_FULLSCREEN`, `IsViewable`, desktop 0; the active window was a different one (`0x200000`), not the game.
+   This fits "the display server stops returning images of a window that is not in front" but was not proven.
+4. **Harmless but noisy:** `Texture fetch constant (8A000000 0F9FF097 ...) has "invalid" type` (null image is bound, now
+   logged once per constant); `ResolvePath(system:\)`; `dlc_sound` misses (`ch09.fsb`, `dlc_se.fsb`,
+   `acv_dlc_dlc_se.fev`, `acv_bgm_title.fev`, `acv_talk_$(voicelang).fev`) - not in the retail image.
+
+Fixes already applied: opt-in RenderDoc, bounded acquire timeout, one-time fetch warning, shm unlink, X11 default.
+Open: bound the fence waits in the paint path (skip the frame instead of blocking), and test whether the freeze happens
+only when the game window is not the active one.
+
+### `system:` device mounted (empty), 2026-10-24
+
+- Change: `acv_linux_probe_app.h` mounts `system:` as `\Device\AcvSystem`, a read-only `HostPathDevice` over the empty
+  directory `tmp/acv-system-root` (passed by `probe_linux.py` as `ACV_SYSTEM_ROOT`). No file is created.
+- Result (`logs/acv-native-linux/20261024T131124940099Z`, 40 s, child 0): `[acv-vfs] system: mounted as an empty
+  read-only device`; `NtCreateFile FAILED path='system:\system.properties' -> 0xc000000f`, the same status the guest got
+  before; runtime errors 0 (the `[error] ResolvePath(system:\) failed - device not found` line is gone).
+- Guest behaviour is unchanged by design: the loader's file-status check (0x82C33458) still returns false and parsing is
+  skipped (analysis above). The classification entry in `acv_settings.BENIGN_RUNTIME_ERRORS` stays for older builds.
+- The ELF in the accepted build directory was rebuilt for this (`build_linux.py`, retained overrides). Its hash is now
+  `08045fae38fba792...`; the previous ELF is saved in `tmp/acv-backups/pre-system-mount/`. `RUNTIME_BASELINE.json`
+  still holds the older ELF hash (it was already out of date before this change: the file in the build directory had
+  hash `e3ab3704...`), so it needs a deliberate re-record.
+- `dlc_sound:` / `dlc_image:` misses were left alone on request.
+
+### Re-verification of the fixes and bounded paint waits, 2026-10-24
+
+Re-check against the live frozen session (PID 47232, `logs/acv-hang-watch/20261024T180129/`) and the binaries:
+
+| Fix | Check | Result |
+|---|---|---|
+| RenderDoc opt-in | `/proc/47232/maps` has no `librenderdoc`; `bt.txt` has no renderdoc frame; binary has `ENABLE_VULKAN_RENDERDOC_CAPTURE` | holds |
+| `/dev/shm` leak | 0 `xenia_memory_*` files while the game ran and after `kill -9` | holds |
+| One-time invalid-fetch warning | 3 warnings in the whole session (was 1900/min) | holds |
+| Libraries used | maps show `tmp/acv-ffx-test/librex*.so` | as intended |
+| Acquire timeout | message is in the binary, never logged in the freeze | holds, but it is **not** the blocking call |
+| Patch files | the previous `launcher-runtime-limiter-xuid-shm.patch` no longer matched the tree (other changes landed in `command_processor.cpp`) | regenerated; all three patches dry-run cleanly on pristine HEAD files |
+| Non-FidelityFX build | my timeout constants sat inside `#if REX_HAS_FIDELITYFX_RUNTIME` (a defect: the SDK would not build without FidelityFX) | moved out; the presenter and tracker compile in the non-FFX configuration |
+
+New in this step:
+- `VulkanSubmissionTracker::AwaitSubmissionCompletion(index, timeout_ns = UINT64_MAX)` (`submission_tracker.h`,
+  `vulkan_submission_tracker.cpp`); after a timeout the older fences are only polled.
+- `PaintAndPresentImpl` waits for the previous paint submission for at most 2 s before a paint; if it is not complete,
+  one error is logged ("previous paint submission N did not complete within 2 s; skipping the frame") and the frame is
+  skipped (nothing is acquired at that point).
+- The three waits that happen with an image already acquired stay unbounded, but `AwaitReportingStall` logs once after
+  5 s with the location (`old guest output image`, `intermediate image replacement`,
+  `swapchain effect pipeline rebuild`). The next freeze will name the wait.
+- Patch: `patches/present-acquire-timeout-and-fetch-warning.patch` (presenter, tracker, texture cache hunks).
+- Smoke test of the rebuilt runtime on the new ELF (70 s, plain settings): child 0, runtime errors 0, no stall messages,
+  pacing 30 FPS.
+
+Not verified: that the bounded wait lets the window recover in the real freeze (needs mission 2). Also unchanged: the
+black screen.
+
+### system.properties: search for the file, its keys and related stubs, 2026-10-24
+
+Same method as for the sound banks (hash lookup in the dvdbnd BHD5 index) plus a read-only look at the XEX data:
+
+- Hash search: `h = h*37 + c` over the lower-cased path (the function of `tools/build_dlc_sound_dir.py`) against
+  `assets/manifests/acv-dvdbnd-all.tsv` (19 728 files). 1560 candidates (names `system.properties`, `sysprop.*`,
+  `system.ini/cfg/xml/txt`, ... under 47 prefixes with `/`, `\`, `system:` and `game:` forms): no hit. Control: `/sound/acv_bgm_bgm.fev` is found.
+- Content search: 64 153 extracted files (`assets/original/acv-dvdbnd-all`, `acv-bnd3-all`, `-extracted`, `-nested`) scanned
+  for `system.properties`, `sysprop`, `.properties` as ASCII, UTF-16LE and UTF-16BE: no occurrence. The name exists only
+  in the XEX.
+- XEX data (Ghidra RPC `read-bytes`, read-only), UTF-16BE strings around the path `0x8210FA38`:
+  switches `--DLsysprop` (0x8210FA20), `--DLsysprop_nooverwrite` (0x8210F9F0); engine banner
+  `dantelion2 v8.8.34#0 (build:Thu Sep 15 18:10:20 2011)` (0x8210FBF8); property keys `Core.System.PlatformString`
+  (default `Xbox360`), `Core.System.Region`, `Xenon.IO.CacheDrive.MemorySize`, `Xenon.IO.CacheDrive.ClusterSize`,
+  `Core.IO.Install.AutoMount`, `Core.IO.Cache.ClearOnMount`, `Core.IO.Cache.AutoMount`,
+  `Xenon.IO.FileSystem.BufferSize`; region words (Asia, America, languages) and the `YES`/`yes` and ` = ` tokens, i.e.
+  a `key = value` text file. Decompiling the parser (`0x82C25810`) returns a truncated `noreturn` body, so the
+  value handling was read from strings and the saved listings, not reconstructed.
+- Conclusion: `system:/system.properties` is a developer-side override file for Dantelion2 engine settings (platform,
+  region, cache-drive size, mount behaviour, file buffer size). It is not shipped; when absent the guest skips the parser
+  and keeps compiled-in defaults (loader `0x82C22B90`, absence branch `0x82C22C8C`). The failed open is correct behaviour.
+- Related kernel stubs that follow the request in every log (`Stub XFileFsDeviceInformation!` x3,
+  `IoDismountVolumeByFileHandle(0xf80011ac / 0xf80013ac) - stub`): `xboxkrnl_io_info.cpp:434` answers FILE_DEVICE_UNKNOWN
+  with characteristics 0 (the ACV shim changes it to CD-ROM for the disc, `[acv-compat] FileFsDeviceInformation device type
+  -> CD-ROM`), `xboxkrnl_io.cpp:731` returns success. They probe the volume of the cache/disc files that the
+  `CacheDrive`/`Install` settings concern. No failure follows in the log, but the volume information is not real; whether
+  the engine uses it to choose cache sizes was not shown.
+- Not done: writing a `system.properties` (defaults are unknown, and an invented file would change engine behaviour
+  unobservably). It could be tried as an experiment through `--DLsysprop=<path>` if a specific setting needs testing.
+
+### Error: mission-2 freeze on the accepted build; the instrumented waits did not fire, 2026-10-24
+
+Session `logs/acv-native-linux/20261024T135710111433Z` (accepted build after the fixes: ELF with `system:` mount, FidelityFX
+runtime with RenderDoc opt-in, bounded paint waits; plain settings, bilinear output, no FXAA/dither/CAS/FSR; VSync on, limit 60;
+under `hang_watch.py`, capture `logs/acv-hang-watch/20261024T185710/`, silence 90 s, taken 19:04:23).
+
+- Timeline: user-reported freeze around 19:02-19:03; the last log write is 19:02:52. Before it: 26 pacing windows, 15.9-28 FPS;
+  the `Texture fetch constant (8A000000 0F9FF097 ...) "invalid" type` warning (printed once now) followed by two more pacing
+  windows (about 12 s) and then silence. The same order was seen in the earlier freezes: that constant (1280-wide tiled
+  surface, format 23 = 24_8_FLOAT, base 0x0F9FF000) is bound shortly before the stall.
+- Stacks (`bt.txt`): host main thread again in `RunMainMessageLoop` -> `Window::OnPaint` -> `Presenter::PaintFromUIThread`
+  -> `VulkanPresenter::PaintAndPresentImpl` -> NVIDIA -> `drmSyncobjTimelineWait`. `Main XThread`, `DrawThread`, `FileMan`,
+  `Core.Res.*` wait in `NtWaitForSingleObjectEx`; `GPU Commands` waits in `CommandProcessor::WorkerThreadMain`; GPU idle.
+  No `librenderdoc` frame.
+- The new diagnostics did not fire: no "did not complete within 2 s" (bounded wait before the paint) and no "waiting more
+  than 5 s" (the three waits after the acquire) in the log, and the 2 s acquire timeout was not logged. So the blocking call
+  is inside `PaintAndPresentImpl` but not one of those waits. Candidates with no timeout: `vkQueuePresentKHR`
+  (`vulkan_presenter.cpp`, present call) and `vkQueueSubmit` of the paint. Not established which.
+- Consequence: the bounded waits do not prevent this freeze. The fix list in the register above stays valid for the leak,
+  RenderDoc and the log flood, but the window freeze is not solved.
+- Prepared, not built into any runtime yet: `PaintStage` + watchdog thread in `vulkan_presenter.cpp` (names the Vulkan call
+  the UI thread has been in for more than 5 s: `vkAcquireNextImageKHR`, `vkQueueSubmit (paint)`, `vkQueuePresentKHR`).
+  It compiles in the non-FidelityFX configuration; the FidelityFX runtime was not rebuilt (the rebuild/launch was declined).
+- Next test: rebuild with the watchdog and run once with VSync off (FIFO is then not forced, MAILBOX/IMMEDIATE are allowed),
+  to see whether the freeze depends on FIFO presentation, and read the watchdog message otherwise.

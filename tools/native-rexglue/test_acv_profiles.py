@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for the persistent profile store (stage B)."""
-import multiprocessing, sys, tempfile, unittest
+import multiprocessing, subprocess, sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import acv_profiles as p
@@ -98,6 +98,21 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(s.SettingsError):
             self.store.set_names(a.uuid, gamertag="x" * 16)
         self.assertEqual(self.store.get(a.uuid).gamertag, "NEW")
+
+    def test_child_retains_lock_after_supervisor_closes(self):
+        a = self.store.create("A")
+        lock = self.store.lock(a.uuid).acquire()
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                 pass_fds=(lock.fd,))
+        try:
+            lock.release()
+            with self.assertRaises(p.ProfileBusy):
+                self.store.lock(a.uuid).acquire()
+        finally:
+            child.terminate()
+            child.wait(timeout=5)
+        with self.store.lock(a.uuid):
+            pass
 
     def test_import(self):
         a = self.store.create("A")

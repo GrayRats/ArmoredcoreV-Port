@@ -598,3 +598,44 @@ high-pressure eviction. Не считать их блокерами релиза
 возобновлять расследование без нового запроса или новых данных. Это решение
 фиксирует приоритет triage; оно не создаёт отсутствующие аудиоданные и не
 утверждает, что последние два сценария были проверены в runtime.
+
+## 2026-10-24 — отдельная папка ACV Linux
+
+Собран `../ACV-Linux/` (183 файла): игра/лаунчер, локальные данные, Qt/ICU и
+патченный runtime-кандидат. Проверены хеши, X11 окно лаунчера, 20s game startup
+из cwd `/`, фактически загруженные локальные библиотеки и отсутствие новых shm
+orphan. 58 samples старта получены при чистом shm. Save/load, CAS/FSR, темп
+и новая принятая baseline остаются открыты. [Evidence/ограничения](LAUNCHER_PACKAGE.md).
+
+## 2026-10-24 — экран, FPS и эффекты
+
+Три35s X11 проверки подтвердили вписывание16:9 в UltraWide/16:10 и resize,
+VSync→FIFO, рабочие CAS/FSR shader paths, явный10→8-bit fallback и cadence
+лимитера60. Guest/window modes разделены в SDK. Лаунчер отображает фактические
+параметры. Нативные FOV/HUD, высокие FPS и визуальная приёмка ещё открыты.
+[Матрица и ограничения](LAUNCHER_PACKAGE.md#экран-цвет-и-подача-кадров--2026-10-24).
+
+### UltraWide projection evidence — 2026-10-24
+
+Read-only bounded trace подтвердил64 результата `0x82BC8980` как перспективу
+FOV≈60°, aspect16:9, near/far1/1000; max normalized error3.285e-7.
+192 entry samples, debugger read errors0, shm orphan0 до/после. Один входной
+набор; gameplay-камера/HUD/culling и оригинальная консоль не проверены.
+[Метод, инструменты и ограничения](LAUNCHER_PACKAGE.md#ultrawide-подтверждение-перспективы).
+
+### UltraWide native experiment — 2026-10-24
+
+Реализован выключенный по умолчанию override одного perspective callsite
+0x822B450C. Изолированная Linux-сборка e3ab3704… прошла60s GDB-прогон:
+6 матриц64:27,58 остальных16:9, max error3.285e-7; shm orphan0 до/после.
+30 boundary cases actual hook object прошли. Полный UltraWide не принят:
+viewport/output, HUD/прицел, связанные проекции и culling ещё не согласованы.
+Пакет ACV-Linux остаётся прежней display-сборкой, experimental host отдельно.
+[Технические факты и evidence](LAUNCHER_PACKAGE.md#ultrawide-эксперимент-отдельного-вызова--2026-10-24).
+
+### Fullscreen2560×1080 test — 2026-10-24
+
+120s X11: окно и output rect2560×1080 без полос; эксперимент64:27 сработал
+на выбранном callsite. Child0, optional system.properties остаётся, orphan0.
+Поздняя сцена≈15.5–15.9 XE_SWAP FPS при cap60; визуальная приёмка/HUD/culling
+открыты. [Результат и ограничения](LAUNCHER_PACKAGE.md#полноэкранный-тест25601080--2026-10-24).

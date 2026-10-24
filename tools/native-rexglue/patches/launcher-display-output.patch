@@ -1,0 +1,252 @@
+--- a/include/rex/graphics/command_processor.h
++++ b/include/rex/graphics/command_processor.h
+@@ -12,6 +12,7 @@
+ #pragma once
+ 
+ #include <atomic>
++#include <chrono>
+ #include <cstring>
+ #include <functional>
+ #include <memory>
+@@ -244,6 +245,10 @@
+   std::vector<uint32_t> me_bin_;
+ 
+   uint32_t counter_ = 0;
++  std::chrono::steady_clock::time_point next_swap_{};
++  std::chrono::steady_clock::time_point previous_swap_{};
++  int32_t previous_frame_limit_ = 0;
++  std::vector<double> swap_intervals_ms_;
+ 
+   uint32_t primary_buffer_ptr_ = 0;
+   uint32_t primary_buffer_size_ = 0;
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -965,19 +965,32 @@
+   uint32_t frontbuffer_height = reader->ReadAndSwap<uint32_t>();
+   reader->AdvanceRead((count - 4) * sizeof(uint32_t));
+ 
+-  if (const int32_t limit = REXCVAR_GET(frame_limit_fps); limit > 0) {
+-    // Absolute-deadline pacing: sleeping to a schedule (not for a fixed delay) keeps the average
+-    // rate exact. After a long stall the schedule restarts instead of bursting to catch up.
+-    static std::chrono::steady_clock::time_point next_swap;
++  const int32_t limit = REXCVAR_GET(frame_limit_fps);
++  const auto now = std::chrono::steady_clock::now();
++  if (limit != previous_frame_limit_ || limit <= 0) next_swap_ = now;
++  previous_frame_limit_ = limit;
++  if (limit > 0) {
+     const auto period = std::chrono::nanoseconds(1000000000LL / limit);
+-    const auto now = std::chrono::steady_clock::now();
+-    if (next_swap < now - period) {
+-      next_swap = now;
+-    } else if (next_swap > now) {
+-      rex::thread::Sleep(std::chrono::duration_cast<std::chrono::microseconds>(next_swap - now));
+-    }
+-    next_swap += period;
+-  }
++    if (next_swap_ < now - period) next_swap_ = now;
++    if (next_swap_ > now) {
++      rex::thread::Sleep(std::chrono::duration_cast<std::chrono::microseconds>(next_swap_ - now));
++    }
++    next_swap_ += period;
++  }
++  const auto paced = std::chrono::steady_clock::now();
++  if (previous_swap_.time_since_epoch().count()) {
++    swap_intervals_ms_.push_back(std::chrono::duration<double, std::milli>(paced - previous_swap_).count());
++    if (swap_intervals_ms_.size() == 300) {
++      auto intervals = swap_intervals_ms_;
++      std::sort(intervals.begin(), intervals.end());
++      double total = 0;
++      for (double interval : intervals) total += interval;
++      REXLOG_INFO("[acv-display] pacing samples=300 limit={} fps={} mean_ms={} p95_ms={} p99_ms={} min_ms={} max_ms={}",
++          limit, 300000.0 / total, total / 300.0, intervals[284], intervals[296], intervals.front(), intervals.back());
++      swap_intervals_ms_.clear();
++    }
++  }
++  previous_swap_ = paced;
+ 
+   IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);
+ 
+--- a/src/kernel/xboxkrnl/xboxkrnl_video.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_video.cpp
+@@ -42,15 +42,12 @@
+ uint32_t GetConfiguredVideoModeWidth() {
+   int32_t configured_width = REXCVAR_GET(video_mode_width);
+   if (!rex::cvar::HasNonDefaultValue("video_mode_width")) {
+-    if (rex::cvar::HasNonDefaultValue("window_width") && REXCVAR_GET(window_width) > 0) {
+-      configured_width = REXCVAR_GET(window_width);
+-    } else {
+-      int32_t preset_width = 0;
+-      int32_t preset_height = 0;
+-      if (rex::graphics::video_mode_util::TryGetResolutionPresetFromCVar(preset_width,
+-                                                                         preset_height)) {
+-        configured_width = preset_width;
+-      }
++    // Host window dimensions must not alter the guest display mode/aspect ratio.
++    // Explicit default-valued cvars are still defaults in the registry.
++    int32_t preset_width = 0;
++    int32_t preset_height = 0;
++    if (rex::graphics::video_mode_util::TryGetResolutionPresetFromCVar(preset_width, preset_height)) {
++      configured_width = preset_width;
+     }
+   }
+   return uint32_t(std::clamp(configured_width, 640, 0x0FFF));
+@@ -59,15 +56,12 @@
+ uint32_t GetConfiguredVideoModeHeight() {
+   int32_t configured_height = REXCVAR_GET(video_mode_height);
+   if (!rex::cvar::HasNonDefaultValue("video_mode_height")) {
+-    if (rex::cvar::HasNonDefaultValue("window_height") && REXCVAR_GET(window_height) > 0) {
+-      configured_height = REXCVAR_GET(window_height);
+-    } else {
+-      int32_t preset_width = 0;
+-      int32_t preset_height = 0;
+-      if (rex::graphics::video_mode_util::TryGetResolutionPresetFromCVar(preset_width,
+-                                                                         preset_height)) {
+-        configured_height = preset_height;
+-      }
++    // Host window dimensions must not alter the guest display mode/aspect ratio.
++    // Explicit default-valued cvars are still defaults in the registry.
++    int32_t preset_width = 0;
++    int32_t preset_height = 0;
++    if (rex::graphics::video_mode_util::TryGetResolutionPresetFromCVar(preset_width, preset_height)) {
++      configured_height = preset_height;
+     }
+   }
+   return uint32_t(std::clamp(configured_height, 480, 0x0FFF));
+--- a/src/ui/vulkan/vulkan_presenter.cpp
++++ b/src/ui/vulkan/vulkan_presenter.cpp
+@@ -57,6 +57,10 @@
+ 
+ REXCVAR_DEFINE_BOOL(vulkan_allow_present_mode_fifo_relaxed, true, "UI/Vulkan",
+                     "Allow FIFO relaxed present mode");
++
++REXCVAR_DEFINE_INT32(present_output_bits, 8, "UI/Vulkan",
++                    "Requested SDR swapchain RGB precision (8 or 10); unsupported 10 falls back to 8")
++    .range(8, 10);
+ 
+ namespace rex {
+ namespace ui {
+@@ -1217,9 +1221,8 @@
+     }
+   }
+   if (surface_formats_get_result != VK_SUCCESS) {
+-    // Assuming any format in case of an error (or as some fallback in case of
+-    // specification violation).
+-    surface_formats.clear();
++    REXLOG_ERROR("VulkanPresenter: surface format query failed: {}", int(surface_formats_get_result));
++    return VK_NULL_HANDLE;
+   }
+ #if REX_PLATFORM_ANDROID
+   // Android uses R8G8B8A8.
+@@ -1231,8 +1234,15 @@
+   static const VkFormat kFormat8888Secondary = VK_FORMAT_R8G8B8A8_UNORM;
+ #endif
+   VkSurfaceFormatKHR image_format;
+-  if (surface_formats.empty() ||
+-      (surface_formats.size() == 1 || surface_formats[0].format == VK_FORMAT_UNDEFINED)) {
++  if (surface_formats.empty()) {
++    REXLOG_ERROR("VulkanPresenter: surface returned no formats");
++    return VK_NULL_HANDLE;
++  }
++  for (const auto& format : surface_formats) {
++    REXLOG_INFO("[acv-display] surface_format format={} colorspace={}",
++                uint32_t(format.format), uint32_t(format.colorSpace));
++  }
++  if (surface_formats.size() == 1 && surface_formats[0].format == VK_FORMAT_UNDEFINED) {
+     // Can choose any format if the implementation specifies only UNDEFINED.
+     image_format.format = kFormat8888Primary;
+     image_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+@@ -1290,6 +1300,20 @@
+     }
+   }
+ 
++  if (REXCVAR_GET(present_output_bits) == 10) {
++    auto ten_bit = std::find_if(surface_formats.begin(), surface_formats.end(),
++        [](const VkSurfaceFormatKHR& f) {
++          return f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
++                 (f.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ||
++                  f.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
++        });
++    if (ten_bit != surface_formats.end()) {
++      image_format = *ten_bit;
++    } else {
++      REXLOG_WARN("[acv-display] fallback requested_bits=10 reason=no_10bit_srgb_surface_format");
++    }
++  }
++
+   // Get presentation modes.
+   std::vector<VkPresentModeKHR> present_modes;
+   VkResult present_modes_get_result;
+@@ -1314,6 +1338,10 @@
+   if (present_modes_get_result != VK_SUCCESS) {
+     // Assuming FIFO only (required everywhere) in case of an error.
+     present_modes.clear();
++  }
++
++  for (auto mode : present_modes) {
++    REXLOG_INFO("[acv-display] present_mode value={}", uint32_t(mode));
+   }
+ 
+   // Create the swapchain.
+@@ -1417,6 +1445,10 @@
+       uint32_t(swapchain_create_info.imageFormat), uint32_t(swapchain_create_info.imageColorSpace),
+       uint32_t(swapchain_create_info.presentMode));
+ 
++  REXLOG_INFO("[acv-display] applied width={} height={} format={} colorspace={} mode={} requested_bits={}",
++              image_extent.width, image_extent.height, uint32_t(image_format.format),
++              uint32_t(image_format.colorSpace), uint32_t(swapchain_create_info.presentMode),
++              REXCVAR_GET(present_output_bits));
+   present_queue_family_out = queue_family_index_present;
+   image_format_out = swapchain_create_info.imageFormat;
+   image_extent_out = swapchain_create_info.imageExtent;
+@@ -1894,6 +1926,21 @@
+             guest_output_flow.output_y = 0;
+             guest_output_flow.letterbox_clear_rectangle_count = 0;
+           }
++          if (is_final_effect) {
++            // Report the final shader path after pipeline creation and geometry fallback.
++            const auto& props = guest_output_flow.properties;
++            std::array<int64_t, 10> state{int64_t(props.frontbuffer_width), int64_t(props.frontbuffer_height),
++                guest_output_flow.output_x, guest_output_flow.output_y,
++                int64_t(effect_rect_size.first), int64_t(effect_rect_size.second),
++                int64_t(guest_output_paint_config.GetEffect()), int64_t(effect),
++                int64_t(guest_output_flow.effect_count), int64_t(paint_context_.swapchain_render_pass_format)};
++            static thread_local std::array<int64_t, 10> previous{};
++            if (state != previous) {
++              previous = state;
++              REXLOG_INFO("[acv-display] output source_width={} source_height={} x={} y={} width={} height={} requested_effect={} final_effect={} passes={} format={}",
++                  state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7], state[8], state[9]);
++            }
++          }
+ #if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
+           bool use_temporal_upscaler =
+               temporal_effect_selected && effect == GuestOutputPaintEffect::kFsrEasu;
+--- a/src/ui/window_sdl.cpp
++++ b/src/ui/window_sdl.cpp
+@@ -152,6 +152,27 @@
+   sdl_window_id_ = SDL_GetWindowID(sdl_window_);
+   sdl_app_context().RegisterWindow(sdl_window_id_, this);
+ 
++  int mode_display_count = 0;
++  if (SDL_DisplayID* displays = SDL_GetDisplays(&mode_display_count)) {
++    for (int index = 0; index < mode_display_count; ++index) {
++      if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(displays[index])) {
++        REXLOG_INFO("[acv-display] monitor index={} width={} height={} refresh_hz={} scale={}",
++            index + 1, mode->w, mode->h, mode->refresh_rate, mode->pixel_density);
++      }
++      int count = 0;
++      if (SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(displays[index], &count)) {
++        for (int i = 0; i < count; ++i) {
++          REXLOG_INFO("[acv-display] display_mode monitor={} width={} height={} refresh_hz={}",
++              index + 1, modes[i]->w, modes[i]->h, modes[i]->refresh_rate);
++        }
++        SDL_free(modes);
++      }
++    }
++    SDL_free(displays);
++  } else {
++    REXLOG_WARN("[acv-display] display_query_failed reason={}", SDL_GetError());
++  }
++
+   // Center on the requested display before fullscreen so SDL resolves
+   // fullscreen against it. 1-based enumeration order; 0 = system default.
+   if (int32_t monitor_index = REXCVAR_GET(monitor); monitor_index > 0) {

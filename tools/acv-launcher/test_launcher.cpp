@@ -41,12 +41,12 @@ private slots:
         QVERIFY(root.isValid());
         const QString tools = root.path() + "/tools/native-rexglue";
         QVERIFY(QDir().mkpath(tools));
-        for (const char *f : {"acv_profile_cli.py", "acv_profiles.py", "acv_settings.py", "acv_shm.py"})
+        for (const char *f : {"acv_profile_cli.py", "acv_profiles.py", "acv_settings.py", "acv_shm.py", "acv_paths.py"})
             QVERIFY(QFile::copy(QString(NATIVE_DIR) + "/" + f, tools + "/" + f));
         const QString argvFile = root.path() + "/argv.txt";
         QFile probe(tools + "/probe_linux.py");
         QVERIFY(probe.open(QIODevice::WriteOnly));
-        probe.write(("import sys\nopen(r'" + argvFile + "','w').write('\\n'.join(sys.argv[1:]))\n"
+        probe.write(("import sys\nprint('[acv-display] applied width=1600 height=675 format=44 colorspace=0 mode=2 requested_bits=10', flush=True)\nopen(r'" + argvFile + "','w').write('\\n'.join(sys.argv[1:]))\n"
                      "sys.exit(int(open(r'" + root.path() + "/exit.txt').read()))\n").toUtf8());
         probe.close();
         QFile exitCode(root.path() + "/exit.txt");
@@ -85,6 +85,12 @@ private slots:
         QTest::mouseClick(play, Qt::LeftButton);
         QTRY_COMPARE_WITH_TIMEOUT(state->text(), QString("Игра завершена"), 10000);
         QTRY_VERIFY(play->isEnabled());
+        auto *display = window.findChild<QLabel *>("displayStatus");
+        QVERIFY(display != nullptr);
+        QVERIFY(display->text().contains("1600×675"));
+        QVERIFY(display->text().contains("8 бит"));
+        QVERIFY(display->text().contains("FIFO"));
+        QVERIFY(display->text().contains("10 бит"));
         QFile argv(argvFile);
         QVERIFY(argv.open(QIODevice::ReadOnly));
         const QString recorded = QString::fromUtf8(argv.readAll());

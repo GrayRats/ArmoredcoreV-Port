@@ -1,0 +1,26 @@
+diff --git a/src/ui/renderdoc_api.cpp b/src/ui/renderdoc_api.cpp
+index e1a5287..9a09622 100644
+--- a/src/ui/renderdoc_api.cpp
++++ b/src/ui/renderdoc_api.cpp
+@@ -9,6 +9,7 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <cstdlib>
+ #include <rex/logging.h>
+ #include <rex/ui/renderdoc_api.h>
+ 
+@@ -21,6 +22,13 @@ std::unique_ptr<RenderDocAPI> RenderDocAPI::CreateIfConnected() {
+   // Keep RenderDoc optional and simply report "not connected" on this platform.
+   return nullptr;
+ #else
++  // Opt-in only. librenderdoc.so exists on this host, so Load() succeeds in every run and RENDERDOC_GetAPI
++  // installs its in-process hooks. In a mission-2 load the main host thread then blocked forever in
++  // pthread_create inside librenderdoc (logs/acv-hang-watch/20261024T173613/bt.txt). Capture sessions set
++  // ENABLE_VULKAN_RENDERDOC_CAPTURE through probe_linux.py --renderdoc, and those keep working.
++  if (!std::getenv("ENABLE_VULKAN_RENDERDOC_CAPTURE")) {
++    return nullptr;
++  }
+   std::unique_ptr<RenderDocAPI> renderdoc_api(new RenderDocAPI());
+ 
+   pRENDERDOC_GetAPI get_api = nullptr;

@@ -1,0 +1,205 @@
+diff --git a/src/ui/vulkan/vulkan_presenter.cpp b/src/ui/vulkan/vulkan_presenter.cpp
+index 23645ef..a699a65 100644
+--- a/src/ui/vulkan/vulkan_presenter.cpp
++++ b/src/ui/vulkan/vulkan_presenter.cpp
+@@ -105,6 +110,34 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL FfxVkGetDeviceProcAddrCompat(VkDevice d
+ }  // namespace
+ #endif  // defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
+ 
++namespace {
++// Upper bound for vkAcquireNextImageKHR in the paint path (see PaintAndPresentImpl).
++constexpr uint64_t kSwapchainAcquireTimeoutNs = 2000000000ull;
++// Bound for waiting on the previous paint submission before a new paint begins (nothing is acquired yet there,
++// so the frame can simply be skipped).
++constexpr uint64_t kPaintSubmissionTimeoutNs = 2000000000ull;
++// Waits that happen with a swapchain image already acquired stay unbounded, but a wait longer than this is
++// reported once with its location, so a stall shows where it is.
++constexpr uint64_t kStallReportNs = 5000000000ull;
++
++void AwaitReportingStall(VulkanSubmissionTracker& tracker, uint64_t submission_index,
++                         const char* where) {
++  tracker.AwaitSubmissionCompletion(submission_index, kStallReportNs);
++  if (tracker.UpdateAndGetCompletedSubmission() >= submission_index) {
++    return;
++  }
++  static bool reported = false;
++  if (!reported) {
++    reported = true;
++    REXLOG_ERROR(
++        "VulkanPresenter: waiting more than {} s for GPU submission {} ({}); the GPU work has not completed",
++        kStallReportNs / 1000000000ull, submission_index, where);
++  }
++  tracker.AwaitSubmissionCompletion(submission_index);
++}
++
++}  // namespace
++
+ // Generated with `xb buildshaders`.
+ namespace shaders {
+ #include "../shaders/vulkan_spirv/guest_output_bilinear_dither_ps.h"
+@@ -1535,8 +1596,22 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
+       paint_context_.submission_tracker.GetCurrentSubmission();
+   uint64_t paint_submission_count = uint64_t(paint_context_.submissions.size());
+   if (current_paint_submission_index >= paint_submission_count) {
+-    paint_context_.submission_tracker.AwaitSubmissionCompletion(current_paint_submission_index -
+-                                                                paint_submission_count);
++    const uint64_t awaited_submission = current_paint_submission_index - paint_submission_count;
++    paint_context_.submission_tracker.AwaitSubmissionCompletion(awaited_submission,
++                                                                kPaintSubmissionTimeoutNs);
++    if (paint_context_.submission_tracker.UpdateAndGetCompletedSubmission() < awaited_submission) {
++      // The previous paint submission has not finished on the GPU: the presentation engine most likely has not
++      // released the swapchain image its acquire semaphore depends on. Skip the frame; blocking here froze
++      // the window's thread for good (mission-2 load, 2026-10-24).
++      static bool stall_logged = false;
++      if (!stall_logged) {
++        stall_logged = true;
++        REXLOG_ERROR(
++            "VulkanPresenter: previous paint submission {} did not complete within {} s; skipping the frame",
++            awaited_submission, kPaintSubmissionTimeoutNs / 1000000000ull);
++      }
++      return PaintResult::kNotPresented;
++    }
+   }
+   const PaintContext::Submission& paint_submission =
+       *paint_context_.submissions[current_paint_submission_index % paint_submission_count];
+@@ -1569,13 +1644,28 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
+ 
+   VkSemaphore acquire_semaphore = paint_submission.acquire_semaphore();
+   uint32_t swapchain_image_index;
++  // A bounded wait, not UINT64_MAX: an unbounded wait here blocked the window's main thread forever when
++  // the presentation engine stopped returning images (mission-2 freeze, 2026-10-24). A stall now skips
++  // the frame and keeps the event loop alive.
+   VkResult acquire_result =
+-      dfn.vkAcquireNextImageKHR(device, paint_context_.swapchain, UINT64_MAX, acquire_semaphore,
+-                                VK_NULL_HANDLE, &swapchain_image_index);
++      dfn.vkAcquireNextImageKHR(device, paint_context_.swapchain, kSwapchainAcquireTimeoutNs,
++                                acquire_semaphore, VK_NULL_HANDLE, &swapchain_image_index);
+   switch (acquire_result) {
+     case VK_SUCCESS:
+     case VK_SUBOPTIMAL_KHR:
+       break;
++    case VK_TIMEOUT:
++    case VK_NOT_READY: {
++      static bool timeout_logged = false;
++      if (!timeout_logged) {
++        timeout_logged = true;
++        REXLOG_ERROR(
++            "VulkanPresenter: no swapchain image was released within {} s; presentation is stalled, "
++            "frames are skipped until it recovers",
++            kSwapchainAcquireTimeoutNs / 1000000000ull);
++      }
++      return PaintResult::kNotPresented;
++    }
+     case VK_ERROR_DEVICE_LOST:
+       REXLOG_ERROR(
+           "VulkanPresenter: Failed to acquire the swapchain image as the "
+@@ -1686,9 +1776,11 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
+           }
+           // Await the completion of the usage of the old guest output image and
+           // its descriptors.
+-          paint_context_.submission_tracker.AwaitSubmissionCompletion(
++          AwaitReportingStall(
++              paint_context_.submission_tracker,
+               paint_context_.guest_output_image_paint_refs[guest_output_image_paint_ref_new_index]
+-                  .first);
++                  .first,
++              "old guest output image");
+         }
+         guest_output_image_paint_ref_index = guest_output_image_paint_ref_new_index;
+         // The actual submission index will be set if the image is actually
+@@ -1735,8 +1827,9 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
+             // Need to replace immediately as a new image with the requested
+             // size is needed.
+             if (intermediate_image_ptr_ref) {
+-              paint_context_.submission_tracker.AwaitSubmissionCompletion(
+-                  paint_context_.guest_output_intermediate_image_last_submission);
++              AwaitReportingStall(paint_context_.submission_tracker,
++                                  paint_context_.guest_output_intermediate_image_last_submission,
++                                  "intermediate image replacement");
+               intermediate_image_ptr_ref.reset();
+               util::DestroyAndNullHandle(dfn.vkDestroyFramebuffer, device,
+                                          paint_context_.guest_output_intermediate_framebuffers[i]);
+@@ -1828,8 +1921,9 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
+           if (swapchain_effect_pipeline.swapchain_pipeline != VK_NULL_HANDLE &&
+               swapchain_effect_pipeline.swapchain_format !=
+                   paint_context_.swapchain_render_pass_format) {
+-            paint_context_.submission_tracker.AwaitSubmissionCompletion(
+-                paint_context_.guest_output_image_paint_last_submission);
++            AwaitReportingStall(paint_context_.submission_tracker,
++                                paint_context_.guest_output_image_paint_last_submission,
++                                "swapchain effect pipeline rebuild");
+             util::DestroyAndNullHandle(dfn.vkDestroyPipeline, device,
+                                        swapchain_effect_pipeline.swapchain_pipeline);
+           }
+diff --git a/src/graphics/pipeline/texture/cache.cpp b/src/graphics/pipeline/texture/cache.cpp
+index 76f5600..473efa4 100644
+--- a/src/graphics/pipeline/texture/cache.cpp
++++ b/src/graphics/pipeline/texture/cache.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <algorithm>
+ #include <cstdint>
++#include <unordered_set>
+ #include <utility>
+ 
+ #include <rex/assert.h>
+@@ -914,6 +915,16 @@ void TextureCache::BindingInfoFromFetchConstant(const xenos::xe_gpu_texture_fetc
+       if (REXCVAR_GET(gpu_allow_invalid_fetch_constants)) {
+         break;
+       }
++      // The fetch falls back to the null (zero) image, so the result is correct for the shader; the warning
++      // was printed for every draw that uses the constant (1900 lines a minute in the freeze session).
++      // Log each distinct constant once.
++      {
++        static std::unordered_set<uint64_t> warned_constants;
++        const uint64_t constant_key = (uint64_t(fetch.dword_0) << 32) | fetch.dword_1;
++        if (!warned_constants.insert(constant_key).second) {
++          return;
++        }
++      }
+       REXGPU_WARN(
+           "Texture fetch constant ({:08X} {:08X} {:08X} {:08X} {:08X} {:08X}) "
+           "has \"invalid\" type! This is incorrect behavior, but you can try "
+diff --git a/include/rex/ui/vulkan/submission_tracker.h b/include/rex/ui/vulkan/submission_tracker.h
+index 505b599..d262e65 100644
+--- a/include/rex/ui/vulkan/submission_tracker.h
++++ b/include/rex/ui/vulkan/submission_tracker.h
+@@ -104,7 +104,9 @@ class VulkanSubmissionTracker {
+   // guarantees as needed (when downloading, as opposed to just destroying).
+   // If false is returned, it's also not guaranteed that GetCompletedSubmission
+   // will return a value >= submission_index.
+-  bool AwaitSubmissionCompletion(uint64_t submission_index);
++  // timeout_ns bounds the fence wait (default: wait forever, as before). On timeout the call returns without
++  // the submission being completed; the caller must check UpdateAndGetCompletedSubmission().
++  bool AwaitSubmissionCompletion(uint64_t submission_index, uint64_t timeout_ns = UINT64_MAX);
+   bool AwaitAllSubmissionsCompletion() {
+     return AwaitSubmissionCompletion(submission_current_ - 1);
+   }
+diff --git a/src/ui/vulkan/vulkan_submission_tracker.cpp b/src/ui/vulkan/vulkan_submission_tracker.cpp
+index 07a07b2..2795c4b 100644
+--- a/src/ui/vulkan/vulkan_submission_tracker.cpp
++++ b/src/ui/vulkan/vulkan_submission_tracker.cpp
+@@ -88,7 +88,8 @@ uint64_t VulkanSubmissionTracker::UpdateAndGetCompletedSubmission() {
+   return submission_completed_on_gpu_;
+ }
+ 
+-bool VulkanSubmissionTracker::AwaitSubmissionCompletion(uint64_t submission_index) {
++bool VulkanSubmissionTracker::AwaitSubmissionCompletion(uint64_t submission_index,
++                                                        uint64_t timeout_ns) {
+   // The tracker itself can't give a submission index for a submission that
+   // hasn't even started being recorded yet, the client has provided a
+   // completely invalid value or has done overly optimistic math if such an
+@@ -119,10 +120,12 @@ bool VulkanSubmissionTracker::AwaitSubmissionCompletion(uint64_t submission_inde
+       assert_true(pending_pair.first > submission_completed_on_gpu_);
+       if (pending_pair.first <= submission_index) {
+         // Wait if requested.
+-        if (dfn.vkWaitForFences(device, 1, &pending_pair.second, VK_TRUE, UINT64_MAX) ==
++        if (dfn.vkWaitForFences(device, 1, &pending_pair.second, VK_TRUE, timeout_ns) ==
+             VK_SUCCESS) {
+           break;
+         }
++        // After a timeout the older fences are only polled, so one call never waits more than timeout_ns.
++        timeout_ns = 0;
+       }
+       // Just refresh the completed submission.
+       if (dfn.vkGetFenceStatus(device, pending_pair.second) == VK_SUCCESS) {

@@ -66,6 +66,10 @@ private:
     QListWidget *m_profileList;
     QLabel *m_profileDetails;
     QLabel *m_buildInfo;
+    QLabel *m_displayStatus;
+    QLabel *m_outputStatus;
+    QLabel *m_pacingStatus;
+    QByteArray m_runtimeOutput;
     QLabel *m_shmInfo;
     QPushButton *m_shmClean;
     qint64 m_shmFree = -1;
@@ -78,5 +82,6 @@ private:
     QJsonObject m_launcherState;
     QTimer *m_loadTimer = nullptr;
     qint64 m_startedMs = 0;
+    qint64 m_lastActivityMs = 0;  // last line received from the game process
     QString m_lastRuntimeLog;
 };

@@ -1,0 +1,120 @@
+{
+  "date": "2026-10-22",
+  "archive": "docs/fine/originals-20261022.tar.gz",
+  "archive_sha256": "80944fbcde6a66cbc36c10b0e3d5cf2084d9b27b4338c78d799b239604e2f683",
+  "archive_bytes": 34184,
+  "files": [
+    {
+      "original_path": "docs/REXGLUE_INSTALL.md",
+      "summary_path": "docs/fine/REXGLUE_INSTALL.md",
+      "original_bytes": 2874,
+      "summary_bytes": 1278,
+      "original_sha256": "6b490924636392cee5242f91f9325fd8d47dbd76366f125092c2fcf219ed362e",
+      "summary_sha256": "0da1e3fa13e026b0a0f9e4ee26f2c2916128f4eae9b1ba58086dfd24a5a10d9e",
+      "status": "Завершённый этап установки; текущая Linux-ветка описана в PLAN_B."
+    },
+    {
+      "original_path": "docs/UNITY_ARCHITECTURE.md",
+      "summary_path": "docs/fine/UNITY_ARCHITECTURE.md",
+      "original_bytes": 3125,
+      "summary_bytes": 1050,
+      "original_sha256": "b8151ea1fc8787a737b765902e98830d972fe5052d70529029a998c5e711c77b",
+      "summary_sha256": "8b0402f6f28dc9edb22f3918fd035d6299cdb2049988f2efb345782d89b35248",
+      "status": "Исторический этап; Unity/C# не требуются для текущей Linux-цели."
+    },
+    {
+      "original_path": "docs/XENONRECOMP.md",
+      "summary_path": "docs/fine/XENONRECOMP.md",
+      "original_bytes": 12583,
+      "summary_bytes": 1280,
+      "original_sha256": "b7c78ce63d5a420e2dfdcbcbd51b7e7bc9fe1a23499ac0ba57b2d97124c7b2c1",
+      "summary_sha256": "121d640d80dedc4a9f82426bdaaf3e4babfb5efdbee40eb312ba233a11e4e443",
+      "status": "Завершённый этап установки/генерации; альтернативная линия."
+    },
+    {
+      "original_path": "docs/XENON_MORE_INSTRUCTIONS.md",
+      "summary_path": "docs/fine/XENON_MORE_INSTRUCTIONS.md",
+      "original_bytes": 12198,
+      "summary_bytes": 1165,
+      "original_sha256": "eb80fc1890b3b5f92903e00a702bc2a34b346ec0050e25fa6553db723cc03725",
+      "summary_sha256": "21e65fd9d2a507de883c9e4c149d5173ccc281c7e7ea3de9bc1dc435bbc8eec5",
+      "status": "Отработанная изолированная оценка; оставшиеся вопросы отложены."
+    },
+    {
+      "original_path": "docs/NATIVE_HOST_L3.md",
+      "summary_path": "docs/fine/NATIVE_HOST_L3.md",
+      "original_bytes": 8779,
+      "summary_bytes": 1157,
+      "original_sha256": "ce302057b039de4039eba7213b531db00f48adbef3d58e4b9ba6649bc486a3b2",
+      "summary_sha256": "b62d52bcccd943fc8d2d3062bacf6f408792c7b6042a0a0243786b0befbccf20",
+      "status": "Завершённые host-пробы; полный host этой линии не построен."
+    },
+    {
+      "original_path": "docs/NATIVE_XEX_RUNTIME.md",
+      "summary_path": "docs/fine/NATIVE_XEX_RUNTIME.md",
+      "original_bytes": 6056,
+      "summary_bytes": 1190,
+      "original_sha256": "b8094b3008d268db36afe6235d96e579704a0fbf473b2e094919ca146ba7bfae",
+      "summary_sha256": "9f6afa4aa3968d53adac7e1f4acf98b0cb8ae0a0619b2a9cad0b2b0f4e4ae964",
+      "status": "Инвентаризация завершена; реализация сервисов этим не подтверждена."
+    },
+    {
+      "original_path": "docs/NATIVE_DECOMP_82300948.md",
+      "summary_path": "docs/fine/NATIVE_DECOMP_82300948.md",
+      "original_bytes": 24758,
+      "summary_bytes": 1212,
+      "original_sha256": "041584e88557201303d0dffd4a0ec11fd4e002a6ec1bfea09a27dacb1d96f978",
+      "summary_sha256": "1bc7940927335e0796f374234dfc6ca3f21c347467b643f65e2817e2607551a5",
+      "status": "Этап статического dataflow отработан; семантика и parity открыты."
+    },
+    {
+      "original_path": "docs/NATIVE_DECOMP_82303138.md",
+      "summary_path": "docs/fine/NATIVE_DECOMP_82303138.md",
+      "original_bytes": 4244,
+      "summary_bytes": 1233,
+      "original_sha256": "7786ab6be765280c7849c2a075e1fdc9c303704b7733dbbf38bd506b4aeb0ff3",
+      "summary_sha256": "81c554b06bbc8ec79ff9499ace785807fc54bde9e75aa28b29a3d25921716718",
+      "status": "Реконструкция wrapper и ограниченные сравнения завершены."
+    },
+    {
+      "original_path": "docs/NATIVE_DECOMP_8245FA20.md",
+      "summary_path": "docs/fine/NATIVE_DECOMP_8245FA20.md",
+      "original_bytes": 3879,
+      "summary_bytes": 1180,
+      "original_sha256": "8a767c40326d8db459c81031f2d82b8aebd74f200b82fd5f9eede398fcd4af40",
+      "summary_sha256": "8e410e3eb318a22dc72f17619fcc0340f55a4f986a37cfb3041d16ba613c4c1d",
+      "status": "Реконструкция bounded state operations и host-сравнения завершены."
+    },
+    {
+      "original_path": "docs/NATIVE_SCALAR_830D68F0.md",
+      "summary_path": "docs/fine/NATIVE_SCALAR_830D68F0.md",
+      "original_bytes": 8122,
+      "summary_bytes": 1090,
+      "original_sha256": "431ce82975c0c0f13052772bd8bf6f517f714f62f5f41a2322d721fc692b7198",
+      "summary_sha256": "bab4b27fb6c977029fba359fb48bb78ff55a0fe2b54b705ec2fb020177c8c931",
+      "status": "Ограниченные scalar-реконструкции отработаны."
+    },
+    {
+      "original_path": "docs/NATIVE_SCALAR_830D6AB0.md",
+      "summary_path": "docs/fine/NATIVE_SCALAR_830D6AB0.md",
+      "original_bytes": 3095,
+      "summary_bytes": 1198,
+      "original_sha256": "89abee5bb7f65c9ec331f304a4be91f2e49670fd5adacf9c174bf0834a5b27e4",
+      "summary_sha256": "631d84be4f911d881b49717f049dffff3ff904ffc07640160eab97b6e2f4bd3d",
+      "status": "Статическое исследование и ограниченный host-модельный тест выполнены."
+    }
+  ],
+  "updated_references": [
+    "X360_PROJECT_STATE.md",
+    "TASK-XBOX.md",
+    "docs/ACV_TIMING.md",
+    "docs/PROGRESS.md",
+    "docs/ARCHITECTURE.md",
+    "docs/PLAN.md",
+    "tools/native-decomp/record-evidence.mjs"
+  ],
+  "total_original_bytes": 89713,
+  "total_summary_bytes": 13033,
+  "verified_active_links": 39,
+  "text_reduction_percent": 85.5
+}

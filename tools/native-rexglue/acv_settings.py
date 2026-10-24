@@ -7,7 +7,6 @@ choice -> per-launch overrides. Unsupported values are rejected, never clamped s
 import configparser, copy, json, os, re, tempfile, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from pathlib import Path
 
 SCHEMA_VERSION = 1
 
@@ -23,6 +22,7 @@ GRAPHICS_SCHEMA = {
     "anisotropy": ("game", ("game", "off", 2, 4, 8, 16)),
     "antialiasing": ("off", ("off", "fxaa", "fxaa_extreme")),
     "dither": (False, (True, False)),
+    "fsr_sharpness": ("default", ("default", 0.0, 0.5, 1.0, 1.5, 2.0)),
     "sharpness": ("default", ("default", 0.0, 0.25, 0.5, 0.75, 1.0)),
     "output_effect": ("bilinear", ("bilinear", "cas", "fsr", "fsr2", "fsr3")),
     "color_encoding": ("rgb_full", ("rgb_full", "ycbcr444", "ycbcr422", "ycbcr420")),
@@ -34,17 +34,17 @@ _ANISO_CVAR = {"game": -1, "off": 0, 2: 2, 4: 3, 8: 4, 16: 5}
 
 # Values the pinned runtime cannot honour yet, with the reason shown by the launcher.
 _UNAVAILABLE = {
-    ("fps_limit", 120): "frame limiter and timestep decoupling are not implemented (PLAN_GUI.MD D3)",
-    ("fps_limit", 144): "frame limiter and timestep decoupling are not implemented (PLAN_GUI.MD D3)",
-    ("fps_limit", 165): "frame limiter and timestep decoupling are not implemented (PLAN_GUI.MD D3)",
+    ("fps_limit", 120): "guest timestep, animation and audio have not been validated above 60 FPS (PLAN_GUI.MD D3)",
+    ("fps_limit", 144): "guest timestep, animation and audio have not been validated above 60 FPS (PLAN_GUI.MD D3)",
+    ("fps_limit", 165): "guest timestep, animation and audio have not been validated above 60 FPS (PLAN_GUI.MD D3)",
     ("color_encoding", "ycbcr444"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
     ("color_encoding", "ycbcr422"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
     ("color_encoding", "ycbcr420"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
-    ("color_depth", 10): "10-bit swapchain path is not implemented in the runtime",
     ("output_effect", "fsr2"): "temporal FSR needs verified motion vectors, depth and frame history",
     ("output_effect", "fsr3"): "temporal FSR needs verified motion vectors, depth and frame history",
 }
 _EXPERIMENTAL = {
+    ("color_depth", 10): "requires a 10-bit SDR surface format; runtime reports fallback; image precision not verified",
     ("render_scale", 2): "SDK scale support depends on device limits; not verified for ACV",
     ("render_scale", 3): "SDK scale support depends on device limits; not verified for ACV",
     ("render_scale", 4): "SDK scale support depends on device limits; not verified for ACV",
@@ -226,6 +226,14 @@ def runtime_env(profile):
     return {"ACV_PILOT_NAME": profile.pilot_name, "ACV_GAMERTAG": profile.gamertag}
 
 
+# Runtime errors the project classified as harmless (docs/NATIVE_REXGLUE_LINUX.md): logged, not fatal.
+BENIGN_RUNTIME_ERRORS = (re.compile(r"ResolvePath\(system:\\\)\s+failed\s+-\s+device not found"),)
+
+
+def is_fatal_runtime_error(message):
+    return not any(pattern.search(message) for pattern in BENIGN_RUNTIME_ERRORS)
+
+
 def dedupe_options(options):
     """The SDK's CLI parser rejects a repeated --key: the whole cvar parse fails and every option,
     including --gpu_plugin, is dropped (seen 2026-10-24 with a doubled --user_language).
@@ -239,7 +247,7 @@ def dedupe_options(options):
 
 def runtime_features(directory):
     """Features of the libraries staged in `directory`, found by their cvar/env names."""
-    wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness"),
+    wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits"),
               "librexgpu-xenos.so": ("frame_limit_fps",)}
     found = set()
     for library, names in wanted.items():
@@ -268,15 +276,33 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
             f"--anisotropic_override={_ANISO_CVAR[values['anisotropy']]}",
             f"--swap_post_effect={'none' if values['antialiasing'] == 'off' else values['antialiasing']}",
             f"--present_dither={str(values['dither']).lower()}"]
+    # Guest video mode and output window size are independent. Preserve the native 16:9
+    # guest mode while the presenter fits it into the selected host rectangle.
+    args += ["--present_letterbox=true", "--present_safe_area_x=100", "--present_safe_area_y=100",
+             "--resolution=1280x720", "--video_mode_width=1280", "--video_mode_height=720",
+             "--vulkan_allow_present_mode_immediate=" + str(not values["vsync"]).lower(),
+             "--vulkan_allow_present_mode_mailbox=" + str(not values["vsync"]).lower(),
+             "--vulkan_allow_present_mode_fifo_relaxed=false",
+             "--present_effect=" + values["output_effect"]]
+    if "present_output_bits" in features:
+        args.append(f"--present_output_bits={values['color_depth']}")
+    elif values["color_depth"] != 8:
+        raise SettingsError("10-bit output requires a runtime with present_output_bits support")
+    if values["color_depth"] == 10 and values["dither"]:
+        raise SettingsError("Disable 8-bit output dithering before requesting 10-bit output")
     if values["output_effect"] != "bilinear":
         if "fidelityfx" not in features:
             raise SettingsError(f"output_effect={values['output_effect']!r} needs a FidelityFX-enabled runtime")
-        args.append(f"--present_effect={values['output_effect']}")
         if values["output_effect"] == "cas" and values["sharpness"] != "default":
             args.append(f"--present_cas_additional_sharpness={values['sharpness']}")
+        if values["output_effect"] == "fsr" and values["fsr_sharpness"] != "default":
+            args.append(f"--present_fsr_sharpness_reduction={values['fsr_sharpness']}")
     if "frame_limit_fps" in features:
         # Only 60 can be selected (see _UNAVAILABLE); pacing keeps VSync-off from running the game fast.
         args.append(f"--frame_limit_fps={values['fps_limit']}")
     if values["resolution"] != "auto":
-        args.append(f"--resolution={values['resolution']}")
+        width, height = values["resolution"].split("x")
+        args += [f"--window_width={width}", f"--window_height={height}"]
+    else:
+        args += ["--window_width=0", "--window_height=0"]
     return args

@@ -13,6 +13,7 @@ docs не является разрешением возобновить ост�
 | Что реально проверено | [PROGRESS](PROGRESS.md) | Перед повтором этапа/заявлением результата |
 | Timing, buffers, DrawThread, lookup | [ACV_TIMING](ACV_TIMING.md) | Для соответствующих guest VA/полей |
 | Runtime boundaries, слои | [ARCHITECTURE](ARCHITECTURE.md) | Перед архитектурным изменением; исторические даты учитывать |
+| Отдельная папка игры/лаунчера | [LAUNCHER_PACKAGE](LAUNCHER_PACKAGE.md) | Сборка, пути и проверка standalone-пакета |
 | Native Linux build/imports | [NATIVE_REXGLUE_LINUX](NATIVE_REXGLUE_LINUX.md) | Для воспроизведения этой линии |
 | Keyboard/mouse/config | [LINUX_INPUT](LINUX_INPUT.md) | Перед input/Setup изменениями |
 | ISO/BDT/BHD/TPF/DCX | [ASSET_FORMATS](ASSET_FORMATS.md), [RE log](REVERSE_ENGINEERING.md) | Только нужный формат/адрес |

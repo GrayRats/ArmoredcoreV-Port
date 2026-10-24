@@ -128,3 +128,29 @@ unavailable sound requests (four names absent from retail BHD5 and one literal
 `system.properties`. The missing sound payloads are not in the current ISO.
 See [DLC/GPU audit](NATIVE_REXGLUE_LINUX.md#readback-eviction-lifetime-and-file-open-audit-2026-10-24),
 [queue](../PLAN_GUI.MD), and [progress](PROGRESS.md).
+
+## Текущий resume — отдельная папка (2026-10-24)
+
+Пользователь уточнил итог: игра + лаунчер отдельно от дерева разработки.
+Собран `../ACV-Linux/start.sh`, runtime с XUID/лимитером/FidelityFX пока кандидат.
+XDG профили/логи вне пакета; фактические runtime/Qt mappings локальны.
+Профилировщик использует canonical probe и требует X11/чистый shm. Descriptor
+flock наследует игра, чтобы гибель supervisor не разрешала второго writer.
+[Проверки и оставшиеся ограничения](LAUNCHER_PACKAGE.md), очередь — PLAN_GUI.
+
+Продолжение display: приоритет — UltraWide/16:10, FPS, экран, цвет, CAS/FSR.
+SDK разделяет guest/window mode; вписывание/resize подтверждены матрицей3×35s.
+Новые surface/output/cadence telemetry и экспериментальный10-bit SDR request
+в launcher-display-output.patch. На этом X11 только8-bit; fallback проверен.
+CAS/FSR shader passes исполнены, качество картинки/скорость игры ещё не приняты.
+Native FOV/HUD и >60 остаются незавершёнными. Детали — LAUNCHER_PACKAGE.
+
+UltraWide resume: default-off native experiment в scene_aspect_experiment.cpp
+изменяет только callsite0x822B450C→0x82BC8980. Host e3ab3704… в
+`tmp/acv-ultrawide-test/`; прежний host — `tmp/acv-ultrawide-before/`.
+60s trace20261024T120037853774Z:6 матриц64:27,58 остальных16:9,
+max error3.285e-7, orphan0;30 boundary cases прошли. Config98d1c2ed… сохранён.
+ACV-Linux не заменён экспериментом. Продолжать с согласования viewport/output,
+связанных проекций/culling, HUD/прицела и атрибуции основной gameplay-камеры;
+до этого native UltraWide в лаунчере не включать. Layout исходного trace pinned
+к2d112d64, экспериментального — кe3ab3704. Детали/evidence — LAUNCHER_PACKAGE.

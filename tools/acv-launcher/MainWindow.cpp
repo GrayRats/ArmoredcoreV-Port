@@ -49,7 +49,7 @@ QString describe(const QJsonValue &v) {
     const QString s = v.toString();
     static const QHash<QString, QString> names{
         {"auto", "Авто"}, {"game", "Как в игре"}, {"off", "Выкл"}, {"default", "По умолчанию"},
-        {"windowed", "В окне"}, {"fullscreen", "Полный экран"}, {"rgb_full", "RGB Full Range"},
+        {"windowed", "В окне"}, {"fullscreen", "Без рамки на весь экран"}, {"rgb_full", "RGB Full Range"},
         {"ycbcr444", "Y′CbCr 4:4:4"}, {"ycbcr422", "Y′CbCr 4:2:2"}, {"ycbcr420", "Y′CbCr 4:2:0"},
         {"bilinear", "Билинейное"}, {"cas", "CAS (резкость)"}, {"fsr", "FSR 1"}, {"fsr2", "FSR 2"},
         {"fsr3", "FSR 3"}, {"fxaa", "FXAA"}, {"fxaa_extreme", "FXAA (экстремальный)"}};
@@ -89,8 +89,8 @@ MainWindow::MainWindow(CliClient *cli, QWidget *parent) : QMainWindow(parent), m
                                     {"color_depth", tr("Глубина, бит на компонент")}}),
                    tr("Цвет"));
     m_tabs->addTab(buildGraphicsTab(), tr("Графика"));
-    populateBuilds();
     loadSettings();
+    populateBuilds();
     for (auto it = m_combos.begin(); it != m_combos.end(); ++it)
         connect(it.value(), &QComboBox::currentIndexChanged, this, &MainWindow::markCustomPreset);
     refreshProfiles(m_launcherState.value("profile").toString());
@@ -104,9 +104,28 @@ QString MainWindow::settingsPath() const { return m_cli->profilesRoot() + "/sett
 
 void MainWindow::log(const QString &line) {
     m_output->appendPlainText(line);
+    auto applied = QRegularExpression("\\[acv-display\\] applied width=(\\d+) height=(\\d+) format=(\\d+) colorspace=(\\d+) mode=(\\d+) requested_bits=(\\d+)").match(line);
+    if (applied.hasMatch()) {
+        const int format = applied.captured(3).toInt();
+        const QString bits = (format == 58 || format == 64) ? "10" : ((format == 37 || format == 44 || format == 43 || format == 50) ? "8" : tr("не определено"));
+        const QStringList modes{"Immediate", "Mailbox", "FIFO", "FIFO relaxed"};
+        const int mode = applied.captured(5).toInt();
+        m_displayStatus->setText(tr("Вывод приложения: %1×%2, %3 бит, %4; запрошено %5 бит")
+            .arg(applied.captured(1), applied.captured(2), bits,
+                 mode < modes.size() ? modes[mode] : applied.captured(5), applied.captured(6)));
+    }
+    auto output = QRegularExpression("\\[acv-display\\] output source_width=(\\d+) source_height=(\\d+) x=(-?\\d+) y=(-?\\d+) width=(\\d+) height=(\\d+) requested_effect=(\\d+) final_effect=(\\d+) passes=(\\d+)").match(line);
+    if (output.hasMatch())
+        m_outputStatus->setText(tr("Источник %1×%2 → изображение %3×%4, отступ %5,%6; проходов: %7")
+            .arg(output.captured(1), output.captured(2), output.captured(5), output.captured(6),
+                 output.captured(3), output.captured(4), output.captured(9)));
+    auto pacing = QRegularExpression("\\[acv-display\\] pacing samples=300 limit=(\\d+) fps=([0-9.]+) mean_ms=([0-9.]+) p95_ms=([0-9.]+)").match(line);
+    if (pacing.hasMatch())
+        m_pacingStatus->setText(tr("Подача кадров: %1 FPS, среднее %2 мс, p95 %3 мс; лимит %4 (не замер скорости игры)")
+            .arg(pacing.captured(2), pacing.captured(3), pacing.captured(4), pacing.captured(1)));
     // Persistent trace of launcher decisions (launches, checks, exits) for diagnosing "nothing happened".
-    QDir().mkpath(m_cli->projectRoot() + "/logs");
-    QFile f(m_cli->projectRoot() + "/logs/acv-launcher.log");
+    QDir().mkpath(m_cli->logsRoot());
+    QFile f(m_cli->logsRoot() + "/acv-launcher.log");
     if (f.open(QIODevice::Append | QIODevice::Text))
         f.write((QDateTime::currentDateTime().toString(Qt::ISODateWithMs) + " " + line + "\n").toUtf8());
 }
@@ -126,15 +145,11 @@ QWidget *MainWindow::buildLaunchTab() {
     m_buildCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     buildRow->addWidget(m_buildCombo, 1);
     auto *browse = new QPushButton(tr("Обзор…"));
-    browse->setToolTip(tr("Другой acv_linux_probe; файл должен лежать внутри tmp/ проекта"));
+    browse->setToolTip(tr("Другой acv_linux_probe с runtime и GPU-плагином в том же каталоге"));
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, tr("Исполняемый файл игры"),
                                                           m_cli->projectRoot() + "/tmp");
         if (file.isEmpty()) return;
-        if (!QFileInfo(file).absoluteFilePath().startsWith(m_cli->projectRoot() + "/tmp/")) {
-            QMessageBox::warning(this, tr("Сборка"), tr("Файл должен находиться внутри каталога tmp/ проекта."));
-            return;
-        }
         int i = m_buildCombo->findData(file);
         if (i < 0) {
             m_buildCombo->addItem(QFileInfo(file).dir().dirName(), file);
@@ -147,6 +162,14 @@ QWidget *MainWindow::buildLaunchTab() {
     m_buildInfo = new QLabel;
     m_buildInfo->setWordWrap(true);
     form->addRow(QString(), m_buildInfo);
+    m_displayStatus = new QLabel(tr("Режим вывода: ожидается запуск"));
+    m_displayStatus->setObjectName("displayStatus");
+    m_outputStatus = new QLabel(tr("Изображение: ожидаются данные runtime"));
+    m_pacingStatus = new QLabel(tr("Темп: ожидаются интервалы кадров"));
+    for (auto *label : {m_displayStatus, m_outputStatus, m_pacingStatus}) {
+        label->setWordWrap(true);
+        form->addRow(QString(), label);
+    }
     connect(m_buildCombo, &QComboBox::currentIndexChanged, this, &MainWindow::refreshBuildInfo);
 
     auto *shmRow = new QHBoxLayout;
@@ -188,7 +211,7 @@ QWidget *MainWindow::buildLaunchTab() {
     auto *logs = new QPushButton(tr("Каталог логов"));
     logs->setMinimumHeight(48);
     connect(logs, &QPushButton::clicked, this, [this] {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(m_cli->projectRoot() + "/logs/acv-native-linux"));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_cli->logsRoot() + "/acv-native-linux"));
     });
     buttons->addWidget(logs, 1);
     v->addLayout(buttons);
@@ -384,7 +407,7 @@ QWidget *MainWindow::buildGraphicsTab() {
     const QList<QPair<QString, QString>> rows{
         {"render_scale", tr("Масштаб внутреннего рендера")}, {"anisotropy", tr("Анизотропная фильтрация")},
         {"antialiasing", tr("Сглаживание")}, {"dither", tr("Дизеринг")},
-        {"output_effect", tr("Масштабирование вывода")}, {"sharpness", tr("Резкость CAS")}};
+        {"output_effect", tr("Масштабирование вывода")}, {"sharpness", tr("Резкость CAS")}, {"fsr_sharpness", tr("Смягчение FSR RCAS (0 — резче)")}};
     for (const auto &r : rows) form->addRow(r.second, optionCombo(r.first));
     auto *note = new QLabel(tr("«Экспериментально» — включается флажком на вкладке «Запуск». CAS и FSR требуют сборку с "
                                "FidelityFX; FSR 2/3 недоступны. Масштаб рендера и FXAA пока не проверены на картинке."));
@@ -399,13 +422,16 @@ QWidget *MainWindow::buildGraphicsTab() {
 void MainWindow::populateBuilds() {
     const QString tmp = m_cli->projectRoot() + "/tmp";
     const QList<QPair<QString, QString>> builds{
+        {tr("Автономная сборка"), m_cli->projectRoot() + "/bin/game/acv_linux_probe"},
         {tr("Принятая сборка"), tmp + "/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe"},
         {tr("Тест: лимитер кадров + XUID"), tmp + "/acv-limiter-test/acv_linux_probe"},
         {tr("Тест: FidelityFX (CAS/FSR)"), tmp + "/acv-ffx-test/acv_linux_probe"}};
     for (const auto &b : builds)
         if (QFileInfo::exists(b.second)) m_buildCombo->addItem(b.first, b.second);
     const QString saved = m_launcherState.value("build").toString();
-    if (!saved.isEmpty() && QFileInfo::exists(saved)) {
+    if (!saved.isEmpty() && QFileInfo::exists(saved)
+        && (!QFileInfo::exists(m_cli->projectRoot() + "/acv-package.json")
+            || saved.startsWith(m_cli->projectRoot() + "/"))) {
         int i = m_buildCombo->findData(saved);
         if (i < 0) {
             m_buildCombo->addItem(QFileInfo(saved).dir().dirName(), saved);
@@ -502,6 +528,7 @@ void MainWindow::applyPreset(const QString &name) {
     const QJsonObject &p = name == "quality" ? kQuality : kCompatibility;
     for (auto it = p.begin(); it != p.end(); ++it) setCombo(it.key(), it.value());
     setCombo("sharpness", "default");
+    setCombo("fsr_sharpness", "default");
     m_applyingPreset = false;
     const int i = m_presetCombo->findData(name);
     if (i >= 0) m_presetCombo->setCurrentIndex(i);
@@ -713,25 +740,44 @@ void MainWindow::startGame() {
 
 void MainWindow::launchProcess(const QString &profile) {
     if (m_game) return;
+    m_runtimeOutput.clear();
+    m_displayStatus->setText(tr("Режим вывода: ожидается запуск"));
+    m_outputStatus->setText(tr("Изображение: ожидаются данные runtime"));
+    m_pacingStatus->setText(tr("Темп: ожидаются интервалы кадров"));
     m_game = new QProcess(this);
     m_game->setProgram("python3");
     m_game->setArguments(m_cli->sessionArguments(profile, settingsPath(), m_experimental->isChecked(),
                                                  m_buildCombo->currentData().toString(),
                                                  m_videoCombo->currentData().toString()));
     connect(m_game, &QProcess::readyReadStandardOutput, this, [this] {
-        log(QString::fromUtf8(m_game->readAllStandardOutput()).trimmed());
+        m_lastActivityMs = QDateTime::currentMSecsSinceEpoch();
+        m_runtimeOutput += m_game->readAllStandardOutput();
+        qsizetype end;
+        while ((end = m_runtimeOutput.indexOf('\n')) >= 0) {
+            log(QString::fromUtf8(m_runtimeOutput.left(end)));
+            m_runtimeOutput.remove(0, end + 1);
+        }
     });
     connect(m_game, &QProcess::readyReadStandardError, this, [this] {
         log(QString::fromUtf8(m_game->readAllStandardError()).trimmed());
     });
     connect(m_game, &QProcess::started, this, [this] {
         m_startedMs = QDateTime::currentMSecsSinceEpoch();
+        m_lastActivityMs = m_startedMs;
         if (!m_loadTimer) {
             m_loadTimer = new QTimer(this);
             m_loadTimer->setInterval(1000);
             connect(m_loadTimer, &QTimer::timeout, this, [this] {
                 if (!m_game) return;
-                const qint64 s = (QDateTime::currentMSecsSinceEpoch() - m_startedMs) / 1000;
+                const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                const qint64 s = (now - m_startedMs) / 1000;
+                const qint64 idle = (now - m_lastActivityMs) / 1000;
+                // A quiet log for a long time is the freeze signature seen on mission loads (2026-10-24).
+                if (idle >= 60) {
+                    setGameState(tr("Игра не пишет в журнал уже %1 с — возможно зависание (например, загрузка миссии). "
+                                    "Журнал: logs/acv-launcher.log. «Остановить» завершит процесс.").arg(idle), true);
+                    return;
+                }
                 // The first start is quiet for 1-2 minutes (observed ~75 s) before frames appear.
                 setGameState(s < 150 ? tr("Игра запущена, идёт загрузка… %1 с (обычно 1–2 минуты, окно может быть пустым)").arg(s)
                                      : tr("Игра работает %1 мин %2 с").arg(s / 60).arg(s % 60),
@@ -751,6 +797,25 @@ void MainWindow::launchProcess(const QString &profile) {
         log(tr("[лаунчер] процесс завершён, код %1, %2").arg(code).arg(status == QProcess::NormalExit ? tr("штатно") : tr("аварийно")));
         if (m_loadTimer) m_loadTimer->stop();
         QTimer::singleShot(500, this, &MainWindow::refreshShm);
+        // Show what the last session actually produced: output rectangle, paced frame rate, fatal errors.
+        m_cli->run({"last-run"}, [this](const QJsonDocument &doc, const QString &err) {
+            if (!err.isEmpty()) return log(tr("[лаунчер] итог сессии недоступен: %1").arg(err));
+            const QJsonObject o = doc.object();
+            const QJsonObject out = o.value("output").toObject();
+            const QJsonObject pace = o.value("pacing_last").toObject();
+            // No output record means no frame was presented in that session: say so instead of "0×0".
+            QString line = out.isEmpty()
+                               ? tr("[лаунчер] итог: вывод не зафиксирован (кадры не показаны)")
+                               : tr("[лаунчер] итог: вывод %1×%2 (x=%3, y=%4)")
+                                     .arg(out.value("width").toInt()).arg(out.value("height").toInt())
+                                     .arg(out.value("x").toInt()).arg(out.value("y").toInt());
+            if (!pace.isEmpty())
+                line += tr(", кадры %1 FPS при лимите %2, p95 %3 мс")
+                            .arg(pace.value("fps").toDouble(), 0, 'f', 1).arg(pace.value("limit").toInt())
+                            .arg(pace.value("p95_ms").toDouble(), 0, 'f', 1);
+            line += tr(", фатальных ошибок: %1").arg(o.value("fatal_error_count").toInt());
+            log(line);
+        });
         m_game->deleteLater();
         m_game = nullptr;
         setGameState(status == QProcess::NormalExit && code == 0
