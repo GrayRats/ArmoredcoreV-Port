@@ -1,6 +1,6 @@
 # ACV timing — current findings and evidence
 
-Summary as of 2026-10-22. **[I]** instructions/bytes; **[T]** Xenia trace;
+**[I]** instructions/bytes; **[T]** Xenia trace;
 **[M]** guest memory; **[H]** limited host test; **[G]** hypothesis.
 This is not a specification of Xenon and not proof of any effect on combat or physics.
 Full earlier text: [archive](../logs/docs-context-20261022/originals.tar.gz),

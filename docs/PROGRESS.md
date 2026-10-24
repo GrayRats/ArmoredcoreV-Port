@@ -1,6 +1,6 @@
 # ACV — verified milestones and limits
 
-Updated: 2026-10-24. This is a summary of evidence, not a task queue.
+This is a summary of evidence, not a task queue.
 Priorities are in [PLAN](PLAN.md); the quick entry point is the [state](X360_PROJECT_STATE.md).
 The full earlier journal, unchanged: [originals.tar.gz](../logs/docs-context-20261022/originals.tar.gz),
 entry `docs/PROGRESS.md`; SHA-256, headers and links are in the [manifest](../logs/docs-context-20261022/manifest.json).
@@ -33,7 +33,7 @@ this backend writes to an EDRAM storage buffer and performs a compute resolve.
 | protect_zero=false | In the last 150 s probes there is no longer the earlier series of guest NULL writes; without the flag the fault loop reproduced | Kept in the ACV profile; the retail meaning of the writes is not recovered |
 | UTF-8 Setup | Bounded SDK keyboard buffer/conversion fix built; ARTEM non-headless smoke without a crash | Real Unicode input/Cancel and tutorial glyphs are not yet verified |
 | FSI/readback | Early fast/full comparisons did not reveal a fix for darkening in those scenes; separately, the `exp_adjust` defect was found, after which the user confirmed the fix for black fur textures | Do not mix the historical readback A/B with the accepted texture fix; full remains the standard |
-| invalid fetch | In the 5-minute run `20261023T205031330068Z` 3,853 warnings were recorded. The repeating fetch `8A000000 0F9FF097 0059E4FF 00A80D11 00000003 00000200` addresses `0x0F9FF000`, 1280×720, format 23 (`24_8_FLOAT`); there are also separate invalid-typed constants at `0x1C1...` | Not tied to a material draw and not linked to the already fixed black fur textures; keep as a separate runtime warning. See [session 2026-10-24](NATIVE_REXGLUE_LINUX.md#manual-gameplay-capture-2026-10-24) |
+| invalid fetch | In the 5-minute run `20261023T205031330068Z` 3,853 warnings were recorded. The repeating fetch `8A000000 0F9FF097 0059E4FF 00A80D11 00000003 00000200` addresses `0x0F9FF000`, 1280×720, format 23 (`24_8_FLOAT`); there are also separate invalid-typed constants at `0x1C1...` | Not tied to a material draw and not linked to the already fixed black fur textures; keep as a separate runtime warning. See [manual gameplay capture session](NATIVE_REXGLUE_LINUX.md#manual-gameplay-capture-2026-10-24) |
 | Display gamma | The SDK fixes BT.709; two actual hook calls 2→1 confirmed in run 20261021T211435257956Z | Override is not the default |
 | Shared-memory compute access / CPU upload | The SDK kComputeWrite was fixed READ→WRITE; host regression + negative control, private plugin build, 85/110 s probes. CPU-origin 524288 bytes matched the late GPU mirror SHA e4428980… | Writer/material not established; copy event outside the RDC; [evidence](../logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json) |
 | Allocation shim | Caller sites 0x82AEF00C/0x82AEF028 confirmed by trace/raw PPC; two 0 values are passed to the parameters of 0x82AF1D38. The override gives non-zero addresses, child 0/110 s, 12 RDC | Scenes did not match: 1/59 draws vs 2661; render effect unknown, default false; [evidence](../logs/acv-gpu-sync-20261022/allocation/ab-result.json) |
@@ -112,7 +112,7 @@ operation/evidence → remaining limit. Full stdout/stderr lives in SQLite/logs;
 the next task belongs only in PLAN. Changing documentation by itself does not resume the runtime; a current run
 is resumed only by a separate explicit request from the user.
 
-## Current work: decoding Xbox 360 textures and linking models to draws (2026-10-22)
+## Current work: decoding Xbox 360 textures and linking models to draws
 
 Goal: prove that the model materials (`0001_o2092.flv`, textures `m0200_*`) match the textures
 actually bound to draws in the trace. Order of work:
@@ -123,19 +123,19 @@ actually bound to draws in the trace. Order of work:
 Status: step 1 started. Already established: TPF format codes 0/24 are DXT1, 5/23 are DXT5 (SoulsFormats
 `Formats/TPF/Headerizer.cs`); the SDK layout `GetTiledOffset2D` does not give a bijection of blocks; the SPIR-V of the
 texture loaders is in `tools/rexglue-sdk/src/graphics/shaders/vulkan_spirv/texture_load_*.h` (disassembly without names).
-- 2026-10-22, step 1 (compute dispatches of FBO frame 79584, 97 in total): dispatch 10117 moves 131,072 bytes,
+- Step 1 (compute dispatches of FBO frame 79584, 97 in total): dispatch 10117 moves 131,072 bytes,
   the input guest-memory block (buffer 0, offset 345292800) is byte-for-byte equal to the output. This is a copy, not an untile.
   Check: `tools/native-rexglue/replay_buffer_dump.cpp`, input/output saved in `tmp/bc_untile/`.
 - The input of dispatch 10117 does not match any extracted payload (`assets/original/acv-dvdbnd-textures`).
   A search for the first 4 KB of known payloads in the full guest-memory dump (512 MB, `tmp/bc_untile/guest_mem.bin`)
   was started; the result will be recorded below.
-- 2026-10-22, step 2 (layout confirmed): texture 19 bound to draw 7180 (512×512, BC1, replay) matches
+- Step 2 (layout confirmed): texture 19 bound to draw 7180 (512×512, BC1, replay) matches
   block by block the guest memory of frame 73703 under the `Untile` tiling (the crunch variant from
   `tools/rexglue-sdk/src/graphics/pipeline/texture/conversion.cpp`, block coordinates, log2 = 3, 16-bit
   swap): 16,384 of 16,384 blocks. Other variants (SDK GetTiledOffset2D, texel) do not match.
   Tool: `tools/bc_tile_match.py`; dumps: `replay_texture_dump.cpp`, `replay_buffer_dump.cpp`.
   Limit: verified only for BC1; BC3 has not been checked with this layout.
-- 2026-10-22, step 3 (link between model and draw confirmed exactly): the textures bound to draw 7180 of frame 73703
+- Step 3 (link between model and draw confirmed exactly): the textures bound to draw 7180 of frame 73703
   match byte-for-byte the TPF textures `m0200_006` (512×512, BC1, 16,384/16,384 blocks) and `m0200_006_s`
   (256×256, 4,096/4,096). This is material 543 of the model `0001_o2092.flv` (`m0200_006.tga`, `m0200_006_s.tga`).
   Check: `tools/bc_texture_identity.py`, operation 9491d7a7 (verified), evidence
@@ -143,13 +143,13 @@ texture loaders is in `tools/rexglue-sdk/src/graphics/shaders/vulkan_spirv/textu
   The link "draws 7176–7194 ↔ o2092" still relies on the sequence of the face set; the texture check
   applies to draw 7180 from this sequence.
   Limits: BC3 has not been checked with this layout; the dark scene is not explained by this step.
-- 2026-10-22, step 4 (brightness of the bound textures): average RGB of the decoded BC1 (`tools/bc1_mean.py`, operation
+- Step 4 (brightness of the bound textures): average RGB of the decoded BC1 (`tools/bc1_mean.py`, operation
   a5213889): m0200_006 ≈ (44, 45, 42), m0200_006_s ≈ (44, 42, 42) out of 255. The material textures are dark but
   not black; the final frame of the FBO path ≈ 0.5–1 %. So the main darkening happens after the textures are read
   (lighting/shading/output), not in the assets of this model. The cause of this step is not established.
 Stage result: the Xbox 360 BC1 layout is confirmed by exact match; the link draw 7180 ↔ material 543 of the
 model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verified; the cause of the darkness is not found.
-- 2026-10-22, step 5 (shader of draw 7180): the pixel shader is the Xenia translator (Xenos microcode), it samples
+- Step 5 (shader of draw 7180): the pixel shader is the Xenia translator (Xenos microcode), it samples
   `xe_texture0`/`xe_texture1` (2D) and writes to `xe_edram` (an RW buffer of EDRAM). So the lighting and output
   happen in this shader, not in the final present. Binding constants (set 1): system (496 B),
   float (336 B, 84 float4), bool/loop, fetch. Values from the frame: the float constants contain, among others,
@@ -157,7 +157,7 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   26.35 / −26.35, 0.4142, 128/64/64. Which constant scales the colour is not established: a trace of the
   SPIR-V from the `OpStore` into `xe_edram` back to `float_constants[k]` is needed.
   Tool: `tools/native-rexglue/replay_draw_shaders.cpp`; outputs in `logs/acv-renderdoc/20261021T215316118397Z/draw7180/`.
-- 2026-10-22, step 6 (colour chain of the pixel shader of draw 7180, partial): the colour output
+- Step 6 (colour chain of the pixel shader of draw 7180, partial): the colour output
   `xe_var_fragment_data_0` = `r1 * c19` (with the rule "zero at zero minimum"); `c19 = (0.5, 0.5, 0.5, 1)`.
   The colour exponent scale `color_exp_bias` (offset 288) = (1,1,1,1) — it does not darken. The value of `r1` is the last
   write to `xe_var_registers[1]` before the output, L2114; its slice (`tools/spirv_slice.py`, result in
@@ -167,32 +167,32 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   Conclusion: there is no zero or very small multiplier in the chain; the darkness results from a combination of textures (≈17 % brightness)
   and constants with unknown interpolators. The exact value requires emulation of the pixel (sample coordinates and
   interpolators are needed) — this is the next step.
-- 2026-10-22, step 7 (RenderDoc pixel debugger): `tools/native-rexglue/replay_debug_pixel.cpp` (single pixel
+- Step 7 (RenderDoc pixel debugger): `tools/native-rexglue/replay_debug_pixel.cpp` (single pixel
   and a grid scan mode). Verified: on the FBO draw 8461 (frame 77730) a trace was obtained (the top row of the present pixels is covered). On the FSI draw 7180 (frame 73703) and on the main writer of the 1280×2048 target (draw 8445, frame 77730)
   `DebugPixel` returns no trace for any pixel (scans with step 128 and 32). The cause is not established:
   probably debugging is not supported for FSI/interlock and for these draws; a limit of the tool, not of the data.
   Result: the chain down to the constant/input at pixel level was not completed. The darkening remains unexplained;
   known: the textures are ≈17 % brightness, colour multipliers are 1, the constants are non-zero, the writers of the target are consistent.
-- 2026-10-22, step 8 (pause): a runtime launch of the base probe was requested (`probe_linux.py --renderdoc-at 110`,
+- Step 8 (pause): a runtime launch of the base probe was requested (`probe_linux.py --renderdoc-at 110`,
   150 s). The user declined the launch; the game was not run, files were not changed. Status unchanged:
   the cause of the darkness is not established (see steps 1–7). Next actions — only on the user's explicit instruction:
   (a) a runtime probe with a single capture as reference; (b) substitution of constants through an SDK hook (requires editing SDK code,
   needs agreement); (c) emulation of the pixel shader in Python.
-- 2026-10-22, step 9 (base probe, approved by the user: option a): `probe_linux.py --renderdoc-at 110`,
+- Step 9 (base probe, approved by the user: option a): `probe_linux.py --renderdoc-at 110`,
   capture `logs/acv-renderdoc/20261022T143612944714Z/` (frames 46997, 46998), child exit 0; `failed` in the logger —
   the same classification of `dlc_*` noise. Reference: the 2560×1080 output has average brightness 0.24–0.91 % (the dark
   frame reproduces in the current state). Operation 7f9934c2 (verified). Further steps only on the user's instruction.
-- 2026-10-22, step 10 (SDK switch, no code change): `--extra=--gpu_allow_invalid_fetch_constants=true`,
+- Step 10 (SDK switch, no code change): `--extra=--gpu_allow_invalid_fetch_constants=true`,
   capture `logs/acv-renderdoc/20261022T143948032884Z/` (frames 47013, 47014), child exit 0. Output 2560×1080:
   averages 0.81 / 0.69 / 0.28 % against the reference 0.24 / 0.91 / 0.43 % (step 9). The darkness persists, no effect.
   The hypothesis "invalid fetch constants are the cause of the darkness" is rejected. Operation check — see the logger entry.
   A probe with `gamma_render_target_as_unorm16=false` was rejected by the user and not run.
-- 2026-10-22, step 11 (state check): two runs with `--gamma_render_target_as_unorm16=false` were found
+- Step 11 (state check): two runs with `--gamma_render_target_as_unorm16=false` were found
   (`logs/acv-native-linux/20261022T144232328150Z`, `…144521925243Z`), without RDC captures. They were run even though
   the user had rejected that probe; this was a control error on my side. The brightness was not measured for them.
   The configuration `tools/native-rexglue/acv.config` was not changed (sha256 31ef1d2a…). No game processes are running now.
 
-- 2026-10-22, search for a solution in runtime 20261022T144521925243Z: the scan step and a use-after-free in the pixel debugger
+- Search for a solution in runtime 20261022T144521925243Z: the scan step and a use-after-free in the pixel debugger
   were fixed; the reason for the FBO-debug failure was RoundingModeRTE (refines step 7). In the diagnostic replay a trace of
   draw 3790 was obtained: a zero base texture → a black pixel; the GPU mirror 0x1F6B3000
   contains a fully transparent black BC3. This is not a CPU dump and not an explanation of
@@ -201,21 +201,21 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   [Evidence/limits](../logs/acv-runtime-triage-20261022/findings.json);
   [technical section](NATIVE_REXGLUE_LINUX.md#black-material-input-traced-2026-10-22).
 
-- 2026-10-22, test Linux build at the user's request: the confirmed
+- Test Linux build at the user's request: the confirmed
   runtime/input/import/capture fixes were kept; the pixel debugger fixes were rebuilt separately. The synchronisation of the main app header and
   the host source identifier in the log were added. Compile/link exit 0, ELF 89a858719402…;
   a 12-second run: child 0, 15 earlier VFS/allocation errors, graphics not accepted.
   [Check](../logs/acv-test-build-20261022/verification.json);
   [run](../tools/native-rexglue/test_linux.sh).
 
-- 2026-10-22, the user's FromSoftware references: pinned snapshots of
+- The user's FromSoftware references: pinned snapshots of
   four repos and Xenia a192b94 were saved. The DCX decoder of DSEventScriptTools on an ACV sample
   matched the earlier unpacking byte-for-byte (1,417,648 bytes). The checked PC TPF/BHD5
   layouts differ from the ACV Xbox 360 ones. In the Xenia commit the UTF-8 BOM failure of the loader was reproduced and fixed;
   plain/BOM/missing config guards were checked without the game.
   [Applicability and limits](../logs/acv-user-references-20261022/assessment.json).
 
-- 2026-10-22, provenance of the empty BC3 texture: FSI draw 5940 confirmed by the
+- Provenance of the empty BC3 texture: FSI draw 5940 confirmed by the
   fetch and the declared shader slot 0; a first-write watch on 128 pages led to
   DLTextureConverter_Xbox360Dx.cpp. Before-copy source, staging and output
   matched byte-for-byte: 524288 bytes, SHA e4428980…. The original physical buffer
@@ -226,30 +226,30 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   [Evidence](../logs/acv-texture-writer-20261022/origin-comparison.json),
   [current build](../logs/acv-texture-writer-20261022/current-test-build.json).
 
-- 2026-10-22, the research process was saved in a checksum-verified archive of the sources/state and a copy of the ELF/runtime/plugin. The readback reference helper
+- The research process was saved in a checksum-verified archive of the sources/state and a copy of the ELF/runtime/plugin. The readback reference helper
   passed mock Vulkan + ASan/UBSan checks of publication on errors; it is not connected to the runtime. GPU bake/readback remains a hypothesis until it is linked to Resolve.
   [Checkpoint](../logs/acv-readback-checkpoint-20261022T171359Z/verification.json),
   [audit](NATIVE_REXGLUE_LINUX.md#resolvereadback-audit-and-preserved-checkpoint-2026-10-22).
 
-- 2026-10-22, the confirmed fix of the ACV dynamic texture: the acv-fsi profile enables readback_resolve=full. A/B of one source resource: 2 MiB of zeros →
+- The confirmed fix of the ACV dynamic texture: the acv-fsi profile enables readback_resolve=full. A/B of one source resource: 2 MiB of zeros →
   2,066,418 non-zero bytes. The real FSI draw 75 / frame 34282 receives a coloured BC3,
   GPU 512 KiB matches the CPU upload; before, the texture was RGBA 0. Build exit 0,
   120 s child 0 / 8 RDC, 45 earlier VFS/allocation errors. The global scene/FPS are not accepted.
   [Result](../logs/acv-readback-origin-20261022/accepted-fix.json),
   [GPU proof](../logs/acv-readback-origin-20261022/gpu-material-proof.json).
 
-- 2026-10-22, a stopping point was saved before the integration of VFS/allocation/async
+- A stopping point was saved before the integration of VFS/allocation/async
   readback. The reference header was prepared, the earlier host mock ASan/UBSan checks
   passed (operation eefd29b7-88f4-4a5a-9b91-ab2199038ab8); the runtime integration and
   GPU/performance checks were not run. After the integration request, there were no new runtime fixes, builds or launches.
   [Continuation context](X360_PROJECT_STATE.md#точка-остановки-интеграции--2026-10-22).
-- 2026-10-22, step 12 (check of the integration stop): `integrate-runtime-release` (0bff52a2) was marked failed
+- Step 12 (check of the integration stop): `integrate-runtime-release` (0bff52a2) was marked failed
   by a probe because of `ResolvePath(system:/dlc_*)` noise with `child_returncode 0` and a 120 s limit; this is a known false
   classification, the process did not hang. The following integration steps (summaries, indexes, final render check,
   DCX check) completed successfully. DCX check: 16 entries, 4,657,807 bytes, SHA-256 and sizes of the decoded
   data matched `acv-dvdbnd-dcx-contents.tsv`; an independent recalculation — 0 mismatches
   (operations 630e5229 and 71ab0a01, verified). Limits: the original DCX decode was checked; the output of the game's guest unpacker was not captured.
-- 2026-10-22, step 13 (integration of the improvements: reconciliation and synchronisation points). Saved state
+- Step 13 (integration of the improvements: reconciliation and synchronisation points). Saved state
   (`logs/acv-integrated-readback-20261022/before-*`, `before-sha256.json`): `command_processor.cpp/.h`
   of the SDK and `acv_compat_shims.cpp` were changed; CMake was not changed. The artifacts were built after the last source edits.
   Readback synchronisation in the SDK: `AwaitReadbackSubmission` waits for the number of a specific job instead of
@@ -261,7 +261,7 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   (`acv_compat_shims.cpp`); incremental build 6eaaf8fc (verified), not run in the game.
   Not implemented from the plan: interception of `ResolvePath` and the completion of reads/APC, the output of the game's DCX/BND decoder,
   placement of atlas layers; backing IDs/GPU references in the tracker; the staging ring with dirty ranges and a generation check.
-- 2026-10-22, step 14 (refinement of the VFS trace): in `AcvTraceOpen` (`acv_compat_shims.cpp`) after a successful open,
+- Step 14 (refinement of the VFS trace): in `AcvTraceOpen` (`acv_compat_shims.cpp`) after a successful open,
   the selected VFS file is recorded — the device mount point, the absolute path of the entry and its size
   (`device_hex`, `entry_hex`, `entry_size`; from the `XFile` object), without an SDK change. The open number (`token`)
   separates handles reused after `NtClose`. Build aebe1c14 (verified); not run in the game.
@@ -274,7 +274,7 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   3. Readback: waiting for a specific job, protection of slots until completion, refusal on an invalidate error — present.
      Missing: the staging ring with dirty ranges and a generation check before publication (`async_readback_reference.hpp`
      passed mock checks but was not ported to the SDK; it cannot be verified without running the game).
-- 2026-10-22, step 15 (search for the game's DCX decoder, statically, without running): the magic `DCX\0`/`DCP\0`/`DFLT`/`DCA\0`
+- Step 15 (search for the game's DCX decoder, statically, without running): the magic `DCX\0`/`DCP\0`/`DFLT`/`DCA\0`
   was found neither as bytes in Ghidra memory nor as immediate constants in the generated code
   (the only `0x4443` is part of `0x04444443`, which is not the magic). The image has one copy of zlib: the string
   `invalid stored block lengths` (0x8210C6E4) is used only by `0x82C046D0` (the inflate core). Direct calls:
@@ -284,7 +284,7 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   the DCX decoder is not found; the hypothesis is that it calls inflate indirectly or uses a separate implementation.
   The next verifiable path requires a run: a watch on writes into the buffer after reading the DCX range of
   `dvdbnd.bdt` (as already done for 0x1F6B3000) — it will give the address of the code that writes the unpacked data.
-- 2026-10-22, step 16 (offline search for the output of the DCX decoder): the beginnings of the decoded DCX entries (5,294 distinct
+- Step 16 (offline search for the output of the DCX decoder): the beginnings of the decoded DCX entries (5,294 distinct
   32-byte prefixes out of 14,971 entries) were searched in two dumps of the 512 MB guest-memory buffer from the RDC
   (frames 73703 and 79584): 0 matches (operation 847e6846, verified). Reason: this buffer is GPU shared memory,
   only the pages used by the GPU are loaded there (which is why the TPF texture payloads were found in it),
@@ -292,7 +292,7 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   allocation of memory of the decoded size (the size is known from the DCX header of the read entry) and
   a write-watch on this buffer; this requires editing the shims and agreement to run the game.
 
-- 2026-10-23, integrated the Resolve completion/reuse/invalidate guards and bounded
+- Integrated the Resolve completion/reuse/invalidate guards and bounded
   VFS/physical-allocation tracing. The host ASan/UBSan, barrier and launcher checks passed;
   incremental host/GPU builds exit 0. Two 120 s capture runs, child 0 / 45 earlier
   diagnostics; RGBA/BC3 match the accepted full, the real GPU 512 KiB equal to the
@@ -301,23 +301,23 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   gameplay/FPS and guest decompressor ownership are open.
   [Technical milestone](NATIVE_REXGLUE_LINUX.md#integrated-resolve-completion-and-resource-tracing-2026-10-23).
 
-- 2026-10-23, Resolve linked to the first CPU read: physical 0x0FCA7000,
+- Resolve linked to the first CPU read: physical 0x0FCA7000,
   submission 1298 / frame 627, 2 MiB SHA 6af9819e… byte-for-byte equal to the input copy 0x82C83918.
   An intermediate tiled→linear converter before the earlier RGBA 0x1E192000 was found;
   the source writes a copy-out, not a direct Resolve. Read-only hooks and a private trace
   plugin were built; the pending readback/fence integration remains open.
   [Proof](../logs/acv-resolve-consumer-20261023/complete-proof.json).
 
-## Deferred readback checkpoint — 2026-10-23
+## Deferred readback checkpoint
 
 A private experiment was built and ran twice for 70 s, child 0. The first 2 MiB Resolve→CPU
 exactly match the full oracle; 51 jobs were published, 47 sampled CPU reads matched.
 CPU-triggered publication is established; the ASan/UBSan queue failure tests passed.
 [Details](NATIVE_REXGLUE_LINUX.md#private-deferred-resolve-experiment-2026-10-23).
-The normal full remains the default. The user confirmed on 2026-10-24 that the black mech
+The normal full remains the default. The user confirmed that the black mech
 gameplay textures are fixed; the remaining scene coverage and the async performance
 measurement are separate follow-up work.
-- 2026-10-23, step 17 (heap trace, search for the DCX decoder in a live run): log-only hooks were added for
+- Step 17 (heap trace, search for the DCX decoder in a live run): log-only hooks were added for
   `NtAllocateVirtualMemory` (region size is the second argument, per the SDK `xboxkrnl_memory.cpp`) and `ExAllocatePoolWithTag`
   in `acv_compat_shims.cpp` (build ee2773fa). Run `logs/acv-dcx-decoder-search-20261022/heap2/` (rc 1 — the dlc-noise classifier,
   child 0). Results:
@@ -334,7 +334,7 @@ measurement are separate follow-up work.
   Note: the trace operation 75686ced was marked `failed` by the classifier (rc 1 with child 0); the logger does not
   verify failed operations, so the numbers above are confirmed only by a repeat parse of the file
   `heap2/resources.jsonl`, not through `verify`.
-- 2026-10-23, step 18 (check of the decoder's output buffer): a log-only capture of the first 32 bytes of the
+- Step 18 (check of the decoder's output buffer): a log-only capture of the first 32 bytes of the
   last virtual allocations (≤16 MiB) on each `NtClose` (event `alloc_prefix`; build e4b81623) was added to the shims.
   Run `logs/acv-dcx-decoder-search-20261022/heap3/` (rc 1 — the dlc-noise classifier, child 0; the operation is not
   verifiable by the logger). Result: 8,588 prefixes; none matched the `decoded_signature` of any DCX entry and none starts
@@ -344,7 +344,7 @@ measurement are separate follow-up work.
   the decoding of one entry — a separate SDK extension (memory watch on a dynamic address).
   The status of the hypothesis from step 17 (`sub_82BE7C88` → inflate): NOT confirmed.
 
-## Refinement of the earlier summary statuses — 2026-10-24
+## Refinement of the earlier summary statuses
 
 The summary before the texture fix is kept unchanged in the
 [archive](../logs/acv-gameplay-black-20261024/docs-before-build-retention.tar.gz),
@@ -356,7 +356,7 @@ in the stated historical scope. The DCX guest decoder identity is still not esta
 Steps 19–26 below are historical actions; the current status of the accepted texture fix
 and the queue are further below and in PLAN.
 
-- 2026-10-23, step 19 (other problems from the logs, without running the game). Analysis of the latest `runtime.log`
+- Step 19 (other problems from the logs, without running the game). Analysis of the latest `runtime.log`
   (20261023T141452… … 155744…):
   1. `dlc_sound:` and `dlc_image:` are not mounted — `ResolvePath` errors about 30 and 8 times per run; the game opens
      `dlc_image:\emblem\im9001.tpf` and gets `0xC000000F` (STATUS_NO_SUCH_FILE). Known from PLAN,
@@ -368,7 +368,7 @@ and the queue are further below and in PLAN.
   4. `QueueUserCallback: signal delivery failed (3)` — 3–14 times at process exit; probably harmless.
   The next step for these points: link 1 and 2 to real requests (which subsystem makes a request to
   `dlc_*` and what is returned without it) without running the game — from the trace `resources.jsonl` in `heap*`.
-- 2026-10-23, step 20 (resolution of the problems from step 19): no changes were made — there is no verifiable fix.
+- Step 20 (resolution of the problems from step 19): no changes were made — there is no verifiable fix.
   1. `dlc_sound:`/`dlc_image:` — the ISO image contains not a single DLC file (`logs/acv-iso-inventory.txt`: 0 matches
      for `dlc`; `tmp/iso_root` contains only `$SystemUpdate`, `NxeArt`, `bind`, `default.xex`, `movie`).
      There is no data to mount. An image with DLC content is needed; without it no further resolution is possible.
@@ -380,12 +380,12 @@ and the queue are further below and in PLAN.
   3. `bad protection bits` and devkit allocations — SDK limitations, with no verified effect on the frame.
   4. `QueueUserCallback: signal delivery failed` — at exit, probably harmless; not fixed.
   Blockers: item 1 — lack of data; item 2 — no verified reference of values.
-- 2026-10-23, step 21 (verification of the value for the stub): per MS-FSCC (`FileFsDeviceInformation`) the type
+- Step 21 (verification of the value for the stub): per MS-FSCC (`FileFsDeviceInformation`) the type
   `FILE_DEVICE_CD_ROM` = 0x00000002 ("a CD-ROM volume"); source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/616b66d5-b335-4e1c-8f87-b4a55e8d3e4a
   No Xenia source was found (the search did not return it). Proposal: replace `FILE_DEVICE_UNKNOWN` with CD-ROM in
   `xboxkrnl_io_info.cpp:435` — it changes the behaviour and requires a check in the game. The change was not made: permission is needed
   to modify the SDK and to run it for verification.
-- 2026-10-23, step 22 (device type of the volume, decided independently): `FileFsDeviceInformation` (class 4) now
+- Step 22 (device type of the volume, decided independently): `FileFsDeviceInformation` (class 4) now
   returns `FILE_DEVICE_CD_ROM` (0x2) via the shim `__imp__NtQueryVolumeInformationFile` in
   `tools/native-rexglue/acv_compat_shims.cpp` — only after a successful call to the SDK, the characteristics are not changed.
   The change in `tools/rexglue-sdk/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp` was reverted: the build takes the kernel from the
@@ -395,7 +395,7 @@ and the queue are further below and in PLAN.
   No new error types in the log. The effect on the game's behaviour was not measured separately; the dark frame was not
   checked by this change. The launch operation is marked `failed` by the dlc-noise classifier — not verifiable by the logger.
   Remaining: `ObReferenceObject` (the SDK does not export it), `IoDismountVolumeByFileHandle` (a stub, returns success).
-- 2026-10-23, step 23 (`ObReferenceObject`): the SDK exports it as a stub (`REX_EXPORT_STUB`), and the paired
+- Step 23 (`ObReferenceObject`): the SDK exports it as a stub (`REX_EXPORT_STUB`), and the paired
   `ObDereferenceObject` is implemented. A logging wrapper-counter was added in `acv_compat_shims.cpp`
   (build afcdfb46). Probe `probe_obref_count` (child exit 0): one call in 120 s, object `0x30081000`,
   lr `0x82B94060`; `ObDereferenceObject` was not called. An unpaired increment gives a reference-count leak of one object;
@@ -403,20 +403,20 @@ and the queue are further below and in PLAN.
   classifier (child 0), and are not verified by the logger.
   Status of the open items: `IoDismountVolumeByFileHandle` — a stub, returns success (harmless);
   `dlc_*` — no data in the image; the dark frame — not found; the SDK readback and gamma-off — not verified in the game.
-- 2026-10-23, step 24 (critical items from the game logs): the only error-level message outside dlc —
+- Step 24 (critical items from the game logs): the only error-level message outside dlc —
   `MmAllocatePhysicalMemoryEx: bad protection bits`; from the trace, two failed allocations (262144 and 8388608 bytes,
   protect 0x20000400). The existing flag `--compat-mm-wc-rw` (READWRITE for protect) was checked: probe
   `logs/acv-mm-compat-check/` (child exit 0) — both allocations succeed, `allocate_failed` 0, `bad protection bits` 0.
   According to `docs/PLAN.md`, allocation experiments are not enabled by default without an explicit decision, so the config
   `acv.config` was not changed: the flag works, but enabling it by default requires your decision. The effect on the dark
   frame was not measured.
-- 2026-10-23, step 25 (fix of the allocation error): by the user's decision, `[compat] mm_wc_rw = true` was enabled in `tools/native-rexglue/acv.config`
+- Step 25 (fix of the allocation error): by the user's decision, `[compat] mm_wc_rw = true` was enabled in `tools/native-rexglue/acv.config`
   (sha256 98d1c2ed02b5…). Check with a normal probe without flags
   (`probe_default_after_mmfix`, child exit 0): `bad protection bits` 0, both previously failed allocations succeed
   (per the trace `logs/acv-mm-compat-check/`). Of the non-dlc errors only `ResolvePath(system:\) failed -
   device not found` (once per run) remains. The effect on the dark frame was not measured; the darkness reference must be recalculated
   at the next capture. Rollback: set `mm_wc_rw = false`.
-- 2026-10-23, step 26 (dlc_sound: from the image data): the names of the sound banks that the game requests via
+- Step 26 (dlc_sound: from the image data): the names of the sound banks that the game requests via
   `dlc_sound:\` were matched with the dvdbnd paths by the hash `/sound/NAME` (the same hash as in BHD5; checked by the magic
   FEV1/FSB4). 122 files were collected: 23 from the request traces and 99 from strings inside FEV1 (`tools/build_dlc_sound_dir.py`,
   directory `tmp/acv-dlc-sound/`, manifest `manifest.json`). Mounting: `\Device\AcvDlcSound` with a symlink
@@ -427,7 +427,7 @@ and the queue are further below and in PLAN.
   `acv_talk_$(voicelang).fev` — a language variable). There is no data in the image: an image with DLC is needed.
   `dlc_image:` (emblems) is not affected — there is no image data in the image either.
 
-## Texture rendering — confirmed by the user, 2026-10-24
+## Texture rendering — confirmed by the user
 
 The user confirmed: the earlier fixes helped specifically with the textures
 in gameplay. Fixed: reading `exp_adjust` from the wrong dword4 in the Vulkan
@@ -437,7 +437,7 @@ ASan/UBSan and a negative control passed; the fixed GPU 90d8ef1a… was built an
 [Fix, build, checkpoint and verification limit](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
 Full visual parity of all materials/scenes is not established by this confirmation.
 
-## Colour check on identical input — 2026-10-24
+## Colour check on identical input
 
 After dword4→dword3, the same texture sample and nine shader inputs
 give a final RGB ≈ [0.208, 0.206, 0.189] instead of ≈ 3e-6. The error multiplier
@@ -446,7 +446,7 @@ of 65,536 is removed; the numeric packed RGB is no longer 0.
 The last 105 s fixed-plugin run: child 0, one error about system.properties;
 the automatic captures do not confirm a check of all models in the mission.
 
-## Keeping the fixed GPU during an ordinary rebuild — 2026-10-24
+## Keeping the fixed GPU during an ordinary rebuild
 
 `build_linux.py` without an override keeps the previous `gpu_plugin_override` from the
 manifest, checks the path/ELF/hash before the build and the hash before staging. A changed
@@ -462,7 +462,7 @@ different interpolated inputs even when primitive 0 is requested; event 74 gave 
 trace. These attempts are not accepted as a same-input proof. The confirmed pair
 event 69 and the user's check remain valid.
 
-## system.properties — handled request, 2026-10-24
+## system.properties — handled request
 
 Read-only PPC: the string 0x8210FA38 and the pointer 0x83573270 set the default properties
 path. The loader 0x82C22B90, for an invalid file, skips the parser and returns normally
@@ -471,7 +471,7 @@ optional startup override with an expected absence, not a texture
 payload. [Evidence and limits](NATIVE_REXGLUE_LINUX.md#missing-systemproperties-is-handled-2026-10-24).
 The VFS error is not hidden; no files or mounts were added to mask it.
 
-## Limits of UTF-8/UTF-16 profile names — 2026-10-24
+## Limits of UTF-8/UTF-16 profile names
 
 The shim decodes valid Unicode scalars, rejects overlong/surrogate
 UTF-8 with the earlier replacement '?', and keeps UTF-16 pairs whole at the length boundary.
@@ -481,9 +481,9 @@ The fixed GPU 90d8ef1a… and config 98d1c2ed… are kept.
 [Evidence/limits](NATIVE_REXGLUE_LINUX.md#bounded-profile-utf-8-decoding-2026-10-24).
 The non-headless SDK dialog and the tutorial glyphs remain separate open tasks.
 
-## What is still to fix — snapshot 2026-10-24
+## What is still to fix
 
-The black fur textures were confirmed by the user as fixed on 2026-10-24.
+The black fur textures were confirmed by the user as fixed.
 The user asked to remove this visual check from the active tasks.
 The accepted texture fix must not be changed: the same-input replay confirms the corrected multiplier.
 
@@ -500,7 +500,7 @@ trace for EDRAM/interlock was obtained. This confirms only the data path in the
 shader, not the appearance of the mech. Details: [NATIVE capture note](NATIVE_REXGLUE_LINUX.md#fixed-build-material-capture-follow-up-2026-10-24).
 
 
-## Non-headless keyboard dialog bounds — 2026-10-24
+## Non-headless keyboard dialog bounds
 
 In the SDK `XamShowKeyboardUI` the estimate of the UTF-8 field size from the UTF-16 limit was fixed, along with truncation of default/result at a character boundary, reading of the actual NUL-
 terminated string, and bounded writing of the result into guest capacity. A zero or overflowing
@@ -520,7 +520,7 @@ available data; the user instructed that their residual signals be skipped (see 
 additional mission/material regression remain accepted limits.
 
 
-## Retail emblem VFS recovery — 2026-10-24
+## Retail emblem VFS recovery
 
 The four requested Setup containers (`im9000.tpf`, `im9001.tpf`,
 `piece00.tpf.dcx`, `piece01.tpf.dcx`) were found in the BHD5/BDT of the main disc.
@@ -533,7 +533,7 @@ GPU `90d8ef1a…` and SDK runtime `40b0e134…`. The final 70 s smoke
 asset paths are not covered by this; the VFS mount is not counted as a fix for the fur shading.
 [Technical details](NATIVE_REXGLUE_LINUX.md#recovered-dlc_image-emblem-assets-from-retail-dvdbnd-2026-10-24).
 
-## DLC file-open and GPU readback lifetime audit — 2026-10-24
+## DLC file-open and GPU readback lifetime audit
 
 A full counter of explicit `NtCreateFile FAILED` was added over 117 saved runtime
 logs: 3241 messages, 35 unique guest paths. This includes old runs from before the
@@ -588,7 +588,7 @@ resume the investigation without a new request or new data. This decision
 records the triage priority; it does not create the missing audio data and does not
 claim that the last two scenarios were checked in the runtime.
 
-## 2026-10-24 — separate ACV Linux folder
+## Separate ACV Linux folder
 
 Built `../ACV-Linux/` (183 files): the game/launcher, local data, Qt/ICU and
 the patched runtime candidate. Hashes, the X11 launcher window, a 20 s game startup
@@ -596,7 +596,7 @@ from cwd `/`, the actually loaded local libraries and the absence of new shm
 orphans were verified. 58 startup samples were obtained with a clean shm. Save/load, CAS/FSR, pacing
 and a new accepted baseline remain open. [Evidence/limits](LAUNCHER_PACKAGE.md).
 
-## 2026-10-24 — display, FPS and effects
+## Display, FPS and effects
 
 Three 35 s X11 checks confirmed the fitting of 16:9 into UltraWide/16:10 and resize,
 VSync→FIFO, working CAS/FSR shader paths, an explicit 10→8-bit fallback and the limiter cadence of
@@ -604,7 +604,7 @@ VSync→FIFO, working CAS/FSR shader paths, an explicit 10→8-bit fallback and 
 parameters. Native FOV/HUD, high FPS and visual acceptance are still open.
 [Matrix and limits](LAUNCHER_PACKAGE.md#display-colour-and-frame-pacing--2026-10-24).
 
-### UltraWide projection evidence — 2026-10-24
+### UltraWide projection evidence
 
 A read-only bounded trace confirmed 64 results of `0x82BC8980` as a perspective
 with FOV ≈ 60°, aspect 16:9, near/far 1/1000; max normalised error 3.285e-7.
@@ -612,7 +612,7 @@ with FOV ≈ 60°, aspect 16:9, near/far 1/1000; max normalised error 3.285e-7.
 set; the gameplay camera/HUD/culling and the original console were not checked.
 [Method, tools and limits](LAUNCHER_PACKAGE.md#ultrawide-perspective-confirmation).
 
-### UltraWide native experiment — 2026-10-24
+### UltraWide native experiment
 
 An override of a single perspective callsite 0x822B450C was implemented, disabled by default. The isolated Linux build e3ab3704… passed a 60 s GDB run:
 6 matrices at 64:27, the other 58 at 16:9, max error 3.285e-7; shm orphans 0 before/after.
@@ -621,7 +621,7 @@ the viewport/output, HUD/crosshair, related projections and culling are not yet 
 The ACV-Linux package remains the earlier display build; the experimental host is separate.
 [Technical facts and evidence](LAUNCHER_PACKAGE.md#ultrawide-single-call-experiment--2026-10-24).
 
-### Fullscreen 2560×1080 test — 2026-10-24
+### Fullscreen 2560×1080 test
 
 120 s X11: the window and output rect 2560×1080 without bars; the 64:27 experiment fired
 on the selected callsite. Child 0, the optional system.properties remains, orphans 0.
