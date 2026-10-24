@@ -1,15 +1,17 @@
-# ACV timing — актуальные выводы и доказательства
+# ACV timing — current findings and evidence
 
-Сводка на 2026-10-22. **[И]** инструкции/bytes; **[Т]** Xenia trace;
-**[М]** guest memory; **[H]** ограниченный host test; **[Г]** гипотеза.
-Это не спецификация Xenon и не доказательство влияния на бой/физику.
-Полный прежний текст: [архив](../logs/docs-context-20261022/originals.tar.gz),
-запись `docs/ACV_TIMING.md`; [manifest и индекс ссылок](../logs/docs-context-20261022/manifest.json).
+Summary as of 2026-10-22. **[I]** instructions/bytes; **[T]** Xenia trace;
+**[M]** guest memory; **[H]** limited host test; **[G]** hypothesis.
+This is not a specification of Xenon and not proof of any effect on combat or physics.
+Full earlier text: [archive](../logs/docs-context-20261022/originals.tar.gz),
+entry `docs/ACV_TIMING.md`; [manifest and link index](../logs/docs-context-20261022/manifest.json).
 
-## Формула и ожидание
+[Русская версия](ACV_TIMING.RU.MD)
 
-**[И]** `0x82AEF208` (148 bytes) вычисляет elapsed D через наблюдаемый uint32 F;
-caller ограничивает только сверху, затем масштабирует:
+## Formula and expectation
+
+**[I]** `0x82AEF208` (148 bytes) computes the elapsed value D from the observed uint32 F;
+the caller clamps only from above, then scales:
 
 ```text
 N = floor(F / 60)               // integer division
@@ -18,229 +20,229 @@ P = min(P, 600)
 step = float(float(P * 0.01) * float(1 / 60))
 ```
 
-Практическая модель — `min(D/F, 0.1)` seconds. Это приближение, а не точное
-тождество: N целочисленный, float rounding сохраняется. Отрицательные D
-не ограничиваются снизу. Guard F<60 в C# utility — защита инструмента,
-а не установленное поведение retail. NaN/overflow/rounding parity отдельно не приняты.
-**[H]** 4 000 000 сравнений C# арифметики: max difference ≤1.34e-7,
-нет >1e-6; это не исполнение PPC и не доказательство фиксированного FPS.
+The practical model is `min(D/F, 0.1)` seconds. This is an approximation, not an exact
+identity: N is an integer and float rounding is preserved. Negative D is not clamped from
+below. The guard F<60 in the C# utility is protection for the tool, not established retail
+behaviour. NaN/overflow/rounding parity has not been accepted separately.
+**[H]** 4,000,000 comparisons of C# arithmetic: max difference ≤1.34e-7, none above 1e-6;
+this is not execution of PPC and not proof of a fixed FPS.
 
-**[И]** Call path: entry `0x82B92114 → 0x82AEEF58`; повторный
+**[I]** Call path: entry `0x82B92114 → 0x82AEEF58`; repeated
 `0x82AEF0AC → 0x82AF1BF0`; `0x82AEF0B4 → 0x82AEF208`.
-`0x82B8F9C0` читает TBLr/mftb, сохраняет 64-bit value, возвращает 1.
-`0x822F4E88 → 0x82B8FA70 → KeQueryPerformanceFrequency` инициализирует
-low32 frequency global `0x83886944`, если тот нулевой.
-`0x82AF1BF0` (328 bytes) вызывает предварительные routines, затем ждёт
-при normalized elapsed <90, расчёт ожидания использует 95.
-`0x82C27BE8` отбрасывает nonpositive input, передаёт `(input+999)/1000`;
-`0x830F3288 → 0x82B93668` формирует negative relative interval из input*10000
-и вызывает KeDelayExecutionThread. Sleep precision/retail frequency не установлены.
+`0x82B8F9C0` reads TBLr/mftb, stores a 64-bit value and returns 1.
+`0x822F4E88 → 0x82B8FA70 → KeQueryPerformanceFrequency` initialises the
+low32 frequency global `0x83886944` if it is zero.
+`0x82AF1BF0` (328 bytes) calls preliminary routines, then waits while the normalised elapsed
+value is <90; the wait calculation uses 95.
+`0x82C27BE8` discards nonpositive input and passes `(input+999)/1000`;
+`0x830F3288 → 0x82B93668` builds a negative relative interval from input*10000
+and calls KeDelayExecutionThread. Sleep precision and the retail frequency are not established.
 
-**[Т]** `0x82AEF26C`: r7=r8=0x000CB735 (=N), значит F в данном Xenia run
-в [50 276 460, 50 276 519]. Это частота, видимая игрой в эмуляторе,
-не hardware Xenon specification. D/f1 логгер r3–r8 не печатает.
-Темп и запись шага наблюдались примерно раз на кадр, не доказан physics rate.
+**[T]** `0x82AEF26C`: r7=r8=0x000CB735 (=N), so F in this Xenia run
+is in [50,276,460, 50,276,519]. This is the frequency the game sees inside the emulator,
+not a hardware Xenon specification. The D/f1 logger does not print r3–r8.
+The rate and the step write were observed roughly once per frame; the physics rate is not proven.
 
 Evidence: [timing-index](../decompilation/evidence/acv/timing-index.json),
 [follow-up index](../decompilation/evidence/acv/timing-followup-index.json),
 `logs/acv-stdout.log`, `logs/acv-consumers-stdout.log`, `tmp/acv-timing-check`.
 
-## Межпоточная передача: два P, не три
+## Inter-thread handoff: two P objects, not three
 
-**[И,Т]** Singleton getter `0x82AEEF40` связан с global `0x8372BF80`,
-объектом `0x8372BF88`. `0x82AEFC58` задаёт selector +0x38=0;
-`0x82AF1D38` заполняет +0x30/+0x34 двумя результатами `0x82AF5F50`.
-`0x82AF12F0` XOR selector с 1, выбирает pointer по +0x30+4*selector,
-сохраняет в +0x28, пишет float +0x974, word +0x980=1 и +0x984=0.
-При известной инициализации первым выбирается +0x34. Другие последующие
-writers selector полностью не исключены. Stack temporary `0x82AF2F70` /
-`0x82AF1B60` — другой объект; его selector не описывает singleton.
+**[I,T]** The singleton getter `0x82AEEF40` is linked to the global `0x8372BF80`,
+object `0x8372BF88`. `0x82AEFC58` sets selector +0x38=0;
+`0x82AF1D38` fills +0x30/+0x34 with two results of `0x82AF5F50`.
+`0x82AF12F0` XORs the selector with 1, selects a pointer at +0x30+4*selector,
+stores it to +0x28, writes float +0x974, word +0x980=1 and +0x984=0.
+With the known initialisation, +0x34 is selected first. Other later writers of the selector
+are not fully excluded. The stack temporary `0x82AF2F70` / `0x82AF1B60` is a different object;
+its selector does not describe the singleton.
 
-**[Т]** `Main XThread`, guest 01000028, tid6: `0x82AF1BF0` /
-`0x82AF12F0`. `DrawThread`, guest F80013FC, tid0x18: исполнитель
-`0x822D0E40`, callback return LR=0x822D0F28. Переданные P чередуются
-`0x40586F00` / `0x405850D0` и совпадают с контекстами callbacks.
-Это подтверждает handoff через те же два объекта; более ранняя гипотеза
-«три буфера» заменена. Возможное кольцо `0x82AF5410` не равно этому handoff.
+**[T]** `Main XThread`, guest 01000028, tid6: `0x82AF1BF0` /
+`0x82AF12F0`. `DrawThread`, guest F80013FC, tid0x18: executor
+`0x822D0E40`, callback return LR=0x822D0F28. The passed P values alternate
+`0x40586F00` / `0x405850D0` and match the callback contexts.
+This confirms the handoff through the same two objects; the earlier "three buffers"
+hypothesis is replaced. The possible ring `0x82AF5410` is not the same as this handoff.
 
-**[М]** P+8=1280, P+12=720. Первый замер P+0x974≈0.0333 s;
-позже по 12 выборок/0.563 s: первый P 0.016492827–0.016702265,
-второй 0.016626088–0.017455928 s. Это разные окна, не fixed 30/60 FPS.
-Чтения асинхронны и не атомарны. Историческое отображение Xenia:
-host address = 0x100000000 + guest VA; сверять с maps конкретного процесса.
-Не путать с virtual base ReXGlue или physical mappings.
+**[M]** P+8=1280, P+12=720. The first sample of P+0x974 ≈ 0.0333 s;
+later, 12 samples over 0.563 s: first P 0.016492827–0.016702265,
+second 0.016626088–0.017455928 s. These are different windows, not a fixed 30/60 FPS.
+The reads are asynchronous and not atomic. Historical Xenia mapping:
+host address = 0x100000000 + guest VA; check against the maps of the specific process.
+Do not confuse it with the virtual base of ReXGlue or with physical mappings.
 
-**[М,И]** Слот `0x8202411C` прочитан 12 раз: bytes 82 5d 41 00 →
-`0x825D4100`. Он берёт target из record+8, r3 из record+4,
-переносит r5→r4 и делает mtctr/bctr. Сам слот подтверждён, новый отдельный
-trace indirect call через него не снимался. Callback `0x82AEF6C8` —
-`mr r3,r4; b 0x822B51F0`, а не прыжок в середину 0x822B5190;
-`0x82AEF6D0` вызывает `0x822E5DE8`, `0x822E52D0`, `0x822B5B90`
-с сохранённым входным r4. Их прямое чтение +0x974 не найдено.
+**[M,I]** The slot `0x8202411C` was read 12 times: bytes 82 5d 41 00 →
+`0x825D4100`. It takes the target from record+8, r3 from record+4,
+moves r5→r4 and does mtctr/bctr. The slot itself is confirmed; a separate new
+trace of the indirect call through it was not captured. The callback `0x82AEF6C8` is
+`mr r3,r4; b 0x822B51F0`, not a jump into the middle of 0x822B5190;
+`0x82AEF6D0` calls `0x822E5DE8`, `0x822E52D0`, `0x822B5B90`
+with the saved input r4. No direct reads of +0x974 by them were found.
 
 Evidence: [guest samples](../logs/timing-followup-20261019/guest-samples.json),
 [summary](../logs/timing-followup-20261019/summary.json),
 [maps](../logs/timing-followup-20261019/xenia-maps.txt),
 [slot instructions](../logs/timing-followup-20261019/slot0.asm).
 
-## Читатель шага и режимы S
+## Step reader and S modes
 
-**[И]** `0x824609E0` вызывает `0x82460848` на `0x82460A54`.
-Если byte(S+0)==0, consumer выходит — прежнее обратное условие было ошибкой.
+**[I]** `0x824609E0` calls `0x82460848` at `0x82460A54`.
+If byte(S+0)==0, the consumer exits — the earlier inverted condition was an error.
 `0x824608C8 → 0x82436FE0`: P=*(context+0x10), f1=*(float*)(P+0x974).
-Затем r3=S и `0x824608D0 → 0x8245FA20`; S и P — разные роли.
-VMX128 предварительные условия не декодировать по generic PWR7 мнемоникам.
+Then r3=S and `0x824608D0 → 0x8245FA20`; S and P play different roles.
+The VMX128 preconditions must not be decoded from generic PWR7 mnemonics.
 
-**[И]** `0x8245FA20` — 48 instructions / 192 bytes,
-[0x8245FA20,0x8245FAE0), без .pdata owner; live bytes совпали с .text.
+**[I]** `0x8245FA20` — 48 instructions / 192 bytes,
+[0x8245FA20,0x8245FAE0), without a .pdata owner; the live bytes matched .text.
 
-| Поле | Наблюдаемая операция | Предел смысла |
+| Field | Observed operation | Limit of meaning |
 |---|---|---|
-| byte +0 | Ноль → return; иначе обновление | Активность — описательное имя |
-| byte +1 | Выбор режима | Не recovered enum |
-| u16 +2 | Modes1/3 increment saturating 65535; mode4 handler тоже пишет | Не универсальный «счётчик периодов» |
-| float +4 | Сравнение/однократное вычитание | Длительность/период — гипотеза |
-| float +8 | +=f1; далее mode-dependent изменения | Временной накопитель — гипотеза |
+| byte +0 | Zero → return; otherwise update | "Activity" is a descriptive name |
+| byte +1 | Mode selection | Not a recovered enum |
+| u16 +2 | Modes 1/3 increment, saturating at 65535; the mode-4 handler also writes it | Not a universal "period counter" |
+| float +4 | Comparison / one-time subtraction | Duration/period — hypothesis |
+| float +8 | +=f1; then mode-dependent changes | Time accumulator — hypothesis |
 
-Modes2/4: при достижении +4 сбрасывается +0. Modes1/3: однократно
-вычитается +4 и увеличивается +2; повторного цикла вычитания нет.
-Другие режимы оставляют прибавление; NaN не проходит обычную less-ветку.
-В consumer mode100 обнуляет +8; ветка101/102 восстанавливает +0.
-Mode4 handler `0x82460788`, store `0x82460814`: floor((+8)/(+4)*N),
-clamp 0..N, low16→+2; при N сбрасывает +0 на 0x82460824.
-N/NaN/zero period отдельно динамически не проверены.
+Modes 2/4: when +4 is reached, +0 is reset. Modes 1/3: +4 is subtracted once
+and +2 is incremented; there is no repeated subtraction loop.
+Other modes keep the addition; NaN does not pass the usual less-than branch.
+In the consumer, mode 100 zeroes +8; branches 101/102 restore +0.
+Mode-4 handler `0x82460788`, store `0x82460814`: floor((+8)/(+4)*N),
+clamp 0..N, low16→+2; when N is reached it resets +0 at 0x82460824.
+N, NaN and a zero period have not been checked dynamically.
 
-**[Т]** Consumer/getter/update path исполнялся на DrawThread F80013FC.
-В завершённом run: LR 0x82460A58 — 15 635 входов; 0x82460850 и
-0x824608D4 — по223; 222 пары совпали по context/frame marker.
-Логгер не печатает PC: LR привязан к исходным call instructions и save helper
-`0x830D4E9C`, а не принят за адрес текущей инструкции.
+**[T]** The consumer/getter/update path ran on DrawThread F80013FC.
+In the completed run: LR 0x82460A58 — 15,635 entries; 0x82460850 and
+0x824608D4 — 223 each; 222 pairs matched by context/frame marker.
+The logger does not print the PC: LR is tied to the original call instructions and the save helper
+`0x830D4E9C`, and is not taken as the address of the current instruction.
 
-**[М]** 308 samples: S=0x40F738C4, mode4, +4=0.5;
-+8 вырос 0.033505775→0.515492499, +0 сменился1→0.
-S=0x40F73964/0x40F73B84: 0.033333134→0.502060354 и тот же сброс;
-по14 разных последовательных состояний. Асинхронные reads/последний trace marker
-не являются точной покадровой memory trace. Поздние первые адреса могли
-переиспользоваться; modes1/3 в этом memory run не подтверждены.
+**[M]** 308 samples: S=0x40F738C4, mode 4, +4=0.5;
++8 grew 0.033505775→0.515492499, +0 changed 1→0.
+S=0x40F73964/0x40F73B84: 0.033333134→0.502060354 with the same reset;
+14 different consecutive states. Asynchronous reads and the last trace marker
+are not an exact per-frame memory trace. Late first addresses may have been reused;
+modes 1/3 are not confirmed in this memory run.
 
-**[И,Г]** N — результат wcslen-like `0x830D5550` строки из virtual slot+108,
-которую 0x824609E0 копирует в буфер на1023 символа. `0x824603A8` /
-`0x82460470` через 16-bit copy helper0x830D60C0 выбирают символ по S+2;
-`0x8245FB38` сравнивает 10,32,0x3000,48..57. Это поддерживает timed
-wide-string/UI interpretation. Источник/назначение строки и влияние на бой
-не установлены; прежняя «таблица состояний» не подтверждена.
+**[I,G]** N is the result of the wcslen-like `0x830D5550` on the string from virtual slot+108,
+which `0x824609E0` copies into a buffer of 1023 characters. `0x824603A8` /
+`0x82460470` select a character by S+2 via the 16-bit copy helper `0x830D60C0`;
+`0x8245FB38` compares 10, 32, 0x3000, 48..57. This supports a timed
+wide-string / UI interpretation. The source and destination of the string and any effect on combat
+are not established; the earlier "state table" is not confirmed.
 
 Evidence: [consumer trace report](../logs/timing-followup-20261019/consumer-early-report.json),
 [samples](../logs/timing-followup-20261019/consumer-early-samples.json),
-[mode4 instructions](../logs/timing-followup-20261019/mode4-handler.asm),
+[mode-4 instructions](../logs/timing-followup-20261019/mode4-handler.asm),
 [getter](../logs/timing-followup-20261019/getter.asm),
 [update](../logs/timing-followup-20261019/8245FA20.asm).
-Повторный отчёт читает сохранённые данные: `tools/acv_consumer_report.py TRACE SAMPLES`.
+A repeated report reads the saved data: `tools/acv_consumer_report.py TRACE SAMPLES`.
 
-## Start/end timer, scopes и ownership
+## Start/end timer, scopes and ownership
 
-**[И]** `0x82AF1BF0` передаёт singleton+0x74 как r3 в
-`0x822F4908` и `0x822F4ED0`. `0x822F4908 → 0x822F47E8`
-сначала reset byte+8, qword+0x18/+0xA0, word+0x48/+0xB0;
-затем пишет fresh counter в +0x10 и active+8=1. Это повторный start,
-а не lazy init. End `0x822F4ED0` при active пишет now-start в +0x18
-и сбрасывает +8, после drain loop. 220 code bytes / 224 with padding
-проверены неизменными; Ghidra body оставался8 bytes.
+**[I]** `0x82AF1BF0` passes singleton+0x74 as r3 to
+`0x822F4908` and `0x822F4ED0`. `0x822F4908 → 0x822F47E8`
+first resets byte+8, qword+0x18/+0xA0, word+0x48/+0xB0;
+then it writes a fresh counter to +0x10 and sets active+8=1. This is a repeated start,
+not a lazy init. The end `0x822F4ED0`, when active, writes now-start to +0x18
+and resets +8, after the drain loop. 220 code bytes / 224 with padding
+were verified unchanged; the Ghidra body remained 8 bytes.
 
-**[И]** Drain `0x822F4950`: count=word(obj+0x48),
+**[I]** Drain `0x822F4950`: count=word(obj+0x48),
 S=obj+0x20+(count-1)*0x28, id=S+0; R=obj+id*0x70.
-Если R+0x50!=0 либо id=0, закрывает активный S timer, прибавляет elapsed
-к R+0xA0, увеличивает R+0xB0; signed max R+0xA8 считается от running total,
-не от одного elapsed. Затем decrement count. Callers0x822F4A48,
-0x822F4BF0,0x822F4ED0; `0x822F5308` возвращает base+idx*0x28.
+If R+0x50!=0 or id=0, it closes the active S timer, adds elapsed
+to R+0xA0, increments R+0xB0; the signed max R+0xA8 is computed from the running total,
+not from a single elapsed value. Then count is decremented. Callers: 0x822F4A48,
+0x822F4BF0, 0x822F4ED0; `0x822F5308` returns base+idx*0x28.
 
-Push `0x822F4678 → 0x822F52C8` копирует5 qwords в +0x20+count*0x28,
-increments count. Slot1 начинается на+0x48, поверх count; record0 пересекает
-header. Это ограничивает уверенность layout/depth, не доказывает runtime nesting.
-Scope `0x822F4AB8` и close0x822F4A48/0x822F4BF0 не найдены через direct
-branch/address-construction/data-pointer patterns, кроме .pdata. Не объявлять
-unused: другие addressing/indirect paths не исключены. 0x822F4BF0 обновляет
-max per-id mean, capped at F*3/60 (около50ms только если F — ticks/s).
-Назначение profiling/frame pacing полностью не установлено; push/pop не переносить.
+Push `0x822F4678 → 0x822F52C8` copies 5 qwords to +0x20+count*0x28,
+then increments count. Slot 1 begins at +0x48, on top of count; record 0 crosses
+the header. This limits confidence in the layout/depth; it does not prove runtime nesting.
+Scope `0x822F4AB8` and the closes 0x822F4A48/0x822F4BF0 were not found through direct
+branch, address-construction or data-pointer patterns, except in .pdata. Do not declare them
+unused: other addressing or indirect paths are not excluded. 0x822F4BF0 updates the
+maximum per-id mean, capped at F*3/60 (about 50 ms only if F is ticks/s).
+The purpose of profiling/frame pacing is not fully established; push/pop must not be carried over.
 
-`0x822F4A48` gate: singleton+0x58 сравнивает с результатом0x82B8F9E0
-(`*(*(r13+0x100)+0x14C)`); thread identity — гипотеза.
-`0x822F45A0` возвращает *0x83722018. `0x822F4CF0` создаёт
-328-byte timer с inline slot+0x20 и count+0x48. `0x82AF2F70` строит
-stack temporary внутри0x82AF1D38 и не является paced singleton.
-Post-wait `0x82303DF0` обходит table0x83722168/count0x837221A8;
-`0x82B49088` вызывает virtual slot+8 на input+0x84 с r4=-1.
-Destination/смысл -1 и writers+0x84 не установлены.
+`0x822F4A48` gate: singleton+0x58 is compared with the result of 0x82B8F9E0
+(`*(*(r13+0x100)+0x14C)`); thread identity is a hypothesis.
+`0x822F45A0` returns *0x83722018. `0x822F4CF0` creates a
+328-byte timer with an inline slot+0x20 and count+0x48. `0x82AF2F70` builds a
+stack temporary inside 0x82AF1D38 and is not the paced singleton.
+The post-wait `0x82303DF0` walks the table 0x83722168 / count 0x837221A8;
+`0x82B49088` calls virtual slot+8 on input+0x84 with r4=-1.
+The destination and meaning of -1 and the writers of +0x84 are not established.
 
 .pdata bounds: 0x822F4950=248 bytes; 0x822F4ED0=220;
 0x822F4BF0=256; 0x822F4A48=108; 0x82AEF208=148;
 0x82AF1BF0=328; 0x82AF1B60=140; 0x82AF2F70=132;
-0x82AF12F0=240; 0x826BC7A0=128. Не путать unwind records с call tables.
+0x82AF12F0=240; 0x826BC7A0=128. Do not confuse unwind records with call tables.
 Evidence: [follow-up index](../decompilation/evidence/acv/timing-followup-index.json),
-[integrity4950](../logs/acv-822F4950-integrity.json),
-[integrity4ED0](../logs/acv-822F4ED0-listing-integrity.json).
+[integrity 4950](../logs/acv-822F4950-integrity.json),
+[integrity 4ED0](../logs/acv-822F4ED0-listing-integrity.json).
 
-## Rectangles и FileManager.BindRead: отдельная цепочка
+## Rectangles and FileManager.BindRead: a separate chain
 
-**[И]** `0x82AF5F50` создаёт3008-byte object, ctor0x82AF7160,
-rectangle differences/ratio →0x822B5A18. Startup1280/720 через
-`0x82AF60C0` записывает0x83885E80+0x910/+0x914; они становятся x1/y1
-двух rectangles. Lookup result не даёт этот pointer: r27 перезаписан
-0x83885E80 в0x82AF23A0. View/surface/camera semantic labels сняты.
-0x822B5A18 хранит incoming f1 в outer+0x4C0 без flag gate;
-r6 pointer сохраняет в+0x370 и условно читает+0x77C →+0x374.
+**[I]** `0x82AF5F50` creates a 3008-byte object, ctor `0x82AF7160`,
+rectangle differences/ratio → `0x822B5A18`. Startup 1280/720 via
+`0x82AF60C0` writes `0x83885E80+0x910/+0x914`; these become x1/y1 of
+the two rectangles. The lookup result does not give this pointer: r27 is overwritten with
+0x83885E80 at `0x82AF23A0`. View/surface/camera semantic labels were not established.
+`0x822B5A18` stores the incoming f1 in outer+0x4C0 without a flag gate;
+r6 pointer is saved to +0x370 and conditionally reads +0x77C → +0x374.
 
-**[И]** Ключ FileManager.BindRead: literal0x820E96BC, helper0x822B2320
-строит temporary wide-string. `0x830D5550` считает16-bit units до NUL.
-`0x82AF1E88 →0x82C25350(default=0)` возвращает bool/default:
-search0x82C25210/0x82C24F38, text expansion ${...} через0x82C24EB8,
-0x82C27148/0x82C26270; true только точные true/TRUE/yes/YES.
-Неполные markers/missing keys/recursion limit не проверены.
-Node links+0/+8, key+0x0C, marker+0x4D не доказывают named tree type.
-Container path0x82C237B0→0x82C24398→global0x838BB018;
-vtable0x8210FE70 slot+0x10→0x82C22D20; aligned embedded region
-около object+0x104, sentinel init0x82C26458→0x82C24FB8.
+**[I]** The key FileManager.BindRead: literal `0x820E96BC`, helper `0x822B2320`
+builds a temporary wide string. `0x830D5550` counts 16-bit units up to NUL.
+`0x82AF1E88 → 0x82C25350(default=0)` returns bool/default:
+search `0x82C25210` / `0x82C24F38`, text expansion of ${...} via `0x82C24EB8`,
+`0x82C27148` / `0x82C26270`; true only for exact true/TRUE/yes/YES.
+Incomplete markers, missing keys and the recursion limit were not checked.
+Node links +0/+8, key +0x0C, marker +0x4D do not prove a named tree type.
+Container path `0x82C237B0 → 0x82C24398 → global 0x838BB018`;
+vtable `0x8210FE70` slot+0x10 → `0x82C22D20`; an aligned embedded region
+near object+0x104, sentinel init `0x82C26458 → 0x82C24FB8`.
 
-Startup setter0x82AFA5A4 регистрирует true; 14 direct setters просмотрены.
-Dynamic site0x823E07DC строит Assembly.%s (literal0x8201EC0C), поэтому
-не пишет точный FileManager.BindRead. Reader0x825A6800(+0xE4),
-unique pointer0x82232848 и writer0x825A6BB0 через0x82586130 остаются
-без доказанного alias/dispatch. В BDT две #FileManager.BindRead=false
-строки и два BindReadCache prefixes; # semantics/asset-parser связь неизвестны.
-Другие indirect setters не исключены. Evidence:
+The startup setter `0x82AFA5A4` registers true; 14 direct setters were reviewed.
+The dynamic site `0x823E07DC` builds Assembly.%s (literal `0x8201EC0C`), so it does not
+write the exact FileManager.BindRead. The reader `0x825A6800` (+0xE4),
+unique pointer `0x82232848` and writer `0x825A6BB0` via `0x82586130` remain
+without a proven alias/dispatch. In the BDT there are two #FileManager.BindRead=false
+lines and two BindReadCache prefixes; the relation to # semantics / the asset parser is unknown.
+Other indirect setters are not excluded. Evidence:
 [lookup summary](../logs/acv-lookup-20261020/summary.md),
 [latest follow-up](../logs/acv-lookup-20261020/followup-20261021.md),
 [ISO hits](../logs/acv-lookup-20261020/iso-key-hits-20261021.json).
 
-## Проверки, исправленные ошибки и границы
+## Checks, corrected errors and limits
 
-- [H] Unity Editor: 9 synthetic cases. Затем отдельный Unity6000.6.6f1 batch
-  EditMode AcvTimingTests: **13 passed,0 failed,0 skipped**, exit0:
+- [H] Unity Editor: 9 synthetic cases. Then a separate Unity 6000.6.6f1 batch
+  EditMode AcvTimingTests: **13 passed, 0 failed, 0 skipped**, exit 0:
   [XML](../logs/timing-followup-20261019/unity-tests.xml),
   [log](../logs/timing-followup-20261019/unity-tests.log).
-  Нет compile/ScriptableSingleton errors именно в этом batch; прежние GUI
-  ошибки этим не закрыты. Utility не подключена к gameplay; Unity отложена.
-- [H] 0x8245FA20 reconstruction:69 152 state checks+10 transitions;
-  scalar0x830D68F0/0x830D69D0:80 784 finite split comparisons,
-  fused differs3825/3772; это не Xenon oracle. [Archive](fine/README.md).
-- Ghidra save-helper noreturn/ABI guesses могут обрезать тела. Старые
-  bounded repairs0x82AEF208/0x82AF1BF0 и helpers сохранены в истории,
-  bytes проверены; не повторять изменения живой базы. Metadata base0
-  не заменяет guest image0x82000000 / .text0x822B0000. analysis_complete
-  не означает достоверный pseudocode. Generic PWR7 VMX names не oracle.
-- Старый disassembler пропускал неизвестные words; исправленный ppc_dis.py
-  печатает .long на каждый4-byte word. Не использовать старые shifted listings.
-- Позднее pointer sampling, переставленные zero-active условия, slot=50%
-  hypothesis, три вместо двух P и lazy-init interpretation заменены выше.
-- ptrace_scope после разрешённого sampling был возвращён1, Xenia config
-  восстановлен byte-for-byte: [cleanup](../logs/timing-followup-20261019/cleanup-and-hashes.json).
-  При более поздней установке наблюдалось0: [observation](../logs/xenonrecomp-install-20261020/ptrace-observed.txt).
-  Это разные даты; текущее sysctl здесь не утверждается. Новых изменений нет.
-- REA6.7.0 doctor/providers: healthy=false, Ghidra provider имеется;
-  штатный PowerPC profile рассчитан на BE ELF32 ET_EXEC, XEX/Xenon support
-  не доказан. setup/engine install/ACV recovery через REA не выполнялись.
+  This batch had no compile or ScriptableSingleton errors; earlier GUI
+  errors are not closed by it. The utility is not connected to gameplay; Unity is postponed.
+- [H] 0x8245FA20 reconstruction: 69,152 state checks + 10 transitions;
+  scalar 0x830D68F0 / 0x830D69D0: 80,784 finite split comparisons,
+  fused differs 3825/3772; this is not a Xenon oracle. [Archive](fine/README.md).
+- Ghidra save-helper noreturn/ABI guesses may truncate bodies. Earlier
+  bounded repairs of 0x82AEF208 / 0x82AF1BF0 and helpers are kept in history,
+  bytes verified; do not repeat changes to the live database. Metadata base 0
+  does not replace the guest image 0x82000000 / .text 0x822B0000. analysis_complete
+  does not mean a trustworthy pseudocode. Generic PWR7 VMX names are not an oracle.
+- The old disassembler skipped unknown words; the corrected ppc_dis.py
+  prints .long for every 4-byte word. Do not use the old shifted listings.
+- Later pointer sampling, reordered zero-active conditions, the slot=50%
+  hypothesis, three instead of two P objects, and the lazy-init interpretation are replaced above.
+- ptrace_scope after the permitted sampling was restored to 1, and the Xenia config
+  was restored byte-for-byte: [cleanup](../logs/timing-followup-20261019/cleanup-and-hashes.json).
+  A later installation observed 0: [observation](../logs/xenonrecomp-install-20261020/ptrace-observed.txt).
+  These are different dates; the current sysctl value is not asserted here. No new changes.
+- REA 6.7.0 doctor/providers: healthy=false, the Ghidra provider is present;
+  the standard PowerPC profile targets BE ELF32 ET_EXEC, XEX/Xenon support
+  is not proven. No REA setup, engine install or ACV recovery was run.
 
-Открыты gameplay связь, VMX conditions, indirect scope callers, post-wait target,
-проверка прочих modes/runtime edge cases и доверенный rounding oracle.
-Очередь работ — [PLAN](PLAN.md); новые доказательства заменяют соответствующую
-строку/раздел здесь, а не создают ещё один хронологический пересказ.
+Still open: the gameplay link, VMX conditions, indirect scope callers, the post-wait target,
+checks of the other modes and runtime edge cases, and a trusted rounding oracle.
+The work queue is in [PLAN](PLAN.md); new evidence replaces the corresponding line or section
+here rather than adding another chronological retelling.

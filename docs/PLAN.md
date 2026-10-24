@@ -1,47 +1,48 @@
-# ACV — текущий статус
+# ACV — Current Status
 
-Актуально: 2026-10-24. Подробная очередь реализации — в
-[PLAN_GUI.MD](../PLAN_GUI.MD). Здесь сохранены краткие факты о native Linux
-линии и решения пользователя.
+Current as of 2026-10-24. The detailed implementation queue is in
+[PLAN_GUI.MD](../PLAN_GUI.MD). This file keeps the short facts about the native Linux
+line and the user's decisions.
 
-## Цель и границы
+[Русская версия](PLAN.RU.MD)
 
-Цель — native Linux запуск Armored Core V через ReXGlue. Исходный ISO read-only;
-исполняемые и временные данные лежат в `tmp/`, логи и evidence — в `logs/`.
-Не смешивать ReXGlue с независимой веткой XenonRecomp и не считать generated
-PPC C++ восстановленным исходником.
+## Goal and boundaries
 
-Обычный диагностический запуск использует
-[acv.config](../tools/native-rexglue/acv.config) и профиль ARTEM/ARTEM.
-Диагностический ELF: `tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe`.
-Настройки, профили и launcher implementation идут по [PLAN_GUI.MD](../PLAN_GUI.MD).
+The goal is to run Armored Core V natively on Linux through ReXGlue. The original ISO is
+read-only; executables and temporary data live in `tmp/`, logs and evidence in `logs/`.
+Do not mix ReXGlue with the independent XenonRecomp branch, and do not treat the generated
+PPC C++ as a recovered source.
 
-## Подтверждено
+The regular diagnostic run uses [acv.config](../tools/native-rexglue/acv.config) and the
+ARTEM/ARTEM profile. The diagnostic ELF is
+`tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe`.
+Settings, profiles and the launcher implementation follow [PLAN_GUI.MD](../PLAN_GUI.MD).
 
-- Пользователь подтвердил исправление чёрных текстур мехов. Установленная
-  причина shader fetch — неверный dword `exp_adjust`; сохранять принятый GPU
-  plugin `90d8ef1a…`. [Техническое evidence](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
-- Resolve/readback и lifetime получили синхронизацию, проверку диапазонов,
-  обработку ошибок и отложенное освобождение staging ресурсов. Тесты и сборка
-  прошли. По решению пользователя пропускать остаточные DLC/readback сигналы:
-  отсутствующие sound payloads, optional `system.properties`, отсутствие
-  gameplay readback в startup smoke и нефорсированную eviction под нагрузкой.
-- Четыре нужных `dlc_image:` контейнера извлекаются из retail `dvdbnd` и
-  монтируются read-only. Пять оставшихся sound payloads отсутствуют в доступном
-  ISO; решение пропускать запросы не означает, что данных стало больше.
+## Confirmed
 
-## Документы и архив
+- The user confirmed the fix for black fur textures. The established cause of the shader
+  fetch problem is a wrong `exp_adjust` dword; the accepted GPU plugin `90d8ef1a…` is kept.
+  [Technical evidence](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
+- Resolve/readback and resource lifetime received synchronization, range checks, error
+  handling and deferred release of staging resources. Tests and the build passed. By the
+  user's decision, the remaining DLC/readback signals are accepted as known: missing sound
+  payloads, the optional `system.properties`, the absence of gameplay readback in the
+  startup smoke test, and non-forced eviction under load.
+- Four required `dlc_image:` containers are extracted from the retail `dvdbnd` and mounted
+  read-only. Five remaining sound payloads are missing from the available ISO; accepting the
+  requests as known does not mean more data is available.
 
-- [PLAN_GUI.MD](../PLAN_GUI.MD) — текущая подробная очередь реализации и её
-  критерии готовности.
-- [PROGRESS](PROGRESS.md) — выполненные этапы и ограничения.
-- [STATE](X360_PROJECT_STATE.md) — короткий указатель продолжения.
+## Documents and archive
+
+- [PLAN_GUI.MD](../PLAN_GUI.MD) — the current detailed implementation queue and its
+  completion criteria.
+- [PROGRESS](PROGRESS.md) — completed stages and limitations.
+- [STATE](X360_PROJECT_STATE.md) — short pointer for resuming work.
 - [NATIVE_REXGLUE_LINUX](NATIVE_REXGLUE_LINUX.md) — runtime evidence.
-- [AGENTS](../AGENTS.md) — правила работы.
+- [AGENTS](../AGENTS.md) — working rules.
 
-Предыдущая версия этого плана сохранена в
+The previous version of this plan is preserved in
 [`docs/fine/PLAN_worktree_before_compression_20261024.md`](fine/PLAN_worktree_before_compression_20261024.md);
-контрольная сумма и исходный Git blob записаны в
+the checksum and the original Git blob are recorded in
 [`PLAN_worktree_before_compression_20261024.json`](fine/PLAN_worktree_before_compression_20261024.json).
-Более раннее объединение планов описано в
-[`planning-merge.json`](fine/planning-merge.json).
+An earlier plan merge is described in [`planning-merge.json`](fine/planning-merge.json).

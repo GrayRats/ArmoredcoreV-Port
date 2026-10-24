@@ -51,6 +51,7 @@
 /docs/**
 !/docs/**/
 !/docs/**/*.md
+!/docs/**/*.MD
 
 # External checkouts and their build products are acquired separately.
 /tools/rexglue-sdk/
