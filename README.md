@@ -1,131 +1,132 @@
 # DEArmoredcoreV
 
-Исследовательский проект: реконструкция и нативная Linux-сборка **Armored Core V** (Xbox 360).
-Машинный код PowerPC из `default.xex` переводится в C++ через ReXGlue SDK и запускается на Linux;
-параллельно ведётся независимая C/C++ реконструкция поведения по retail-данным.
+[English](README.md) | [Русский](README.RU.MD)
+
+Research project: reconstruction and a native Linux build of **Armored Core V** (Xbox 360).
+PowerPC machine code from `default.xex` is translated into C++ through the ReXGlue SDK and runs on Linux.
+In parallel, an independent C/C++ reconstruction of the game's behaviour is being built from retail data.
 
 *Static recompilation of Armored Core V (Xbox 360) into a native Linux port. Research project; no game data included.*
 
-![Сцена из игры на нативной Linux-сборке с Vulkan-рендером](docs/images/gameplay-vulkan.jpg)
+![Gameplay scene from the native Linux build with the Vulkan renderer](docs/images/gameplay-vulkan.jpg)
 
+Repository: <https://github.com/GrayRats/DEArmoredcoreV>
 
-Репозиторий: <https://github.com/GrayRats/DEArmoredcoreV>
+> **Important.** This repository contains no game: no ISO, no XEX, no unpacked resources, no DLC.
+> To work with it you need your own legally obtained image of the game. The rights to Armored Core V belong
+> to their rights holders; this project does not distribute and must not distribute game data.
 
-> **Важно.** В репозитории нет игры: ни ISO, ни XEX, ни распакованных ресурсов, ни DLC.
-> Для работы нужен собственный legally obtained образ игры. Права на Armored Core V принадлежат
-> их правообладателям; проект не распространяет и не должен распространять игровые данные.
+> **Not affiliated.** This project is not connected to, and is not endorsed by, the rights holders of Armored Core V.
+> Names and trademarks belong to their owners.
 
-> **Не аффилировано.** Проект не связан с правообладателями Armored Core V и не одобрен ими.
-> Названия и торговые марки принадлежат их владельцам.
+## Features
 
-## Возможности
+- **Static recompilation.** PowerPC instructions from `default.xex` are translated into C++ and built
+  as a native Linux program; no CPU emulation is used at runtime.
+- **Vulkan rendering.** The Xenos GPU plugin translates shaders into SPIR-V (glslang); frame debugging
+  is done with the RenderDoc replay tools.
+- **Resource unpacking.** Scripts for BHD5/BDT, BND3, FLVER, TPF and Xbox 360 textures (BC1) live in `tools/`.
+- **Transparent log.** Every analysis and build run is written to the SQLite logger (`tools/decomp-logging`),
+  so results are reproducible and verifiable.
+- **Independent reconstruction.** A parallel C/C++ reconstruction of behaviour based on retail data;
+  the evidence by address and function is listed in [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md).
 
-- **Статическая рекомпиляция.** Инструкции PowerPC из `default.xex` переводятся в C++ и собираются
-  как нативная программа для Linux; эмуляция CPU в рантайме не используется.
-- **Рендер через Vulkan.** GPU-плагин Xenos транслирует шейдеры в SPIR-V (glslang); отладка кадров
-  ведётся через RenderDoc replay-инструменты.
-- **Распаковка ресурсов.** Скрипты для BHD5/BDT, BND3, FLVER, TPF и текстур Xbox 360 (BC1) в `tools/`.
-- **Прозрачный журнал.** Каждый запуск анализа и сборки пишется в SQLite-логгер (`tools/decomp-logging`),
-  поэтому результаты воспроизводимы и проверяемы.
-- **Независимая реконструкция.** Параллельная C/C++ реконструкция поведения по retail-данным;
-  доказательства по адресам и функциям перечислены в [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md).
+## Current status
 
-## Текущий статус
+Confirmed so far (details and verification steps are in [docs/PROGRESS.md](docs/PROGRESS.md)):
 
-Что подтверждено (детали и операции проверки — в [docs/PROGRESS.md](docs/PROGRESS.md)):
+- The native build compiles and runs up to the menu and the intro. A dark gameplay frame reproduces;
+  its cause is **not identified**. Correct gameplay has **not** been accepted yet.
+- Resources: all 19,744 BHD5 entries and BND3 entries (including format 0x2c) are unpacked, and 7,111 FLVER headers are parsed;
+  the Xbox 360 BC1 layout is confirmed by exact block matches.
+- Game logs: `dlc_sound:` is partially mounted from the image data (75 successful opens); the emblems and 7 sounds
+  need an image with DLC, which is not in the repository.
+- Open: pixel shader emulation, readback verification in the game, and stubs for the kernel functions
+  `ObReferenceObject` and `IoDismountVolumeByFileHandle`.
 
-- Нативная сборка собирается и запускается до меню и интро; тёмный кадр геймплея воспроизводится,
-  его причина **не установлена**. Правильный геймплей ещё не принят.
-- Ресурсы: распакованы все 19 744 записи BHD5, BND3 (включая формат 0x2c), 7 111 FLVER-заголовков;
-  раскладка BC1 Xbox 360 подтверждена точным совпадением блоков.
-- Логи игры: `dlc_sound:` частично смонтирован из данных образа (75 открытий успешны); эмблемы и 7 звуков
-  требуют образа с DLC, которого в репозитории нет.
-- Открыто: эмуляция пиксельного шейдера, проверка readback в игре, заглушки ядра `ObReferenceObject` и
-  `IoDismountVolumeByFileHandle`.
+The detailed plan, acceptance criteria and journal are in [docs/PLAN.md](docs/PLAN.md) and [docs/PROGRESS.md](docs/PROGRESS.md).
 
-Подробный план, приёмка и журнал: [docs/PLAN.md](docs/PLAN.md), [docs/PROGRESS.md](docs/PROGRESS.md).
+## Structure
 
-## Структура
-
-| Путь | Что внутри |
+| Path | Contents |
 |---|---|
-| `tools/native-rexglue/` | хост-шимы ядра (`acv_compat_shims.cpp`), probe и build-скрипты (`probe_linux.py`, `build_linux.py`), RenderDoc replay-инструменты, тесты |
-| `tools/decomp-logging/` | SQLite-логгер выполнения (`cli.mjs`): все запуски анализа и сборки проходят через него |
-| `tools/native-decomp/`, `tools/native-host-probe/` | ограниченные ручные модели и проверки по retail-доказательствам |
-| `tools/*.py` | распаковка и проверка ресурсов: `bhd5_extract_all.py`, `bnd3_extract_dir.py`, `flver_inventory.py`, `x360_bc_decode.py`, `bc_tile_match.py`, `spirv_slice.py` и др. |
-| `scripts/` | обёртки: `assets.sh`, `decomp.sh`, `ghidra-rpc.sh`, `unity.sh`, `check_repository_payload.py` |
-| `docs/` | состояние, план, журнал, форматы и технические отчёты |
-| `logs/` | не публикуется, кроме отдельных доказательных файлов, перечисленных в `.gitignore` |
+| `tools/native-rexglue/` | kernel host shims (`acv_compat_shims.cpp`), probe and build scripts (`probe_linux.py`, `build_linux.py`), RenderDoc replay tools, tests |
+| `tools/decomp-logging/` | SQLite execution logger (`cli.mjs`): all analysis and build runs go through it |
+| `tools/native-decomp/`, `tools/native-host-probe/` | limited manual models and checks based on retail evidence |
+| `tools/*.py` | resource unpacking and checking: `bhd5_extract_all.py`, `bnd3_extract_dir.py`, `flver_inventory.py`, `x360_bc_decode.py`, `bc_tile_match.py`, `spirv_slice.py`, and others |
+| `scripts/` | wrappers: `assets.sh`, `decomp.sh`, `ghidra-rpc.sh`, `unity.sh`, `check_repository_payload.py` |
+| `docs/` | state, plan, journal, formats and technical reports |
+| `logs/` | not published, except for individual evidence files listed in `.gitignore` |
 
-Внешние компоненты (ReXGlue SDK, XenonRecomp, XenosRecomp, c-xbox_tool_2.0.7 и др.) в репозиторий
-не входят: они ставятся отдельно и имеют собственные лицензии в своих каталогах.
+External components (ReXGlue SDK, XenonRecomp, XenosRecomp, c-xbox_tool_2.0.7 and others) are not part of the repository.
+They are installed separately and keep their own licenses in their directories.
 
-## Требования
+## Requirements
 
-- Linux x86_64 (разработка ведётся на CachyOS/Arch), Clang или GCC, CMake, Ninja.
-- ReXGlue SDK 0.10.0, установленный отдельно; путь задаётся через `CMAKE_PREFIX_PATH` (см.
+- Linux x86_64 (development is done on CachyOS/Arch), Clang or GCC, CMake, Ninja.
+- ReXGlue SDK 0.10.0, installed separately; the path is set via `CMAKE_PREFIX_PATH` (see
   [tools/native-rexglue/gpu-plugin/README.md](tools/native-rexglue/gpu-plugin/README.md)).
-- Python 3 и Node.js (для логгера `tools/decomp-logging`).
-- RenderDoc — для захватов кадров; Ghidra — опционально, через `scripts/ghidra-rpc.sh`.
-- Собственный образ игры. Распаковка описана в [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md).
+- Python 3 and Node.js (for the logger in `tools/decomp-logging`).
+- RenderDoc for frame captures; Ghidra is optional, via `scripts/ghidra-rpc.sh`.
+- Your own image of the game. Unpacking is described in [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md).
 
-## Быстрый старт
+## Quick start
 
 ```bash
-# 1. Локальный профиль (не публикуется; содержит имя игрока и настройки)
+# 1. Local profile (not published; contains the player name and settings)
 cp tools/native-rexglue/acv.config.example tools/native-rexglue/acv.config
 
-# 2. Сборка нативного probe (инкрементальная)
+# 2. Build the native probe (incremental)
 python3 tools/native-rexglue/build_linux.py --jobs 4 \
   --gpu-plugin-artifact tmp/acv-gpu-plugin-build/librexgpu-xenos.so
 
-# 3. Ограниченный запуск (150 с) через логгер
+# 3. Bounded run (150 s) through the logger
 node tools/decomp-logging/cli.mjs run --stage linux_probe --timeout-ms 175000 -- \
   python3 tools/native-rexglue/probe_linux.py --seconds 150 --video-driver x11 \
   --user-root tmp/acv-mnk-profile
 ```
 
-Запуск — диагностический, а не игровой лаунчер. Статус `failed` у проб из-за шума `dlc_*` в
-классификаторе означает ложную классификацию при `child exit 0`; см. [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md).
+The run is a diagnostic tool, not a game launcher. A `failed` status for probes caused by `dlc_*` noise in the
+classifier means a false classification when the child exits with 0; see [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md).
 
-Все анализ, сборка и тесты должны запускаться через логгер:
+All analysis, builds and tests must be run through the logger:
 
 ```bash
-node tools/decomp-logging/cli.mjs run --stage <имя_этапа> -- <команда> [аргументы]
+node tools/decomp-logging/cli.mjs run --stage <stage_name> -- <command> [arguments]
 ```
 
-## Документация
+## Documentation
 
-| Документ | Назначение |
+| Document | Purpose |
 |---|---|
-| [docs/README.md](docs/README.md) | Навигация: какой документ читать для какого вопроса |
-| [docs/PLAN.md](docs/PLAN.md) | Единый план, правила работы и критерии приёмки |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Журнал проверенных результатов и операций |
-| [docs/X360_PROJECT_STATE.md](docs/X360_PROJECT_STATE.md) | Текущее состояние и блокеры |
-| [docs/NATIVE_REXGLUE_LINUX.md](docs/NATIVE_REXGLUE_LINUX.md) | Нативная Linux-линия: сборка, импорты, эксперименты |
-| [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md) | ISO, BHD5/BDT, DCX, BND3, TPF, FLVER, текстуры |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Слои и границы runtime |
-| [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) | Доказательства по адресам и функциям |
-| [docs/LINUX_INPUT.md](docs/LINUX_INPUT.md) | Клавиатура, мышь, конфиг |
-| [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md) | Логгер: команды, история, повторы |
-| [docs/ACV_TIMING.md](docs/ACV_TIMING.md), [docs/GHIDRA_CAPTURE.md](docs/GHIDRA_CAPTURE.md) | Тайминг и снимки Ghidra |
-| [docs/fine/](docs/fine/) | Сжатые отчёты по отложенным веткам; архивы исключены |
-| [ABOUT_DE-AC5.MD](ABOUT_DE-AC5.MD) | Обзор процесса: от ISO до C++ и runtime |
-| [TASK-SQL.MD](TASK-SQL.MD) | Политика постоянного журнала и восстановления |
+| [docs/README.md](docs/README.md) | Navigation: which document to read for which question |
+| [docs/PLAN.md](docs/PLAN.md) | Single plan, working rules and acceptance criteria |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | Journal of verified results and operations |
+| [docs/X360_PROJECT_STATE.md](docs/X360_PROJECT_STATE.md) | Current state and blockers |
+| [docs/NATIVE_REXGLUE_LINUX.md](docs/NATIVE_REXGLUE_LINUX.md) | Native Linux line: build, imports, experiments |
+| [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md) | ISO, BHD5/BDT, DCX, BND3, TPF, FLVER, textures |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Runtime layers and boundaries |
+| [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) | Evidence by address and function |
+| [docs/LINUX_INPUT.md](docs/LINUX_INPUT.md) | Keyboard, mouse, configuration |
+| [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md) | Logger: commands, history, retries |
+| [docs/ACV_TIMING.md](docs/ACV_TIMING.md), [docs/GHIDRA_CAPTURE.md](docs/GHIDRA_CAPTURE.md) | Timing and Ghidra captures |
+| [docs/fine/](docs/fine/) | Condensed reports on postponed branches; archives excluded |
+| [ABOUT_DE-AC5.MD](ABOUT_DE-AC5.MD) | Process overview: from ISO to C++ and runtime |
+| [TASK-SQL.MD](TASK-SQL.MD) | Policy for the persistent journal and recovery |
 
-## Для агентов и участников
+## For agents and contributors
 
-- [AGENTS.md](AGENTS.md) — правила работы для ИИ-агентов и участников: что проверять, что нельзя
-  менять без разрешения, как фиксировать результат.
-- Перед изменениями читать [docs/PLAN.md](docs/PLAN.md), затем последние записи в
+- [AGENTS.md](AGENTS.md) — working rules for AI agents and contributors: what to check, what must not be
+  changed without permission, and how to record results.
+- Before making changes, read [docs/PLAN.md](docs/PLAN.md), then the latest entries in
   [docs/PROGRESS.md](docs/PROGRESS.md).
-- Оригинальный ISO и живая база Ghidra — только для чтения.
-- Скриншоты и PNG-превью для анализа не сохраняются: доказательства — логи, RenderDoc RDC/XML,
-  инструкции и числовые дампы.
+- The original ISO and the live Ghidra database are read-only.
+- Screenshots and PNG previews are not kept for analysis: the evidence is logs, RenderDoc RDC/XML,
+  instructions and numeric dumps.
 
-## Лицензия
+## License
 
-Код и документация проекта распространяются по **GNU General Public License v3.0 (only)** —
-см. [LICENSE](LICENSE). Сторонние компоненты (ReXGlue SDK, XenonRecomp, XenosRecomp, RenderDoc,
-библиотеки в `thirdparty/`) сохраняют свои лицензии; GPL-3.0 их не заменяет.
-Игровые данные Armored Core V в лицензию проекта не входят и не распространяются.
+The project's code and documentation are distributed under the **GNU General Public License v3.0 (only)** —
+see [LICENSE](LICENSE). Third-party components (ReXGlue SDK, XenonRecomp, XenosRecomp, RenderDoc,
+libraries in `thirdparty/`) keep their own licenses; GPL-3.0 does not replace them.
+Armored Core V game data is not part of the project's license and is not distributed.
