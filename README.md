@@ -10,7 +10,6 @@ In parallel, an independent C/C++ reconstruction of the game's behaviour is bein
 
 ![Gameplay scene from the native Linux build with the Vulkan renderer](docs/images/gameplay-vulkan.jpg)
 
-Repository: <https://github.com/GrayRats/DEArmoredcoreV>
 
 > **Important.** This repository contains no game: no ISO, no XEX, no unpacked resources, no DLC.
 > To work with it you need your own legally obtained image of the game. The rights to Armored Core V belong
