@@ -35,8 +35,9 @@ Repository: <https://github.com/GrayRats/DEArmoredcoreV>
 
 Confirmed so far (details and verification steps are in [docs/PROGRESS.md](docs/PROGRESS.md)):
 
-- The native build compiles and runs up to the menu and the intro. A dark gameplay frame reproduces;
-  its cause is **not identified**. Correct gameplay has **not** been accepted yet.
+- The native build compiles and runs up to the menu and the intro. In mission 2 the game hangs on a black screen;
+  its cause is **not identified**. Evidence: [docs/PROGRESS.md](docs/PROGRESS.md#native-linux),
+  [hang analysis](docs/NATIVE_REXGLUE_LINUX.md#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24).
 - Resources: all 19,744 BHD5 entries and BND3 entries (including format 0x2c) are unpacked, and 7,111 FLVER headers are parsed;
   the Xbox 360 BC1 layout is confirmed by exact block matches.
 - Game logs: `dlc_sound:` is partially mounted from the image data (75 successful opens); the emblems and 7 sounds
