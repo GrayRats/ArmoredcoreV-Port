@@ -3,7 +3,7 @@
 [English](README.md) | [Русский](README.RU.MD)
 
 Research project: reconstruction and a native Linux build of **Armored Core V** (Xbox 360).
-PowerPC machine code from `default.xex` is translated into C++ through the ReXGlue SDK and runs on Linux.
+PowerPC machine code from GHIDRA is translated into C++ through the ReXGlue SDK and runs on Linux/Windwos.
 In parallel, an independent C/C++ reconstruction of the game's behaviour is being built from retail data.
 
 *Static recompilation of Armored Core V (Xbox 360) into a native Linux port. Research project; no game data included.*
