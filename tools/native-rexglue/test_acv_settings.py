@@ -98,6 +98,29 @@ class CvarTests(unittest.TestCase):
         with self.assertRaises(s.SettingsError):
             s.graphics_to_cvars({"render_scale": 2})
 
+    def test_wide_view_maps_resolution_to_hooks_and_letterbox(self):
+        wide = {"wide_view": "auto", "resolution": "2560x1080"}
+        env = s.graphics_to_env(wide, {"wide_view"})
+        self.assertAlmostEqual(float(env["ACV_EXPERIMENTAL_SCENE_ASPECT"]), 64 / 27)
+        self.assertEqual(env["ACV_EXPERIMENTAL_SCENE_ASPECT"], env["ACV_EXPERIMENTAL_HUD_ASPECT"])
+        args = s.dedupe_options(s.graphics_to_cvars(wide, True, {"wide_view"}))
+        self.assertIn("--present_letterbox=false", args)
+        self.assertNotIn("--present_letterbox=true", args)
+        # narrower than 16:9 (16:10) is handled by the same hooks
+        self.assertAlmostEqual(float(s.graphics_to_env({"wide_view": "auto", "resolution": "1920x1200"},
+                                                       {"wide_view"})["ACV_EXPERIMENTAL_SCENE_ASPECT"]), 1.6)
+        with self.assertRaises(s.SettingsError):  # 1:1 is outside the supported range
+            s.graphics_to_env({"wide_view": "auto", "resolution": "1000x1000"}, {"wide_view"})
+        # 16:9 output, off, and the "auto" resolution never enable the hooks
+        self.assertEqual(s.graphics_to_env({"wide_view": "auto", "resolution": "1920x1080"}, {"wide_view"}), {})
+        self.assertEqual(s.graphics_to_env({}, {"wide_view"}), {})
+        for bad, why in (({"wide_view": "auto"}, "auto resolution"),
+                         ({"wide_view": "auto", "resolution": "2560x1080"}, "no host hooks")):
+            with self.assertRaises(s.SettingsError, msg=why):
+                s.graphics_to_cvars(bad, True, frozenset())
+        with self.assertRaises(s.SettingsError):  # experimental needs the flag
+            s.graphics_to_cvars(wide, False, {"wide_view"})
+
     def test_capabilities_cover_schema(self):
         caps = s.capabilities()
         self.assertEqual(set(caps), set(s.GRAPHICS_SCHEMA))

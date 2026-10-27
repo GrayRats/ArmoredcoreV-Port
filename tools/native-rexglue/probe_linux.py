@@ -131,10 +131,12 @@ compatibility_options = (["--protect_zero=false", "--render_target_path_vulkan=f
                          if args.graphics_profile == "acv-fsi" else [])
 features = acv_settings.runtime_features(exe.parent)
 settings_options = []
+settings_env = {}
 if args.settings:
     try:
         saved = acv_settings.load_json(args.settings, "settings")
         settings_options = acv_settings.graphics_to_cvars(saved.get("graphics", {}), args.allow_experimental, features)
+        settings_env = acv_settings.graphics_to_env(saved.get("graphics", {}), features)
     except (acv_settings.SettingsError, OSError, ValueError) as error:
         parser.error(f"--settings: {error}")
 profile_options = [f"--user_language={selected_profile.language}"] if selected_profile else []
@@ -147,9 +149,11 @@ report = {"scope": "bounded native launch; duration/alive alone does not establi
 report["runtime_features"] = sorted(features)
 report["settings_file"] = str(args.settings) if args.settings else None
 report["settings_cvars"] = settings_options
+report["settings_env"] = settings_env
 report["controls"] = args.controls
 report["graphics_profile"] = args.graphics_profile
 env = dict(os.environ)
+env.update(settings_env)  # wide-view hooks of the host (not SDK cvars)
 # Prefer the selected build over absolute SDK RUNPATHs and inherited library search paths.
 env["LD_LIBRARY_PATH"] = str(exe.parent) + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
 display_gamma = args.display_gamma_type or config.get("compat", "display_gamma_type", fallback=None)
@@ -167,8 +171,8 @@ dlc_sound_root = acv_paths.DATA / "acv-dlc-sound"
 if dlc_sound_root.is_dir():
     env["ACV_DLC_SOUND_ROOT"] = str(dlc_sound_root)
 # Empty on purpose: the guest's optional system:\\system.properties stays absent, only the device exists.
-system_root = ROOT / "tmp/acv-system-root"
-system_root.mkdir(exist_ok=True)
+system_root = (cache_dir if cache_dir is not None else user / "cache") / "system"
+system_root.mkdir(parents=True, exist_ok=True)
 env["ACV_SYSTEM_ROOT"] = str(system_root)
 report["system_root"] = str(system_root)
 report["dlc_sound_root"] = env.get("ACV_DLC_SOUND_ROOT")
@@ -274,7 +278,7 @@ abort_reason = None
 kill_timer = None
 def follow_runtime():
     """Forward the SDK's file-only log into the outer SQLite captured output."""
-    global fault_count, abort_reason, kill_timer
+    global fault_count, abort_reason, kill_timer, fatal_error_count
     runtime_path = output / "runtime.log"
     while not runtime_path.exists():
         if runtime_stop.wait(0.05):

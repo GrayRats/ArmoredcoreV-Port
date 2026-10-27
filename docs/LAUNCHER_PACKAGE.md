@@ -1,4 +1,7 @@
-# Standalone ACV Linux package — 2026-10-24
+# Standalone ACV Linux package — 2026-10-25
+
+Latest TRG candidate and checks: [checkpoint](#trg-frontend-and-installation--2026-10-25).
+The Qt description below is the preserved previous package.
 
 Local output: `../../ACV-Linux/`, entry point `start.sh`.
 This is a statically recompiled game with ReXGlue, not a fully recovered
@@ -204,3 +207,98 @@ HUD/crosshair/culling and the absence of distortion are not accepted. ACV-Linux
 was not replaced by this experimental build.
 [Result](../logs/acv-ultrawide-2560x1080-20261024/result.json),
 [run](../logs/acv-native-linux/20261024T120920332499Z/launch.json).
+
+## TRG frontend and installation — 2026-10-25
+
+Latest local candidate: `../../ACV-Linux-TRG-20261025/start.sh` (185 manifest files).
+The previous `../../ACV-Linux/start.sh` Qt package is unchanged. Earlier Qt evidence in this
+document describes that checkpoint, not the current frontend. Runtimef3600aca remains a candidate;
+no RUNTIME_BASELINE promotion or full recovered-source claim is made.
+
+[Frontend source](../tools/acv-trg-launcher/main.cpp), [bridge](../tools/acv-trg-launcher/backend.py),
+[build/reproduction](../tools/acv-trg-launcher/README.md),
+[pinned dependencies](../tools/acv-trg-launcher/dependencies.json): C++17, TRG b384a28c,
+Dear ImGui1.92.9b, SDL2 release2.32.10, standalone target and OpenGL3.3.
+The six Ember pages retain the existing Python schema, typed values, UUID/XUID,
+profiles/backup/restore, presets, capability restrictions and atomic writes. Unsupported high FPS,
+FSR2/3 and YCbCr remain unavailable. The UI caches snapshots and runs CLI jobs off the UI thread.
+Save/PLAY waits for backend validation; acv.config is not rewritten. Last-run now reads the actual
+acv_paths.LOGS/XDG directory and bounded live runtime telemetry instead of a hardcoded development path.
+Actual/requested output, depth fallback, cadence, game elapsed/idle time and session exit are shown.
+Decisions and errors append to XDG state/acv/logs/acv-trg-launcher.log.
+
+Checks:
+
+- Real SDL/X11 smoke renders all six pages with a resize and a Cyrillic glyph availability assertion;
+  host and relocated package/font smokes pass. Physical controller/HiDPI remain untested.
+- [Development GUI integration](../logs/acv-trg-integration-20261025-r2/verification.json): selected
+  executable/runtime/GPU/FidelityFX mappings, --session without --seconds, profile writer rejection,
+  normal GUI exit while game stays alive and keeps its inherited lock, release after game exit.
+  The first test asserted lock release before the supervisor finished draining logs; the test now
+  waits for actual completion. Startup/cadence is not gameplay-speed acceptance.
+- ASan/UBSan process boundary checks cover literal argv, independent stdout/stderr, simultaneous
+  large streams/stdin, EPIPE, missing executable, timeout and game survival after owner destruction.
+  Backend tests cover typed save/rejection, unchanged prior file on failure, reset preserving data,
+  backup/restore. Native tests include fatal-log accounting and live/completed session telemetry.
+- [Actual ISO import](../logs/acv-trg-disc-import-20261025/verification.json): production TRG reader
+  and install boundary, title4E4D0853, all26 payload hashes match
+  [game manifest](../tools/native-rexglue/game_data_manifest.json), original ISO SHA unchanged,
+  existing install rejected and cancelled staging removed. Synthetic XDVDFS tests cover exact
+  extraction bytes and wrong title; Python tests cover mismatch, symlink rejection and no-replace.
+  Publication calls renameat2(NOREPLACE), so an existing installation is preserved. A silent nonzero
+  verifier initially appeared successful; an explicit failure message fixes that case and CTest passes.
+- The package contains copied game/runtime/backend files, DejaVu regular/bold fonts and notices,
+  no Qt/ICU or symlinks into the development tree. Manifest185 hashes and ldd resolution checked;
+  follow-up integration uses cwd `/` and isolated XDG state. The first relocated launch exposed
+  a hardcoded package/tmp/acv-system-root; the empty system: mount now lives in the selected profile
+  cache, with parents created. This is a packaging/path fix, not guest filesystem behavior emulation.
+
+The normal game writes its own separate stdout/stderr evidence through probe_linux.py; the outer
+supervisor log is a regular file, so GUI closure cannot SIGPIPE the session. The GUI stops only its
+own supervisor; normal PLAY is unbounded. Raw reports remain under logs/acv-trg-*.
+Earlier candidates ACV-Linux-TRG-candidate and ACV-Linux-TRG are superseded local checkpoints.
+
+Final artifact checkpoint: [checkpoint.json](../logs/acv-trg-final-20261025-r2/checkpoint.json),
+[verification.json](../logs/acv-trg-final-20261025-r2/verification.json), operation
+9a0da1c6-e609-43f1-aa98-7767debec825. Launcher SHA526269c5…, runtimef3600aca…;
+manifest SHA c397227d734217dfe0f3d02580944cf66f5cac010f4cb013c0ffb96d027d1077.
+This exact package ran from `/`, closed by WM_DELETE_WINDOW while its game retained the profile lock,
+then the owned test supervisor stopped the game normally: child0, fatal0, one user_language,
+profile/runtime XUID equal, no new shm orphans. No package/tmp was created; system: is in profile cache.
+The first final test used focus-dependent synthetic Escape during another GUI smoke and timed out;
+direct WM close removed that test dependency. Final host suite:39 native Python cases,2 bridge cases,
+2 CTest binaries pass.185 package hashes resolve; source tools/config and original userdata are checked.
+The requested windowed2560×1080 was constrained by the desktop work area to2560×1052,
+with a16:9 output1870×1052 atx345. This is correct aspect fit, not the earlier full-screen UltraWide test.
+Startup swap cadence≈60, p95≈16.706ms; this does not establish gameplay speed.
+
+Open: interactive installation UX, physical controller/HiDPI, real save/load and the different-mission
+selection, visual CAS/FSR, native UltraWide HUD/culling, high FPS timestep, actual10-bit display
+acceptance and other Linux distributions. The saved-name trial is still an experiment, not a migration
+accepted for personal data. No gameplay or runtime-baseline acceptance follows from these host tests.
+
+
+### WaitFix candidate — 2026-10-25
+
+New package: ../ACV-Linux-TRG-WaitFix-20261025/start.sh,185 files. Runtimeca04c1c6 fixes fractional WaitMultiple sleep; Audio Worker78.05%→0.56% of one core.190s child0/fatal0. Stable60FPS remains open. Manifest/dependencies verified, no Qt/ICU. Earlier packages and saves retained.
+
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+
+## TRG package with wide_view and the refreshed runtime — 2026-10-27
+
+- New local package `../ACV-Linux-TRG-WideView-20261027/start.sh` (185 manifest files, 3.9 GB with the owned game data,
+  no Qt/ICU). Built by `tools/acv-launcher/standalone.py --frontend trg --include-game-data` from the accepted build
+  directory; older packages (`ACV-Linux`, `-TRG`, `-TRG-WaitFix`) are untouched.
+- Runtime: `librexruntime.so` `ebf338a181f3...`, GPU plugin `141540635406...`, FidelityFX lib, host ELF `6cd54abf0b01...`
+  (wide-view and census hooks, default off). The accepted runtime was rebuilt from the current SDK tree (`build_sdk_ffx.py`)
+  because the one staged on 2026-10-24 predated the thread-join, TimerQueue and WaitMultiple fixes. Features reported:
+  `ACV_XUID cas_additional_sharpness fidelityfx frame_limit_fps present_output_bits wide_view`. Baseline re-recorded
+  (`history` keeps the previous hashes; old libraries in `tmp/acv-backups/pre-runtime-refresh/`).
+- New in this package: the "Расширенный обзор (эксперимент)" selector on the Screen page (needs an explicit resolution and
+  the experimental-settings switch); 16:10 and wider outputs via the same hooks.
+- Checks (through the project logger): `verify_package.py` 185 files, libraries resolve, no Qt/ICU;
+  `verify_frontend.py` (60 s, isolated profile; evidence `logs/acv-trg-wideview-20261027/`): launcher exit 0, game survived
+  the launcher, profile lock survived and was released after the game, second writer rejected, session without time limit,
+  pacing 22 FPS in the sampled window. Scope: frontend integration/startup only, no gameplay acceptance.
+  Regression run on the same runtime (scripted keys, 100 s, `20261026T195337406828Z`): no stall messages,
+  pacing 60 FPS in light scenes; the user confirmed that the game works.

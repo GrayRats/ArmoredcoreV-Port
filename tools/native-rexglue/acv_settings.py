@@ -27,6 +27,7 @@ GRAPHICS_SCHEMA = {
     "output_effect": ("bilinear", ("bilinear", "cas", "fsr", "fsr2", "fsr3")),
     "color_encoding": ("rgb_full", ("rgb_full", "ycbcr444", "ycbcr422", "ycbcr420")),
     "color_depth": (8, (8, 10)),
+    "wide_view": ("off", ("off", "auto")),
 }
 
 # SDK cvar values for anisotropic_override (cache.cpp:52): -1 game, 0 off, 1..5 = 1x,2x,4x,8x,16x.
@@ -50,8 +51,18 @@ _EXPERIMENTAL = {
     ("render_scale", 4): "SDK scale support depends on device limits; not verified for ACV",
     ("output_effect", "cas"): "needs a runtime built with REXGLUE_ENABLE_FIDELITYFX; visual result not verified",
     ("output_effect", "fsr"): "needs a runtime built with REXGLUE_ENABLE_FIDELITYFX; visual result not verified",
+    ("wide_view", "auto"): "scene aspect and HUD centring from the chosen resolution; edge culling, reticle and cut-scenes not verified",
     ("antialiasing", "fxaa"): "final-pass FXAA is not verified against the ACV HUD",
     ("antialiasing", "fxaa_extreme"): "final-pass FXAA is not verified against the ACV HUD",
+}
+
+
+# Shared preset payloads: frontend widgets do not own a second policy table.
+GRAPHICS_PRESETS = {
+    "compatibility": {"render_scale": 1, "anisotropy": "game", "antialiasing": "off",
+                      "dither": False, "output_effect": "bilinear", "vsync": True},
+    "quality": {"render_scale": 1, "anisotropy": 16, "antialiasing": "off",
+                "dither": True, "output_effect": "bilinear", "vsync": True},
 }
 
 
@@ -256,7 +267,38 @@ def runtime_features(directory):
         found.update(name for name in names if name.encode() in data)
     if "cas_additional_sharpness" in found:  # cvar exists only when REX_HAS_FIDELITYFX_SDK is compiled in
         found.add("fidelityfx")
+    elf = Path(directory) / "acv_linux_probe"
+    if elf.is_file():
+        import mmap
+        with elf.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
+            # The wide-view hooks live in the host executable (scene_aspect_experiment.cpp).
+            if image.find(b"ACV_EXPERIMENTAL_SCENE_ASPECT") >= 0 and image.find(b"ACV_EXPERIMENTAL_HUD_ASPECT") >= 0:
+                found.add("wide_view")
     return found
+
+
+def _wide_aspect(values, features):
+    """Aspect to apply for wide_view=auto, or None when it is off or the output is not wider than 16:9."""
+    if values["wide_view"] != "auto":
+        return None
+    if "wide_view" not in features:
+        raise SettingsError("wide_view needs a host build with the scene aspect hooks")
+    if values["resolution"] == "auto":
+        raise SettingsError("wide_view=auto needs an explicit resolution to derive the aspect from")
+    width, height = (int(v) for v in values["resolution"].split("x"))
+    aspect = width / height
+    if not 1.2 <= aspect <= 4.0:
+        raise SettingsError(f"aspect {aspect:.2f} is outside the supported 1.2 to 4.0")
+    return aspect if abs(aspect - 16 / 9) > 1e-3 else None  # 16:9 needs no change
+
+
+def graphics_to_env(values, features=frozenset()):
+    """Environment variables for settings that are not SDK cvars (the wide-view hooks of the host)."""
+    aspect = _wide_aspect(resolve_graphics(values), features)
+    if aspect is None:
+        return {}
+    text = repr(aspect)
+    return {"ACV_EXPERIMENTAL_SCENE_ASPECT": text, "ACV_EXPERIMENTAL_HUD_ASPECT": text}
 
 
 def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
@@ -305,4 +347,6 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         args += [f"--window_width={width}", f"--window_height={height}"]
     else:
         args += ["--window_width=0", "--window_height=0"]
+    if _wide_aspect(values, features) is not None:
+        args.append("--present_letterbox=false")  # the render target is stretched; the hooks make the picture fit
     return args

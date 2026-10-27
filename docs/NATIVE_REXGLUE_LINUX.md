@@ -1639,3 +1639,1029 @@ under `hang_watch.py`, capture `logs/acv-hang-watch/20261024T185710/`, silence 9
   It compiles in the non-FidelityFX configuration; the FidelityFX runtime was not rebuilt (the rebuild/launch was declined).
 - Next test: rebuild with the watchdog and run once with VSync off (FIFO is then not forced, MAILBOX/IMMEDIATE are allowed),
   to see whether the freeze depends on FIFO presentation, and read the watchdog message otherwise.
+
+
+### Mission-2 watchdog runtime and VSync-off test, 2026-10-24 22:03
+
+PID 147295 and the previous observer were already absent; no process was stopped.
+Built the FidelityFX-enabled runtime (operation `01a54baf-79f9-47f1-99c4-b236a006858f`).
+PaintStage now also covers the second `vkQueueSubmit (UI fence)`, in addition to acquire,
+paint submit and present. The diagnostic reports stalls; it cannot cancel a blocked driver call.
+Updated `tools/native-rexglue/patches/present-acquire-timeout-and-fetch-warning.patch`;
+application to pristine SDK files checked by operation `b435277f-a54f-47f1-a56a-8aa1192e840b`.
+
+Isolated candidate: `tmp/acv-mission2-watchdog/`, manifest `watchdog-build.json`.
+ELF `08045fae…` and GPU `fe3b0dc4…` match the accepted build; runtime is
+`708f8755466ed2e8ca4a5bf1bdf8d17e9cd2c48bcd5a160ce65c6a6928773d22`.
+The accepted build directory and launcher settings were not replaced.
+Settings comparison verified exactly three changed cvars: vsync=false and allow IMMEDIATE/MAILBOX=true.
+Bilinear, no FXAA/dither/CAS/FSR, cap60, profile c29e3d83-4642-4133-853f-5f0105946e16 remain as before.
+
+Launched under hang_watch: runtime session `20261024T170256271467Z`, observer
+`logs/acv-hang-watch/20261024T220256/`, initial PID243687. Startup check
+`1b1b7ced-2c1e-48ad-a1f0-33ede06892e3` confirms all three runtime/GPU/FidelityFX libraries
+loaded from the isolated candidate and actual presentation mode0 (IMMEDIATE), 2560x1080,
+format44. Guest output remains 1280x720 fitted to 1920x1080 at x320, matching the previous test.
+Initial swap cadence ~60; this is not a mission performance result.
+Observer silence threshold90s; logger session bound30min. Game left running for manual mission-2 reproduction.
+No mission-2 success or freeze diagnosis established at startup. A successful start does not resolve the bug.
+
+
+### Mission-2 IMMEDIATE freeze: guest thread join defect, 2026-10-24
+
+User reproduced the freeze in session `20261024T170256271467Z` with VSync off / actual IMMEDIATE.
+Last cadence log22:08:22.663; invalid fetch warning22:08:06.961. Manual capture22:08:55:
+`logs/acv-hang-watch/20261024T220256/bt.txt`. No watchdog stall report or acquire timeout.
+Thus disabling FIFO does not resolve the freeze; the previous submit/present diagnosis was a hypothesis.
+
+The UI snapshot return address is runtime+0x2f716a. Saved `acquire-callsite.txt` and `runtime-maps.txt`
+identify the acquire call, including timeout0x77359400 (2,000,000,000ns), followed by clearing PaintStage.
+This single sample does not prove a permanently blocked acquire. `thread-sampling.json` shows the UI
+thread consuming CPU and changing wait states; the watchdog thread remains alive in nanosleep.
+
+More actionable: Main XThread frame1 is `PosixCondition<Thread>::post_execution`, then
+`PosixConditionBase::Wait` / `XObject::Wait` / `NtWaitForSingleObjectEx`, through guest
+0x82C98B48 / 0x82B4FA28 / 0x82B4F1F0. SDK `src/core/threading_posix.cpp` called
+pthread_join and destroyed the suspend semaphore on EVERY successful wait on a finished thread.
+The thread remains signaled, so subsequent waits repeat both operations. Rejoining is invalid and a
+reused pthread_t can refer to an unrelated thread. Actual target/reuse in this freeze has not been captured.
+
+Regression `tools/native-rexglue/repeated_thread_wait_test.cpp` calls the real runtime Thread/Wait APIs
+three times, interposes pthread_join to count calls and prevents undefined repeated native joins in the baseline.
+Baseline708f8755 reports3 joins instead of1 (operation `27053d2f-ea72-44de-abf0-b80c84d70c89`).
+Initial test harness also intercepted TimerQueue teardown; corrected to track only the target pthread.
+Fix guards reaping with a mutex-protected completion flag, checks join result, and destroys the semaphore once.
+Patch `tools/native-rexglue/patches/posix-thread-wait-reap-once.patch`. Gameplay attribution remains provisional.
+
+
+Join-fix validation: runtime build `f44f24a4-657c-4e42-a30e-4fa1425fe2c4` succeeded;
+same regression passes with exactly1 join for3 successful waits (`50fdd9aa-2caa-428a-9af5-3ec03b90edc6`).
+Patch applies to pristine SDK HEAD. Candidate `tmp/acv-mission2-join-fix/build.json` pins
+runtime `2b346825c1a115c653bd37fb785686e8d2cc6e8694ef86e4264591d7c5bc7d12`;
+ELF, GPU plugin, FidelityFX library and settings copied unchanged from the IMMEDIATE trial.
+After saving evidence, stopped only captured test PID243687 (SIGTERM).
+New gameplay session `20261024T171241321091Z`, observer `logs/acv-hang-watch/20261024T221241/`;
+left running for manual mission-2 reproduction. The SDK regression is fixed; mission-2 outcome is pending.
+
+
+### Mission 2 accepted by user; another mission selection abort, 2026-10-24
+
+User confirms mission2 is now resolved on runtime2b346825 after the join fix. Scope is that reported transition,
+not all missions. Same session `20261024T171241321091Z` later aborts at22:17:22.058 in Ac4SortieScene,
+PID253093/TID254492: InvalidFunctionTrap guest target0. Process is gone.
+System core is present for PID253093; extracted analysis in `logs/acv-mission-select-20261024/`:
+`core-debug.txt`, `object-core.txt`, `factory-inputs.txt`. No replay required to obtain these facts.
+
+Crash stack: sub8274D8E8 -> sub8274AF08 -> sub8274E4C8 -> sub825F68A8 -> sub825F7688.
+Host return site0x4844758, generated shard251:9429; PPCContext recovered from host r14,
+guest base from rbx=0x100000000. r3=r30=0, LR8274D9FC, CTR0.
+Generated translation shows sub82753C48 returns an object, then caller loads its vtable+48 without
+checking null (guest indirect call8274D9F8). Factory failure branch exists; which branch failed is not yet known.
+Caller0x410263F0, manager0x41026D30. Input fields+68=4244FB10 and+76=40FBAB80 are nonzero;
+manager+8/+56/+60/+64 are zero, manager+76=42610920. These are core observations, not recovered type names.
+Ghidra saved-project daemon was unavailable; no live DB modified. Guest semantics here are provisional
+translation/core analysis and still need original instruction verification before a guest fix.
+
+Missing dlc_image thumbnails (briefingmap07, e1020/e2020/e0240) precede the abort; causal connection not proven.
+Do not skip the null call or invent an object as a fix. Next: identify the selected mission and the factory failure path.
+
+hang_watch previously detached on SIGABRT without capturing because only silence/manual triggers were handled.
+It now records signal stops and skips detach on normal process exit. Real GDB tests /bin/true and SIGABRT pass
+(operation `4cbe86a3-81e6-4095-b039-faae66dfeb43`, `watch-tests/` evidence).
+
+
+### Mission selection: registry and initializer investigation, 2026-10-25
+
+Further read-only core analysis (`logs/acv-mission-select-20261024/cause-status.json`):
+registry44019520 has52 entries, including ac_0 ->479F8140 and ac_2 ->47238110.
+The recovered creation descriptor contains key `ac_0` (stack7091FC10). Both AC resources have
+vtable820C2008 and state4 at+26236. Original accessor82945CD0 blocks states1/2/3;
+this snapshot does not show a missing key or that blocked loading state.
+Registry enumeration source: virtual lookup82767300 ->82A22F90 ->82A241F0;
+node key pointer+16/value+60, head44019F00. Dumps and vtables saved beside the JSON.
+
+Creation chain narrowed to82753C48 ->82753448 ->82732868 ->82751AD8 ->828DB650 ->828DB268.
+Stale guest-stack return words include828DB758 (failure cleanup),82751DCC,82732A5C and828DB2A0.
+These support the reconstructed chain but cannot prove the exact earlier conditional branch.
+Failed object418EE060 has been destructed (base vtable82002A50 and fields112/120/128 zero);
+its zero fields must not be mistaken for pre-cleanup input evidence.
+Original PPC words for crash/lookup branches saved in retail-lookup-words.txt and retail-branch-words.txt.
+XEX SHA4fac87348f827e84633013375012284cd8c769a3c155a675b2989757e666a12b rechecked.
+
+Root cause of initializer rejection remains open. No guest logic bypass or synthetic object added.
+Prepared `tools/native-rexglue/mission_select_trace.py`: bounded6000 JSONL rows,13 verified native
+function entry symbols and finish breakpoints; reads PPCContext arguments/returns and object fields.
+`hang_watch.py --diagnostics` loads the script after starti. Selected runtime/ELF/GPU unchanged.
+New manual reproduction session20261025T110650354101Z, observer
+`logs/acv-hang-watch/20261025T160650/`, trace scene-create.jsonl reports trace_ready.
+Startup runs X11; game left open to repeat the problematic selection. Trace is diagnostic and affects timing.
+
+
+### Mission selection: empty resource name and headless UTF-16 corruption, 2026-10-25
+
+Reproduction `20261025T110650354101Z` aborted at16:08:13, PID6020. Diagnostic51 rows:
+`logs/acv-hang-watch/20261025T160650/scene-create.jsonl`, bt.txt and cause-proof.json.
+All13 traced allocations succeeded. First recorded failure828E8220 returned0; base initialization
+828E71A8/8290B6E8 returned1, then828DB268 returned0 because required field+120 was0 before cleanup.
+This supersedes the earlier uncertainty about post-cleanup fields.
+
+Important correction: the descriptor's first string `ac_0` is not the resource lookup key.
+828E80C0 dispatches descriptor vtable slot12 ->824E2550, which loads descriptor+596.
+That points to an empty buffer708EFE5C. Descriptor708EFC00, actual-key.json.
+Name originates from nested object+512, set by825E34E0 then copied by82751AD8 to descriptor+592.
+Input40FA0878 has type1/index0; table835664A0 contains4,5, so825E34E0 takes the alternate
+wide-name branch, not the ac_%d branch. Alternate name at40FA7030 contains bytes
+41005200540045004D000000 (UTF-16LE ARTEM), contrary to guest UTF-16BE. See name-source.json/name-branch.json.
+The empty converted key causes lookup rejection, factory null return and unchecked virtual call8274D9F8.
+
+SDK defect independently reproduced: native shim StoreGuestWide writes UTF-16BE then aliases default_text
+and buffer for XamShowKeyboardUI. SDK headless code passed raw mapped_wstring.value() to
+copy_and_swap_truncating, swapping the already guest-endian bytes a second time. Same bug exists in
+no-ImGui fallback. MappedPtr<char16_t>::value is a raw u16string_view, not an endian-converting accessor.
+Fix uses bounded guest-to-guest CopyGuestUtf16Be on host_address pointers, memmove for overlap,
+BE preservation and no trailing high surrogate. Interactive UTF-8-to-guest conversion retains its existing swap.
+Source: tools/native-rexglue/profile_text.h and SDK src/kernel/xam/xam_ui.cpp.
+Incremental patch keyboard-guest-endian-copy.patch applies over prior keyboard changes; shared header accompanies it.
+
+Actual SDK headless lambda + real MappedPtr regression: baseline fails with byte swap
+(`53670720-ea85-49d0-9a3a-7e6af0e86053`); fix passes ASan/UBSan (`ba8df2a9-7c25-4a1e-92f9-1695141cc0fc`).
+Covers alias/disjoint copy, null input, terminator/guards and surrogate truncation.
+Existing profile text tests pass all1112063 Unicode scalars (`47063e28-f5c9-45bd-810a-26680c7fcdcd`).
+Initial test stub used pointer value() unlike SDK string_view; corrected to real MappedPtr before final validation.
+Runtime build5a40a028-db83-40b1-aacd-723bb8eac953 succeeded after using host_address at the SDK boundary.
+
+Isolated candidate `tmp/acv-mission-select-keyboard-fix/build.json`, runtime
+f3600acaaa0889053507d92455720937e63f473a2dc9f58405a06a5234af5c97;
+ELF08045fae / GPUfe3b0dc4 and settings unchanged from join-fix trial.
+New game session20261025T112001461079Z, observer logs/acv-hang-watch/20261025T162001/;
+trace now also records the actual lookup name. Game left running for mission-selection verification.
+Existing save bytes were not migrated. Confirm the corrected input reaches lookup before accepting the gameplay fix.
+
+
+### Resume checkpoint: selection still aborts with old save, 2026-10-25 16:40
+
+User reported another failure on the keyboard-fix candidate. Session20261025T112001461079Z,
+runtimef3600aca, PID22427/TID26571, ended SIGABRT16:40:11 at the same null virtual call.
+Observer `logs/acv-hang-watch/20261025T162001/` contains59 trace rows, bt.txt and hang.json.
+Trace confirms825E34E0 takes82A20498 (alternate wide-name conversion), actual resource_name remains
+empty,82776540/828E8220 return0, then mandatory field+120 remains0 and scene creation fails.
+No XamShowKeyboardUI call occurred in this session. Thus the input-boundary fix is tested, but it did
+not repair the loaded data or resolve this mission-selection crash. Do not mark the gameplay fix accepted.
+
+Read-only new-core extraction: name-source.json/name-core.txt in that observer folder.
+Input40FA0878, wide name40FA7030 still has bytes41005200540045004D000000 (ARTEM in LE order).
+This is consistent with pre-existing saved data; causal confirmation requires an isolated migration/load test.
+It does not prove the on-disk format globally expects BE: file encoding, load conversion and integrity rules
+must be checked before modifying the user's save.
+
+Current save exists, contrary to the older PLAN statement:
+`tmp/acv-user-data/profiles/c29e3d83-4642-4133-853f-5f0105946e16/userdata/00094AF2A434841E/4E4D0853/00000001/GAMEDAT0000/APGD.DAT`.
+Size230672 (0x38510), SHA256051fc16d6d4bc094edf1b0a1d87ac57a717157d6023e5f77a5c58ef98e7eae81.
+Two aligned ARTEM UTF-16LE sequences found at0x27728 and0x37C08. Matches for BE search at preceding
+odd offsets overlap the same bytes and are not independent BE strings. GAMEDAT0000_CONTENTINFO is16bytes,
+SHA6a15a9c4762f51c220816c86f3be29d1e89efcec7aa4982487c5dfe1cfc268d6; PAINT.DAT also exists.
+CRC32/Adler32/basic sums were sampled read-only; no integrity algorithm was established.
+
+Next concrete step: preserve/hash the original profile, create an isolated test copy, establish the encoding
+and integrity handling for these two fields, then test a narrow repair with the fixed runtime and trace.
+No save was edited, no isolated migration copy was created, no repair was launched before the user's
+request to save progress. Continue from this checkpoint, not from a claim that mission selection is fixed.
+
+### Isolated save-name trial and probe error accounting, 2026-10-25
+
+Verified backup `20261025T114543011388Z` was made under the source profile lock.
+[Trial manifest](../logs/acv-save-name-trial-20261025/trial.json) records the original
+userdata hashes and a separate copy under `tmp/acv-user-data-name-trial/`.
+Only the two10-byte ARTEM fields at0x27728/0x37C08 were changed in the copy, LE→BE.
+Original APGD SHA remains051fc16d6d4bc094edf1b0a1d87ac57a717157d6023e5f77a5c58ef98e7eae81;
+trial SHA2eca8c41bfc302ee118661d8497ca77efde6387fd234522125e7b4d59bfbf522.
+This is an experiment, not a validated save-format migration or checksum repair.
+
+Session20261025T114554846407Z used the copy through new hang_watch --profiles-root.
+Observer `logs/acv-hang-watch/20261025T164554/scene-create.jsonl` contains only trace_ready.
+Bounded synthesized keyboard inputs did not reach the failing selection. No game remained live
+at the resume check; there is no completed launch.json for this GDB-observed session.
+Neither loading the modified save nor integrity acceptance is established. The original data
+were rehashed unchanged. Mission selection remains blocked on a reproducible menu transition.
+The GDB observer dry-run releases the profile lock before attaching its own child; unlike the
+normal probe session, it does not establish inherited writer-lock protection. Keep these diagnostic
+runs isolated from real profile writers; normal launcher/probe inheritance is tested separately.
+
+An independent probe bug was found during TRG integration: follow_runtime assigned
+fatal_error_count without declaring it global, so the first fatal log record raised
+UnboundLocalError in the observer thread. Actual-function regression failed before the fix
+(operation96debd6c-3b27-47ec-8473-bbc8cd6decc5), passes after the one-line fix
+(adb45aa1-2e32-4b26-a617-ec28ae7afafa). This corrects error accounting, not mission logic.
+
+
+### Mission accepted and debugger failure, 2026-10-25
+
+The user confirmed that the mission now works after the isolated profile trial.
+Normal launch `20261025T165411391172Z` (PID38590) used the same runtimef3600aca,
+ELF08045fae and `tmp/acv-user-data-name-trial/`, without GDB. It progressed through
+the recorded menu replay and continued running until the180s limit: child0/fatal0
+(operation02e3d1f5-b24d-4728-b4be-c1a0a1c518ae).
+This accepts the reported mission, not all missions or an automatic save migration.
+The original profile remains separate. Trial name edits are still an experiment;
+on-disk integrity handling and a complete save/write/exit/load cycle are open.
+
+The immediately preceding disappearance in session20261025T165115172727Z was a
+debugger failure. System coredump identifies `/usr/bin/gdb`, PID36997, SIGABRT
+at21:52:21; the observed game PID37021 subsequently ended with-9, with no guest
+fatal log. Native GDB caller instructions at executable offset0x26181E call the
+internal-error handler with source `../../gdb/breakpoint.c`, line9182 (0x23DE),
+function `find_program_space_for_breakpoint`, assertion `thr != nullptr`.
+Core/callsite evidence operations4093a9eb-6ddc-4e2d-8cda-e7649bf220fa,
+db48516a-8285-44bf-9c5b-befb2f0224cd,9924d4d3-e58a-4221-81aa-65852a2f8828,
+1c257802-63c5-40b9-8bc7-3db942391530. The precise upstream GDB defect is not patched.
+
+Our workaround removes FinishBreakpoint from the scene/name/storage observers.
+`tools/native-rexglue/gdb_return_probe.py` matches native x86-64 return address,
+thread ptid and post-return stack pointer, with global breakpoints and explicit
+thread-exit cleanup. It does not modify guest memory or game behavior.
+Regression139606fa-7bfb-4c09-8c0e-69864e3741a9 exercises160 concurrent/exiting workers,
+3840 return callbacks, duplicate observers and abandoned pthread_exit calls.
+The optional per-frame input trace is off by default and bounded to600 calls
+when explicitly enabled. Existing diagnostic input overhead must not be reported
+as game performance.
+
+The earlier hang_watch dry-run lock limitation is superseded: hang_watch now
+starts the normal probe under GDB and follows its game exec; the probe and game
+retain the inherited profile lock. Actual GDB supervisor/detach/lock regression
+998eddf3-2e48-4243-963c-70015bdac2a9 passed.
+
+User-reported6MB warning was investigated read-only in
+`logs/acv-hang-watch/20261025T215114/storage.jsonl`.
+XamContentGetDeviceData(device1) returned success and free_bytes0xC0000000
+(3GiB); repeated missing `con:\GAMEDAT0000_CONTENT` is a separate observed
+file-open failure. Raw cache-volume queries also reported a NullDevice1MiB
+capacity; no causal link to the6MB warning was established. Do not mask it with
+invented files or an unconditional storage-success shim. The next normal run
+loaded the mission; the warning is not a confirmed current blocker.
+
+Retail encoding evidence is now independently exercised:
+`test_mission_name_codec.py` invokes the exact generated82C9AF88 leaf after
+checking its raw-PPC origin and live codec globals. Guest-BE ARTEM converts to
+five ASCII bytes; old LE bytes stop at unmapped U+4100 and produce zero bytes.
+UBSan host regression8d04601f-4402-4e26-b216-062d111d81b6 passed.
+This explains the old empty name; it does not establish every save-field format.
+
+Next: measure warm-cache mission cadence plus CPU/GPU utilization without GDB,
+then address the measured bottleneck. Target60FPS comes from PLAN_GUI/settings;
+draw-call, memory and load-time budgets are unset and not assessed.
+
+
+### WaitMultiple fractional sleep and measured CPU fix, 2026-10-25
+
+Inputs FOUND: normal runtime logs, /proc per-thread samples, NVIDIA utilization,
+Linux user-IP perf samples, SDK source and actual shared-library host tests.
+Performance YAML/helper are absent. Target60FPS/16.67ms comes from PLAN_GUI and
+effective settings. Draw-call, memory and load-time budgets are unset: NOT ASSESSED.
+
+Baseline session20261025T170034719156Z ran190s without GDB, child0/fatal0.
+135 CPU/GPU samples are in logs/acv-fps-warm-mission-20261025/. Retained cache
+does not eliminate compilation of newly encountered pipelines. Heavy-scene
+submitted cadence was about22FPS, with GPU often60–70% busy.
+
+A separate100s perf_event_open run collected9517 user-IP samples, zero lost,
+no unavailable threads: logs/acv-fps-user-ips-20261025/summary.json.
+Audio Worker contributed3930 samples, dominated by pthread_mutex_trylock,
+WaitMultiple, semaphore predicates and unlocks. Sampler uses per-task CPU_CLOCK
+50Hz without ptrace/debugger or injected signals. Actual hot-symbol regression
+88c0309f-4e80-4edf-8673-f01606d8437e passed.
+
+Confirmed defect: PosixConditionBase::WaitMultiple truncated the remainder of
+a1ms alertable slice to integer milliseconds. sleep_for(0) repeatedly checked65
+mutexes for essentially the whole slice. The contention retry also yielded
+without checking the deadline. Fix preserves steady_clock duration precision
+and applies the same bounded sleep/deadline under contention. Signal inspection,
+consumption and atomic WaitAll logic are unchanged. Existing once-only join stays.
+Source: SDK src/core/threading_posix.cpp.
+Patch: tools/native-rexglue/patches/posix-wait-multiple-fractional-sleep.patch.
+
+Actual shared-library wait_multiple_cpu_test.cpp: baseline120ms wait used119.37ms
+CPU (99.5%, expected failure eda3665e-6e82-4f5c-8be6-f0c6fbbaa34b); fixed used1.30ms
+(1.1%,483487a0-51e2-499e-81c1-a3e30467acf1). Timeout, auto-reset/index,100 concurrent
+semaphore releases, WaitAll atomicity and alertable callbacks pass. Repeated wait
+still calls pthread_join once (7f6eb0e4-5894-481f-8329-fb2c646d1317).
+
+Runtime SHA256 ca04c1c60bbd3b2cb3ed147fb777bd395cba641d4c46781f360cd54e97efa7ca.
+Candidate tmp/acv-wait-poll-fix/build.json retains ELF08045fae, GPUfe3b0dc4 and
+FFX0933159a. Normal session20261025T171212311161Z mapped the exact fixed library,
+ran190s, child0/fatal0. Audio-thread CPU in window60..135s decreased78.05%→0.56%.
+[Comparison](../logs/acv-wait-poll-fix-20261025/comparison.json).
+These are observed windows, not identical-frame gameplay A/B.
+
+CPU waste is fixed; stable60FPS remains OPEN. Later heavy-scene submitted cadence
+remained16–21FPS. GPU command processing, guest scene work and pipeline stalls need
+separate profiling; no FPS uplift or gameplay-speed improvement is claimed.
+No >60FPS/timestep change was made.
+
+Separate185-file TRG candidate: ../ACV-Linux-TRG-WaitFix-20261025/start.sh.
+Manifest/no symlinks/no Qt/ICU/dependency checks passed
+79705c7e-528f-4cf5-b79a-c537f80a290a. Earlier packages and original saves retained.
+This is a candidate, not a silent baseline replacement.
+
+GDB callback exceptions are now saved in gdb-run.txt/observer-error.json and
+return exit1 after detaching the game. Actual intentional-failure/lock regression
+a7dfed32-ed42-49da-baa0-f32df2fd5649 passed. Frontend verification now waits for
+deferred GPU/FFX dlopen before checking exact module paths: the earlier immediate
+assertion raced startup, rather than proving a missing packaged plugin.
+
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+
+
+### FPS diagnostics gated at game age90s, 2026-10-25
+
+User requested gameplay diagnostics only90s after game start. perf_gate.py reads
+Linux process start ticks and CLOCK_BOOTTIME, checks PID/executable identity,
+and delays output-directory creation and perf event enablement until the gate.
+perf_ips.py and perf_sample.py now default to --after-start90. Host fixtures
+explicitly use0 or2s. Actual process gate regression9debe404-f045-4401-ab62-a29f9331afd8
+verifies no earlier output from either profiler. Ordinary startup/error runtime
+logs remain separate; diagnostic gameplay sampling excludes the first90s.
+
+Session20261025T172256652085Z, PID58307, runtimeca04c1c6/GPUfe3b0dc4,
+normal300s launch: child0/fatal0. Both profilers started at age90.000408s.
+120 CPU/GPU rows span ages90.0058..209.0048;6917 native user-IP samples,
+zero lost/unavailable. [Provenance](../logs/acv-fps-after90-20261025/provenance.json),
+[summary](../logs/acv-fps-after90-20261025/summary.json), native symbols in
+logs/acv-fps-after90-20261025/ips/summary.json.
+GPU utilization averaged65.37% (29..70); command thread38.66% CPU and frequent
+do_sys_poll waits. The hot libc offsets are AVX memcpy loop instructions,
+confirmed against the local libc executable, not inferred from an unknown symbol.
+
+An opt-in Vulkan CPU wall-time observer now separates fence waits, Resolve
+readback, shared uploads, draws and end-submission. Header gpu_stage_profile.h
+must be copied to SDK src/graphics/vulkan/acv_gpu_stage_profile.h before applying
+patches/vulkan-delayed-stage-profile.patch. It changes no Vulkan calls/results,
+barriers, buffer ownership or publication semantics. Disabled unless
+ACV_GPU_STAGE_PROFILE names a file; hard process-age90s gate,5s windows.
+Nested stage durations are inclusive and must not be added together.
+[Source manifest](../logs/acv-fps-after90-source-20261025/manifest.json).
+Actual C++ pre90s no-file and aggregation regression
+3aee9d7a-aee7-4ec7-9d53-3a850b9bd878 passed.
+
+Diagnostic candidate tmp/acv-gpu-stage-profile/build.json:
+GPU SHA1a22f7522f07607d6571551b002264f5ab0bebe300440b7ac8d0a24673c104d3,
+ELF/runtime/FFX unchanged. It does not replace the standalone/accepted GPU.
+Session20261025T172904539408Z, PID66532,300s child0/fatal0.
+No stage file existed at process age38.08s; first record age95.0068s.
+The first150s of recorded windows showed inclusive wall fractions:
+Resolve readback78.11%, submission-fence checks63.80%, shared upload2.53%,
+draw92.37% and end-submission4.12%. Fence time is nested in readback/draw.
+About3400–4000 resolves per5s repeatedly force GPU completion in full mode.
+This identifies synchronous Resolve readback as the dominant measured stall;
+upload CPU time alone does not explain the loss.
+
+An isolated fast-readback comparison uses a new copied profile store
+tmp/acv-user-data-fps-fast-trial/, same UUID/XUID and explicit per-launch
+--readback_resolve=fast. Source copy was taken only after acquiring its writer lock;
+game exit precedes the normal probe releasing that lock, so waiting for /proc/exe
+alone was insufficient and was corrected. Full remains the normal default.
+[Trial command](../logs/acv-fps-after90-20261025/fast-trial.json).
+Fast returns a previous generation and has not passed image/generation acceptance;
+it is a diagnostic comparison, not an accepted FPS fix.
+
+Next work: reduce the observed Resolve synchronization while preserving CPU-visible
+generation correctness. SDK xmemory.h data providers are currently TODO; eager
+full readback cannot safely be removed merely because it is slow. The current
+working full-mode texture/readback fix and original profile must be retained.
+
+
+Fast comparison completed: session20261025T173444622396Z, PID68655,240s,
+child0/fatal0. In comparable post90s recorded windows, Resolve readback remained
+76.80% inclusive wall time versus77.35% in full; fence checks60.86% versus63.34%.
+No stable60FPS result. [Mode comparison](../logs/acv-fps-after90-20261025/readback-mode-comparison.json).
+These are observed play windows, not deterministic identical-frame A/B.
+The experiment does not justify changing the default or accepting delayed images.
+[Resume checkpoint](../logs/acv-fps-after90-20261025/checkpoint.json).
+
+The subsequent split measurement below resolves the slot/miss uncertainty.
+Full remains the normal mode; delayed images have not passed ACV acceptance.
+
+
+### Resolve wait attribution and fast-generation correction, 2026-10-26
+
+Opt-in timers now separate allocation, write-slot reuse, missing/incomplete previous
+results, full-mode waits, cache invalidation and CPU publication memcpy. The90s
+process-age gate remains active. C++ host tests exercise every metric and absence
+of an early output file. Full session20261025T212958686635Z and old-fast
+session20261025T213304904190Z each completed180s with child0/fatal0 on X11,
+2560x1080 output, bilinear, no CAS/FSR, limiter60, VSync off. Diagnostic GPU
+b5e9ad41, runtimeca04c1c6; [candidate manifest](../tmp/acv-gpu-split-profile/build.json).
+
+[Duration-weighted timer report](../logs/acv-fps-readback-split-20261026/baseline-summary.json):
+
+| Inclusive wall metric | Full,90.063s windows | Old fast,85.119s windows |
+|---|---:|---:|
+| Current-result wait in full |57.37%|0%|
+| Current-result fallback because previous is incomplete |0%|48.72%|
+| Fallback because previous is missing |0%|0.07%|
+| Pending write-slot reuse |0 calls|0 calls|
+| CPU publication memcpy |12.65%|15.24%|
+| Cache invalidate |0.017%|0.026%|
+
+These are observed sessions, not identical-frame A/B. The old-fast run partly
+overlapped the next incremental shader/plugin build, so its FPS is not a clean
+performance comparison. Timers establish which branch executes, not the size of
+a prospective speedup. Nested percentages must not be summed. First records occur
+after95s; explicit file-absence checks at89.095s/full and89.165s/fast passed.
+
+The fast path had9217 waits caused by an existing but unfinished previous result,
+versus7 missing-result fallbacks. SDK command_processor.cpp
+IssueCopy_ReadbackResolvePath treated both as cache misses and waited for the new
+write slot. This serializes fast even when the previous generation is valid.
+Fast now waits for that valid previous generation and publishes its bytes. Missing
+or undersized previous data still falls back to the current generation. Full and
+some retain their existing publication policy. Wait/invalidate failures still
+reject publication; slot completion guards remain enabled.
+
+[Reproducible fast patch](../tools/native-rexglue/patches/vulkan-fast-previous-generation-wait.patch)
+is applied after the diagnostic patch. Actual SDK-tail ASan/UBSan host regression
+0295a809-ecde-475c-98ea-c25f01cdc52c proves previous ticket9/previous bytes0x71
+in fast, ticket10/current bytes0x42 in full, and no publication after failed waits.
+Both patches reproduce their pinned source with zero fuzz. Candidate GPU45dbaab6
+is isolated in tmp/acv-gpu-fast-generation-fix/; normal package/GPU, original save
+and canonical config are unchanged. Runtime session20261025T213630477137Z ran180s,
+child0/fatal0. Gate file absent at89.241s, first timer record after95s. Corrected
+fast-generation branch executes; [measured windows](../logs/acv-fps-readback-split-20261026/fast-fixed-summary.json)
+still show75.10% resolve wall time,60.44% waiting for the previous generation,
+13.62% memcpy. Heavy-scene cadence remains approximately15–17FPS. No speedup or
+image correctness is accepted from this observed session.
+
+A separate next experiment submits each fast readback copy without an immediate
+CPU wait, before testing the previous generation. Pending old copies can otherwise
+belong to an open submission also containing new Resolve work, so choosing an
+older ticket alone need not provide pipelining. This is a scheduling hypothesis,
+not established as the dominant measured cause. The experiment retains full/some,
+slot safety, invalidation and failed-submit rejection. Actual SDK-tail ASan/UBSan
+bc52c766-20a3-4dab-b623-173c83ba2836 verifies both ring indices, old/new bytes,
+submit failure and invalidate failure. Patch vulkan-fast-readback-submit-experiment.patch
+is the third step after the diagnostic and generation-selection patches;
+zero-fuzz chain reproduction passes. Build succeeded (bc07dd18-d802-446f-b36b-7a6d318b39b0). Isolated candidate
+GPUd2404533, [manifest](../tmp/acv-gpu-fast-submit-experiment/build.json).
+Session20261025T214132535324Z completed180s with child0/fatal0, termination by
+test duration. Gate file absent at89.155s and all three mapped libraries matched
+the isolated candidate hashes. Full/default package was not changed.
+
+The user confirmed entering gameplay in this session; first followup observed
+process age130.969s. Subsequent25 CPU/GPU samples cover147.152..171.151s;
+1869 user-IP samples, lost0/unavailable0. GPU utilization88.4% (86..91),
+GPU command CPU56.71% of one core, Draw27.33%, main22.83%. Recorded late submitted
+cadence is about22–25FPS; this observed session is not an identical-input comparison
+with the preceding15–17FPS run. In confirmed gameplay windows135..180s, inclusive
+Resolve66.52%, previous-generation wait38.40%, memcpy21.14%, fast-submit5.63%.
+[Confirmed gameplay evidence](../logs/acv-fps-readback-split-20261026/confirmed-gameplay-summary.json),
+[user confirmation](../logs/acv-fps-readback-split-20261026/user-gameplay-confirmation.json),
+[full timer report](../logs/acv-fps-readback-split-20261026/fast-submit-summary.json).
+Image/generation correctness of delayed fast mode is still unaccepted; no stable60FPS
+or accurate-full-mode speedup is claimed. The explicit visual feedback question is
+pending; the candidate is not promoted.
+
+CPU samples also identify the TimerQueue dispatcher:9.33% of one core,88 samples,
+86.36% in TimerThreadMain and11.36% sched_yield. Source core/timer_queue.cpp uses
+DisruptorPlus spin_wait_strategy even when idle. This is a separate CPU-efficiency
+candidate, not evidence that removing it will reach60FPS. Evaluation must preserve
+timer deadlines, concurrent producers, cancellation, callback self-disarm and shutdown.
+
+Stable60FPS and full-mode performance remain OPEN. Correct full readback cannot
+be replaced by a previous generation: ACV has an immediate CPU texture consumer.
+SDK xmemory.h data providers and PhysicalHeap::EnableAccessCallbacks still mark
+read providers TODO/assert_false. A general deferred implementation must cover
+CPU first-read, all physical aliases, writes/free/reallocation, GPU-worker queue
+ownership and release of the global memory lock; the private leased-range
+prototype is not a global coherence solution.
+
+
+### TimerQueue blocking wait and deadline validation, 2026-10-26
+
+User-confirmed gameplay IP samples attributed the anonymous timer dispatcher to
+TimerThreadMain/sched_yield,9.33% of one core. SDK src/core/timer_queue.cpp used
+disruptorplus::spin_wait_strategy. Replaced only its wait strategy with the existing
+blocking_wait_strategy: producer publication wakes the dispatcher and the earliest
+timer deadline bounds the wait. Timer ordering, callback execution, recurrence,
+Disarm state machine, ring capacity and shutdown kick are retained.
+
+The previously unused third-party strategy had reversed argument order in both
+condition_variable timed overloads. Corrected to wait_for(lock, duration, predicate)
+and wait_until(lock, deadline, predicate); actual-header duration/deadline timeout,
+publication wakeup and untimed wait pass (e620be34-7b4e-442a-84f4-f9e64ba60fc1).
+[Reproducible SDK/dependency patch](../tools/native-rexglue/patches/timer-queue-blocking-wait.patch)
+reproduces exact source with zero fuzz; dependency attribution is retained.
+
+[Actual shared-library fixture](../tools/native-rexglue/timer_queue_cpu_test.cpp):
+
+| Host metric | Before, runtimeca04c1c6 | After, runtime7b1f69a0 |
+|---|---:|---:|
+| Idle process CPU,700ms |1.538%|0.0016%|
+| Recurring1ms timer,400 callbacks, process CPU |10.0262%|1.1863%|
+|128 deadline callbacks, p95 lateness |0.9955ms|0.0690ms|
+| Maximum deadline lateness |1.0595ms|0.2909ms|
+
+Baseline d7f43b50-9ee2-474d-a8cb-4badb9dd38f0; fixed
+cc2b2b4c-c4c1-445a-8878-8be6df7d28fe. Both execute2048 callbacks from4 concurrent
+producers across the512-entry ring, earlier-deadline insertion, recurring self-disarm
+and external cancellation waiting for a running callback. No early deadline callback.
+These host measurements establish CPU efficiency and scheduler behavior, not game FPS.
+Existing WaitMultiple CPU test remains≈1%, event/semaphore/WaitAll/alertable checks
+pass;3 successful Thread waits still join exactly once (9312a47c-d159-4d3c-ae36-0889040b15b6).
+
+[Isolated candidate manifest](../tmp/acv-timer-queue-fix/build.json):
+runtime7b1f69a00408334ca3f50a6c2d50a5d8de9aa1f1ddcacfae80109fcbab7139dc,
+GPUd2404533 retained for the controlled fast-mode comparison, ELF08045fae/FFX0933159a.
+Live session20261025T215215281009Z, PID69477, probe --session without a3-minute game
+limit (outer logger bound30min). The user confirmed gameplay at followup age83.179s;
+no stage output file existed then. CPU/IP gates started at90.000363/90.000362s.
+Actual X11 output settled to2560x1080 after initial resize; bilinear/no CAS/FSR,
+limiter60/VSync off. All candidate mapped library paths and hashes match, canonical
+config and original save unchanged. [Live verification](../logs/acv-timer-queue-fix-20261026/live-verification.json),
+[user gameplay confirmation](../logs/acv-timer-queue-fix-20261026/user-gameplay-confirmation.json).
+Post90s runtime CPU verification completed:90 rows at90.005..179.004s,
+6393 user-IP samples, lost0/unavailable0. Timer dispatcher TID69481 is confirmed
+by TimerThreadMain/kernel-clock callback symbols and pthread_cond_clockwait;
+CPU9.33%→0.640% of one core. GPU utilization87.94% (83..91). Later cadence remains
+about21–24FPS; timer CPU waste is fixed, stable60FPS is not. Observed windows are
+not an identical-input FPS benchmark. Resolve65.48%, previous-generation wait38.29%,
+memcpy20.23% remain dominant inclusive wall fractions in90..180s.
+[Runtime comparison](../logs/acv-timer-queue-fix-20261026/runtime-comparison.json),
+[immutable timer snapshot/report](../logs/acv-timer-queue-fix-20261026/stage-summary.json),
+[checkpoint](../logs/acv-timer-queue-fix-20261026/checkpoint.json).
+Game remains open; shutdown/normal
+exit for this session is not yet checked. Fast image/generation acceptance and
+stable60FPS remain open; no normal-package promotion.
+
+### FBO retest: black gameplay confirmed, 2026-10-26
+
+Session `20261025T220523182625Z`, timer runtime7b1f69a0/GPUd2404533,
+explicit FBO + full readback, X11/2560x1080, VSync off, cap60. User reported
+black gameplay; the owned test was stopped (child0/fatal0). FBO is rejected
+for the working configuration. Normal defaults and accepted package were not changed.
+
+The capture triggered at100s (`acv_frame70994.rdc`) contains only3 draws.
+Replay event66 has exactly zero RGB in both the1280x720 source and2560x1080
+output. This localizes the black image upstream of final scaling, but this
+presentation-only capture cannot identify the failing scene draw/resolve.
+[Checkpoint and capture checksum](../logs/acv-fbo-retest-20261026/checkpoint.json),
+[numeric inspection](../logs/acv-fbo-retest-20261026/present-inspect.json).
+
+Added [GPU replay timestamp tool](../tools/native-rexglue/replay_gpu_times.cpp),
+built against existing RenderDoc1.46 headers/library. It validates counter
+availability/type/unit, excludes parent actions and rejects invalid/duplicate
+samples. Actual capture replay passed; leaf duration sum0.64144ms is only
+this presentation capture, not a gameplay frame time or evidence of60FPS.
+The next FBO investigation needs a capture containing scene rendering and
+host-render-target-to-EDRAM resolve. Accurate deferred readback remains the
+other priority. Restored FSI/full without RenderDoc, PID73719 at launch;
+new gameplay/image acceptance is pending. Profiling retains the90s gate.
+
+### Confirmed FSI/full gameplay sample, 2026-10-26
+
+User confirmed black screen resolved and gameplay entered after restoring FSI/full.
+Session `20261025T220743666736Z`, PID73719, same runtime7b1f69a0/GPUd2404533,
+no RenderDoc. Read-only CPU/GPU sampling:60 rows at game age137.156–196.156s;
+3103 CPU IP samples, zero lost/unavailable. GPU utilization mean68.12%
+(range57–72); GPU Commands CPU37.36% of one core, DrawThread21.37%,
+Main13.39%. Late pacing windows14.78–15.34FPS (~65–68ms/frame).
+The largest CPU sample group on GPU Commands remains the previously identified
+libc memcpy loop; this does not by itself measure GPU wait time. Full readback
+serialization remains the leading optimization target from earlier stage timers.
+The cap60 is not binding. No new FPS fix is claimed, and sampled scenes are not
+identical-input A/B comparisons. Game left running.
+[Summary](../logs/acv-fsi-full-confirmed-20261026/summary.json),
+[symbols](../logs/acv-fsi-full-confirmed-20261026/ips/summary.json).
+
+### General deferred readback scheduling core, 2026-10-26
+
+Implemented [DeferredReadbackQueue](../tools/native-rexglue/deferred_readback_queue.h)
+and [host regression](../tools/native-rexglue/deferred_readback_queue_test.cpp).
+GPU-worker ownership; submitted monotonic tickets; retained staging callback;
+bounded64 jobs/64MiB by default. Enqueue does not normally wait or copy.
+CPU access flushes the prefix through the last overlapping job, waiting once
+on its newest ticket. Prefix publication preserves order for partial overlaps.
+Slot retirement MUST precede recording another GPU copy; Enqueue rejects a
+still-owned slot. Capacity flushes preserve data. Failure poisons the queue;
+no later CPU access may succeed until the owner handles the device failure.
+
+Actual C++ ASan/UBSan regression passed: deferred bytes, unrelated CPU access,
+partial overlap ordering, CPU write ordering, slot reuse, capacity, malformed
+ranges, ticket regression, wrong worker, failed wait/publication, callback
+exception and reentrancy. [Checkpoint](../logs/acv-deferred-readback-core-20261026/checkpoint.json).
+This is a host scheduling core, not integrated runtime acceleration; no FPS gain claimed.
+
+Integration requirements: SDK xmemory.cpp EnableAccessCallbacks currently rejects
+providers; TriggerCallbacks asserts writes and rejects reads. Implement read
+protection and alias-aware provider generations, release/reacquire the global
+memory lock around waits, then revalidate generation/protection before unprotecting.
+Resolve and staging ownership must be connected on the GPU worker; CPU consumers
+must not deadlock when the GPU worker waits on guest work. Host physical accesses
+bypassing faults need explicit synchronization. Before free/protection changes,
+drain affected jobs before allocator reuse; teardown must drain normally or stop
+all GPU/CPU users before cancellation. Full readback remains enabled until these
+boundaries and current-generation CPU/GPU bytes are tested. Diagnostics retain90s gate.
+
+### Readback worker dispatch and memory integration analysis, 2026-10-26
+
+Implemented SDK patches [dispatch locking](../tools/native-rexglue/patches/gpu-worker-dispatch-lock.patch)
+and [readback service during guest waits](../tools/native-rexglue/patches/gpu-readback-service-during-wait.patch).
+The previous std::queue was accessed by multiple threads without synchronization.
+All queue accesses now hold a mutex; callbacks execute outside it and enqueues
+wake the worker. A separate restricted queue services already-recorded readback
+completion during WAIT_REG_MEM, preventing a CPU-readback/guest-WAIT dependency
+cycle. Ordinary host callbacks remain outside the guest wait. The private leased
+experiment now uses this service; general memory read interception is still absent.
+
+[Host test](../tools/native-rexglue/test_gpu_worker_dispatch.py) compiles actual SDK
+methods and the actual WAIT_REG_MEM implementation with host dependencies:
+32000 normal +32000 nested +32000 restricted requests, exactly-once owner-thread
+execution, per-producer normal FIFO, callback recursion, guest-wait progress,
+ordinary callback isolation and short-wait shutdown pass ASan/UBSan. Private
+lease wait/publication guards and the general queue regression also pass.
+Both patches reproduce final SDK sources with zero fuzz. New state is appended
+at the end of CommandProcessor to preserve existing inline getter member offsets.
+Final candidate `tmp/acv-readback-service-fix/`, GPU48994593, runtime7b1f69a0,
+ELF08045fae, FFX0933159a; built, host-tested, final service not runtime-tested.
+[Manifest/checkpoint](../logs/acv-readback-dispatch-20261026/checkpoint.json).
+
+Earlier mutex-only GPU013217a0 ran session20261026T031256047692Z for180s,
+child0/fatal0. It used an intermediate member layout and is superseded, never
+accepted. SDK build overlapped the run, gameplay was not newly user-confirmed;
+this is not a clean FPS comparison. Post90s inclusive timers: full wait60.79%,
+copy13.70%, outer resolve75.19% (nested, do not add outer and inner values).
+Final candidate and accepted package have not been substituted for one another.
+No FPS improvement is claimed.
+
+Source analysis identifies the remaining integration boundaries:
+
+- MMIOHandler already forwards read faults under the global memory lock; physical
+  page faults do not require MMIO instruction decoding. PhysicalHeap rejects read
+  callbacks and data providers, so a queue alone cannot intercept CPU consumers.
+- Host page reconciliation preserves only write watches. Provider NoAccess must
+  survive allocation/protection changes, including changes to neighbouring pages.
+- XFile writes file-read data through TranslatePhysical, then triggers callbacks.
+  Synchronize/cancel pending GPU ownership before that write, otherwise a late GPU
+  publication can overwrite newly read file bytes. Partial writes need exact range
+  handling or prior publication; discarding a whole overlapping job loses other bytes.
+- PhysicalHeap Release/Decommit mutate the parent before callbacks. Pending data
+  must retire or cancel its old allocation generation before this mutation, with
+  revalidation after any unlocked wait, to prevent publication into reused memory.
+- Write-fault stale-protection recovery may restore ReadWrite. Provider failure
+  must remain distinguishable from an ordinary unwatched fault and must not enter
+  this recovery branch. Reads/writes via direct physical pointers need explicit
+  synchronization; audio and file paths are examples, not a complete consumer audit.
+- The private converter hook covers caller0x82C8391C only. It does not establish
+  general CPU coherence. Protection of all A/C/E aliases, host access handling,
+  staging lifetime and teardown still need implementation and regression tests.
+
+[Source hashes and findings](../logs/acv-readback-dispatch-20261026/memory-analysis.json).
+Implementation order: versioned ownership; alias read protection; wait outside the
+lock and generation-checked publication under it; pre-write/free host paths; Vulkan
+connection; exact current-generation bytes, then identical-scene measurements after90s.
+
+### SDK physical read providers and allocation ownership, 2026-10-26
+
+This supersedes the earlier statement that CPU read providers are entirely absent.
+The compiled SDK now has an explicit provider registry and read/write fault path;
+there is still no production Vulkan deferred producer. Full/FSI remains active.
+
+- Registry waits outside the SDK global critical region, then publishes once under
+  that lock. Concurrent CPU faults retain shared completion ownership and recheck
+  providers registered while waiting. Completion/publication failure stops access
+  instead of entering the old stale-protection recovery path.
+- A/C/E alias page watches survive independently until each alias is accessed.
+  Read-only guest mappings retain guest protection; private physical publication
+  mapping is writable when a provider is registered. This fixes the actual SIGSEGV
+  found when a deferred publication followed guest Protect(read-only).
+- Physical alias allocation operations hold the global lock before heap locks.
+  Free/decommit publish before mutating parent metadata; fixed commit and Protect
+  retire old read watches before replacing host protection. Per-4KB epochs reject
+  a suspended release when another thread freed and reused that physical address.
+- Existing public TriggerCallbacks ABI is retained; allocator paths borrow the
+  same lock through TriggerCallbacksLocked. New Memory members are appended.
+- Actual compiled SDK regression exercised POSIX faults, all three aliases, an
+  unlocked GPU completion dependency, partial writes, write invalidations,
+  read-only/fixed-commit rearming, pre-decommit publication and deterministic reuse
+  during an outstanding release. PASS operation 1c234271-f9b6-4348-b419-7ac9bed6c9aa.
+  Fixed guest mappings conflict with ASan shadow, so this mapping test is native;
+  registry/lease host tests and compiled explicit bridge run with ASan/UBSan.
+  Latest bridge PASS: 7fd622de-d13d-49ba-abba-80b097659031.
+- Reproducible patch: tools/native-rexglue/patches/physical-memory-readback-providers.patch;
+  zero-fuzz application reproduces all three SDK files byte-for-byte. Build outputs
+  and earlier read-watch-only checkpoint are retained with hashes in evidence.
+
+Candidate tmp/acv-memory-provider-fix/: runtime a9125a31, GPU48994593,
+ELF08045fae, FFX0933159a. Rebuilt SDK FFX is deliberately excluded from this
+candidate. A75s X11/full/FSI startup smoke completed: session20261026T164337008101Z,
+child0/fatal0/runtime_errors0. This is not gameplay or FPS acceptance; the90s
+measurement gate was never reached. Live mappings of all four artifacts matched
+its manifest. The process ended at the requested bound and is no longer running.
+
+Remaining integration boundaries: direct host physical IO/audio, direct parent-heap
+mutations, Memory reset/save/restore, Vulkan staging resources/queue integration and
+teardown while the device is still valid. Registration and alias arming must occur
+under the same global lock with allocator ownership held. No general mode may be
+enabled until those consumers and lifetimes are covered. No60FPS claim.
+[Evidence and hashes](../logs/acv-memory-provider-bridge-20261026/checkpoint.json).
+
+### Physical host file IO reservation, 2026-10-26
+
+Physical XFile::ReadInternal now synchronizes providers before writing and reserves
+its range while disk IO runs without the global mutex. Overlapping registration
+and allocator synchronization wait for the reservation. Release and post-write
+invalidation are atomic under that mutex, including partial errors and exceptions.
+No temporary texture buffer/copy was introduced; virtual file reads retain their path.
+
+Actual ReadInternal source (class/completion names replaced in a host harness) was
+compiled against SDK Memory and a deterministic fake disk. It passed old-GPU-data
+publication before a4-byte partial write, blocked overlapping registration, unlocked
+IO, preserved neighboring bytes and invalidation after partial failure/exception.
+PASS73558f8d; real alias/allocator regression PASS217eda0d; registry ASan/UBSan
+PASS8a5db4e2. New runtime built and preserved; not runtime-tested or promoted.
+
+XMA needs atomic multi-range reservations before its raw input/output pointers are
+used. The general Vulkan producer remains disabled. Direct GetPhysicalHeap() has
+no callers in current SDK/native source search; reset/save/restore and lifetime
+integration still need coverage.
+[Sources, incremental patch and hashes](../logs/acv-host-physical-io-20261026/checkpoint.json).
+
+### XMA direct physical access reservation, 2026-10-26
+
+XmaContext::Work now pins both valid input buffers, output and physical context
+metadata as one reservation. All GPU waits finish before any partial reservation
+is retained. This prevents a GPU-worker/decoder dependency cycle. Actual decoding
+runs with the global mutex released; the RAII exit notifies output writes across
+A/C/E before releasing ownership. Owner-thread context page faults may synchronize
+inside their own pin; allocator mutation and new GPU registration cannot do so.
+Host access also validates committed parent pages and restores the private mapping
+for hardware writes while preserving guest alias permissions.
+
+Actual Work/RAII source, with codec/merge operations stubbed, passed against
+compiled SDK Memory: both inputs/output/context pinned, an earlier-range provider
+registered during a later-range wait, decoder without global lock, owner context
+write fault and output ordering. Operation442a3909. This does not verify codec
+quality. Actual file regression9bab55b1 and alias/allocator regressionda74b449
+also passed. Atomic multi-range host regression passed ASan/UBSan.
+
+Candidate tmp/acv-host-access-fix/ runtime5b126405/GPU48994593/FFX0933159a
+passed75s X11/full/FSI session20261026T171406346150Z, child0/fatal0/runtime_errors0.
+The bounded process ended; no after90s measurement or gameplay acceptance.
+
+Consumer search found only XFile and XMA direct TranslatePhysical users in current
+system/audio/kernel/input/filesystem/native shim sources. Graphics CPU consumers
+still need their own integration. MapViews additionally mirrors physical0..16MiB
+at7F000000; LookupHeap returns null there, so A/C/E tests do not prove coherence
+of that mirror. The deferred GPU producer must exclude this range or implement
+its protection. No current GetPhysicalHeap caller was found in SDK/native sources.
+Reset/save/restore remain unverified; the general producer is still disabled.
+[Patch/source/test/runtime hashes](../logs/acv-xma-physical-access-20261026/checkpoint.json).
+
+### Graphics CPU physical coherence, 2026-10-26
+
+Graphics CPU words and snapshots now synchronize physical providers before
+reading or modifying memory: packets, constants/shaders, resolve vertices,
+occlusion results and host publications. A packet is captured individually,
+including ring wrap; scoped provenance retains the guest address for inline
+shaders without changing base processor layout. GPU upload preflight runs before
+submission-ticket/resource capture, then reopens submission after memory waits.
+Preparation borrows one memory lock and waits only for host CPU reservations;
+old GPU data is awaited only by actual CPU reads. Exact GPU publication avoids
+invalidating already-current GPU caches. Published providers retire without a
+GPU wait; bounded queue admission precedes recording into a staging slot.
+
+Compiled SDK graphics/packet test4c514642 and XMA testbf5b9a75 PASS; provider
+registry, retirement, queue and restricted WAIT dispatch pass host ASan/UBSan.
+Candidate tmp/acv-graphics-cpu-fix/ runtime131b829f/GPUf2f3ee56 with accepted
+FFX0933159a passed75s X11/full/FSI session20261026T181420117779Z,
+child0/fatal0/runtime_errors0. It ended before the90s diagnostic gate, so it
+provides startup evidence only, no gameplay image/FPS acceptance.
+
+General Vulkan producer integration follows separately. The unprotected7F mirror
+excludes physical0..16MiB; bulk state APIs remain unverified. No current source
+caller of Memory Reset/Save/Restore was found; this differs from guest save-file
+IO, which uses XFile. The accepted package is unchanged.
+[Sources, patch, tests and runtime hashes](../logs/acv-graphics-cpu-coherence-20261026/checkpoint.json).
+
+### General Vulkan readback producer, experimental integration, 2026-10-26
+
+ACV_GENERAL_DEFERRED_READBACK=1 enables a separate producer for full/native
+(unscaled) FSI resolves. Physical0..16MiB is excluded because7F000000 is not
+covered by A/C/E watches. Other modes retain their previous path. The accepted
+standalone package and canonical config are unchanged.
+
+ResolveInfo is captured once. Pool admission/slot retirement precedes memory
+locking and command recording. A prepared memory scope waits for host IO,
+refreshes destination uploads before descriptors and registers/arms A/C/E
+read/write watches before GPU dispatch. It holds allocation ownership through
+recording, then unlocks before submission. Only successfully submitted tickets
+enter the ordered bridge. Publication waits for one newest prefix fence,
+invalidates mapped staging and copies exact current-generation bytes under the
+memory mutex; it does not recursively use a CPU-write helper or invalidate
+already-current GPU caches. Providers retain plain state only; the GPU worker
+owns Vulkan allocations (64 slots/64MiB limit) and reuses them after publication.
+
+Host IO reservations now cover host pages, merged across ranges, because faults
+and invalidation callbacks are page granular. This blocks a neighboring provider
+from creating an IO/GPU dependency cycle. Original requested ranges still own
+committed-page validation, avoiding rejection of unrequested neighboring pages.
+
+Normal shutdown drains publications, closes/wakes pending CPU requests, then
+always completes all submissions before destroying staging. This includes a
+recorded/submitted copy whose EndSubmission/Commit failed before enqueue. A
+non-lost device that cannot complete stops with an error instead of freeing live
+resources. Late callbacks retain no raw destroyed owner or Vulkan allocation.
+
+Real Vulkan/compiled SDK oracle on GTX1660 SUPER passed11 copies, overlapping
+generations,8 actual guest faults, repeated slot reuse and partial CPU writes
+(dc47d06a). Actual teardown source passed ASan/UBSan8 drain/fence/device-loss
+cases (0eb49083). Graphics/page reservation9cfea5e2, XMAefe6f313, file IO
+5b15633c and alias/allocator1e97b0ba PASS. Extended stage metrics retain the
+90s gate; actual C++ test a73e86e4 creates no diagnostic file before90s.
+
+First candidate runtimeb0bf9b46/GPU0270e382/accepted FFX0933159a ran180s
+X11/full/FSI, session20261026T183953558552Z: child0/fatal0/runtime_errors0,
+ended. Eighteen complete diagnostic windows begin at/after90s:52709 general
+resolves,52700 publications and3217 prefix fence waits; legacy full-wait count0.
+CPU wall timers are inclusive: draw46.959% includes general_resolve32.469%;
+within that, general_wait14.987%, general_publish12.634%, general_submit3.710%.
+These percentages cannot be added. Cadence and this uncontrolled scene do not
+prove higher gameplay FPS or image correctness. No such gain is claimed.
+
+Latest source includes the failed-submit lifetime fix, built as isolated
+tmp/acv-general-readback-teardown-fix/ runtimeb0bf9b46/GPU06400c82. A second
+CPU/GPU profile starts after90s to select the next optimization. Current-generation
+byte preservation is host/GPU-tested; image/game-time, representative mission
+transitions, save/load and stable60FPS still require acceptance.
+[Patch, source hashes, tests and runtime records](../logs/acv-general-vulkan-readback-20261026/checkpoint.json).
+
+### Coherent CPU read fast path, 2026-10-26 UTC / 2026-10-27 local
+
+The second general-producer run20261026T184646257218Z completed180s
+child0/fatal0/runtime_errors0. Its35s CPU profile began at process age90.001s,
+2608 IPs lost0. GPU Commands consumed81.21% of a core; explicit reservation
+setup, provider synchronization and allocator functions were among its hottest
+user instructions. A same-input host test confirmed6 allocations per normal
+4-byte coherent read, median107.546ns across3x200000 reads.
+
+ReadPhysicalCpu now checks for IO/provider hazards while holding the global
+memory mutex. If none overlap, it validates committed parent pages/private
+mapping and copies without releasing that lock; no long-lived token or generation
+snapshot is needed. Any conflict retains the original pinned synchronization path.
+Mapping validation is shared with BeginPhysicalCpuAccess. Owned IO pins remain
+rejected; concurrent IO blocks reads; holes remain rejected without touching them.
+
+Same-input host test now asserts zero allocations/read, identical checksum and
+median22.275ns (4.83x for this boundary only). Actual SDK graphics test covers
+IO pin/owner rejection, decommitted pages, readonly hardware mapping and wrapped
+packet/inline-shader provenance. It and XMA, file IO, A/C/E allocator/ABA and
+real Vulkan11-copy/8-fault byte regressions PASS. No KHRONOS validation layer
+is installed locally; no system changes were made.
+
+Isolated tmp/acv-physical-read-fastpath-fix/ runtimee12818a0/GPU06400c82
+with accepted FFX0933159a passed180s X11/full/FSI20261026T185840508042Z
+child0/fatal0/runtime_errors0, ended. A35s >=90s profile collected2468 IPs lost0.
+Observed GPU-worker CPU66.47% versus prior81.21%, with different scenes;
+this is not an identical-input FPS comparison or visual/game-time acceptance.
+Most sampled new SDK read instructions iterate the pending-provider list
+(runtime offsets4396ec/4396ef/4396fe). Next add a safe range rejection and
+identify whether remaining fence waits arise from CPU demand or staging pressure.
+[Patch, hashes, byte regressions and profiles](../logs/acv-physical-read-fastpath-20261026/checkpoint.json).
+
+### Provider range rejection — source/host checkpoint, 2026-10-27 local
+
+Sampled runtime instructions4396ec/4396ef/4396fe traverse pending-provider
+list nodes for non-overlapping command reads. A conservative min/max envelope
+now rejects ranges outside all providers before exact scans; ranges within it
+still scan normally. Registration widens bounds, publication/collection and
+cancellation recompute them under the same memory mutex. CPU IO reservations
+and failed/publishing-state checks precede the rejection.
+
+Independent interval oracle passed4000 register/collect/prefix-sync/pin
+operations and >64000 queries including512MiB boundary under ASan/UBSan.
+Existing registry concurrent wait/new-generation/failure, retirement/admission
+and bridge late-callback/lifetime suites PASS. Bridge diagnostic owner flag
+classifies CPU-demand waits separately from pool-pressure waits; timers still
+create no output before90s (actual C++ gate test PASS).
+
+Same-input baseline on e12818a0 with64 non-overlapping pending providers:
+89.258/99.6524/87.221ns per word read, zero allocations, unchanged checksum.
+This is a host benchmark, not gameplay FPS. New benchmark remains pending.
+The private provider-registry tail grew; full matched SDK runtime/GPU rebuild
+is required before use. Existing original Memory prefix fields were not edited;
+accepted-executable inline/member-offset compatibility still needs checking.
+
+Build completed (dbd63bf7); matched runtimeebf338a1/GPU14154063 was preserved
+in tmp/acv-provider-envelope-fix/ with accepted FFX0933159a. SDK graphics,
+IO/XMA/alias/ABA and real Vulkan11-copy/8-fault regressions PASS. Accepted ELF
+and original Memory prefix declarations are unchanged; private-tail changes
+require the rebuilt pair. Source/symbol review is supplementary and does not by
+itself rule out every fully inlined access; the unchanged executable was tested
+with the matched runtime/GPU. Protected original save/config hashes match.
+
+Runtime20261026T191748089182Z completed180s X11/full/native FSI,
+child0/fatal0/runtime_errors0; PID136294 ended. No live game or build remains.
+After90s:18 diagnostic windows,68427 general resolves,68436 publication
+observations (jobs may cross window boundaries),4019 bridge waits. All classified
+waits are pool-related (31.602% inclusive wall), CPU-demand waits0. Publication
+is15.980%; nested percentages are not additive.2389 user IP samples lost0.
+No identical-scene gameplay FPS, image or game-time acceptance is established.
+
+The next optimization is oldest-prefix admission: retire only enough oldest
+pending jobs to admit the next copy instead of draining the entire queue. It is
+not implemented yet. Retain exact current-generation bytes, slot/fence ownership,
+capacity limits and fail-closed publication; validate with queue/admission/failure,
+SDK and actual GPU regressions before another >=90s profile.
+[Source hashes, patch replay and exact resume steps](../logs/acv-provider-range-rejection-20261026/checkpoint.json).
+
+### Projection census and the UltraWide experiment extended, 2026-10-27
+
+Census (`ACV_PROJECTION_CENSUS=1`, `scene_aspect_experiment.cpp`; read-only; per call site: count and argument ranges;
+return address of the call, which the recompiled code sets before every call). Sessions
+`20261026T193756597623Z` (110 s) and `20261026T194121365223Z` (150 s), scripted keys (`--acv_probe_keys`), throwaway
+profile `tmp/acv-census-user`, heavy scene 15-19 FPS:
+
+| Helper | Call site (LR) | Calls | Arguments |
+|---|---|---|---|
+| perspective `0x82BC8980` | `0x822B4510` | 3981 / 8781 | FOV 0.51-1.05 rad, aspect 16:9, near 1, far 13000 |
+| perspective | `0x82300978` (generic builder `0x82300948`) | 29049 / 61366 | FOV 0.51-1.05, aspect 0.889-2.0 (16:9 among them), near 1-60, far 11-13000 |
+| orthographic `0x82BC8CC0` | `0x822B5368` | 14478 | pixel space 0..1280 x -720..0: the HUD overlay |
+| orthographic | `0x822DF238` | 25312 / 55632 | 0..640/1280 x 0..360/720, near 0.1, far 1000: full/half-size passes |
+| orthographic | `0x82B1ABCC` | 2652 / 5839 | normalised +-0.1 x +-1: small 3D/UI element |
+
+Sites `0x82437C60`, `0x82B21E70`, `0x822DF058`, `0x825173B8`, `0x82300780`, `0x822DF238`'s perspective callers and `0x822B52D8`
+were not called in these scenes. Ghidra xrefs know only one caller per helper (fragmented function bodies), so the
+caller list comes from the recompiled sources. `0x82BC8CC0` is orthographic (left, right, bottom, top, near, far in
+`f1..f6`), `0x82BC8980` perspective.
+
+Experiment (all default-off, `scene_aspect_experiment.cpp`):
+- `ACV_EXPERIMENTAL_SCENE_ASPECT=<1..4>`: widens the aspect of every perspective call from `0x822B4510` or `0x82300978`
+  whose original aspect is 16:9; other aspects (0.889, 2.0) and other sites are untouched.
+- `ACV_EXPERIMENTAL_HUD_ASPECT=<1..4>`: only the exact HUD ortho (`0x822B5368`, 0..1280 x -720..0) gets left/right widened
+  symmetrically by `aspect/(16/9)`, so the HUD keeps its proportions and sits in the centre 16:9 part of the stretched
+  render target. Full-screen post passes (other sites) are unchanged.
+- Used with `--present_letterbox=false` (render target stretched over 2560x1080, output rect x=0 y=0 2560x1080).
+
+Run of `20261026T194121365223Z` (host `03cbc5454f3ae6c1`, build in `tmp/acv-ultrawide-test2/`): experiment active, scene
+and HUD hooks logged, output 2560x1080 without bars. The user reviewed the picture and accepted it ("сойдёт") as an
+experimental mode. Not verified: culling at the screen edges, the reticle position, cut-scenes/menus, and other missions.
+
+### `wide_view` setting (experimental), 2026-10-27
+
+- `acv_settings.py`: new graphics key `wide_view` (`off` default, `auto`), status experimental. `auto` derives the aspect from
+  the chosen `resolution` (it needs an explicit WxH; `auto` resolution and outputs not wider than 16:9 are a no-op, above 4:1
+  is rejected), adds `--present_letterbox=false` and, through the new `graphics_to_env()`, sets
+  `ACV_EXPERIMENTAL_SCENE_ASPECT` and `ACV_EXPERIMENTAL_HUD_ASPECT` for the game process (`probe_linux.py` merges it into the
+  environment and records `settings_env` in `launch.json`).
+- Availability: `runtime_features()` reports `wide_view` when the executable in the build directory contains both variable
+  names (memory-mapped search). The accepted ELF now contains the hooks (default-off, pass-through): hash
+  `03cbc5454f3ae6c1...`, recorded in `RUNTIME_BASELINE.json` (`history` keeps the previous ELF hash); the earlier ELF is in
+  `tmp/acv-backups/pre-wideview/`. Python tests added (mapping, 16:9 no-op, auto resolution, missing hooks, experimental flag).
+- Check: `logs/acv-native-linux/20261026T194525066353Z` (scripted keys, throwaway profile, settings only, no manual
+  environment): hooks logged, output rect 2560x1080 at x=0 y=0.
+- The TRG frontend does not list the new key; set it in the settings JSON until a widget is added.
+
+### `wide_view` for outputs narrower than 16:9 (16:10), 2026-10-27
+
+- Geometry: the 1280x720 render target is stretched over the output, so only the projection aspect against the SCREEN
+  matters. Wider than 16:9 the hook keeps the vertical FOV and widens x. Narrower (16:10, 4:3) it keeps the horizontal
+  view and raises the vertical FOV: `tan(fov'/2) = tan(fov/2) * (16/9) / aspect`, `f2 = aspect`; the HUD ortho
+  (`0x822B5368`) is extended top/bottom by `720*((16/9)/aspect - 1)/2` instead of left/right. `acv_settings._wide_aspect`
+  accepts 1.2 to 4.0 (16:9 stays a no-op).
+- Check `logs/acv-native-linux/20261026T195018601039Z` (scripted keys, settings only, windowed 1728x1080): hooks logged
+  with `new=1.6`. Host ELF `6cd54abf0b011e5f...` (baseline updated). The user watched the run and reported that it works.
+- Limit: in a window the client area is smaller than the requested size (swapchain 1728x1038, aspect 1.665 against the
+  1.6 used by the hook), so geometry is exact only in fullscreen/borderless. Culling at the edges, the reticle and
+  cut-scenes were not examined separately.
+
+### Minimal staging admission prefix, 2026-10-27
+
+PrepareForEnqueue/Enqueue now wait/publish only the smallest oldest prefix that
+allows the new job under both byte and job-count limits. Slot IDs distinguish
+jobs even when submission tickets are equal. CPU overlap synchronization,
+explicit drain and pre-record slot retirement retain their prior ordered rules.
+No budget increase; failed waits retain unpublished jobs/resources.
+
+Host queue/retirement/bridge suites passed ASan/UBSan (81479610). Added tests
+cover combined byte pressure, count pressure, equal-ticket copies and capacity
+failure retention. Actual Vulkan/SDK test cee1fd4d passes12 copies including
+partial capacity publication (later jobs stay pending),8 guest faults, current
+overlap bytes, staging reuse, partial CPU writes and normal drain. Build814df842.
+Zero-fuzz patch replay restores the exact SDK header.
+
+The portable benchmark reconstructs the old baseline via the durable reverse
+patch instead of depending on ignored logs. On GTX1660 SUPER, alternating3
+trials of identical512x4MiB copies give median296.900→228.750ms, throughput
+1.298x, median GPU-fence wait224.099→148.191ms. This is synthetic transfer
+pressure, not game frames/FPS. Final complete buffers and per-copy samples are
+validated; both policies use the same16-slot/64MiB pool.
+
+Candidate tmp/acv-minimal-admission-fix/ runtimeebf338a1/GPUc558cb37/
+accepted FFX0933159a ran180s X11/full/native FSI20261027T043019725818Z,
+child0/fatal0/runtime_errors0, ended. Full log confirms GTX1660 SUPER selected;
+llvmpipe was merely enumerated. The run stayed in menu (17 >=90s windows);
+its60Hz cadence cannot validate mission FPS. Representative mission choice was
+requested from the user.
+
+Next independently retire an oldest fitting occupied slot when pool allocation
+pressure would otherwise drain every pending copy. That policy is not yet
+implemented. Maintain slot/fence ownership and fail-closed reuse.
+[Patch, runtime records and reproducible benchmark](../logs/acv-readback-minimal-admission-20261026/checkpoint.json).
