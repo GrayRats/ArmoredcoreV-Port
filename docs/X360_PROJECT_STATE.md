@@ -191,32 +191,29 @@ SDK разделяет guest/window mode; вписывание/resize подтв
 CAS/FSR shader passes исполнены, качество картинки/скорость игры ещё не приняты.
 Native FOV/HUD и >60 остаются незавершёнными. Детали — LAUNCHER_PACKAGE.
 
-UltraWide resume: default-off native experiment в scene_aspect_experiment.cpp
-изменяет только callsite0x822B450C→0x82BC8980. Host e3ab3704… в
-`tmp/acv-ultrawide-test/`; прежний host — `tmp/acv-ultrawide-before/`.
-60s trace20261024T120037853774Z:6 матриц64:27,58 остальных16:9,
-max error3.285e-7, orphan0;30 boundary cases прошли. Config98d1c2ed… сохранён.
-ACV-Linux не заменён экспериментом. Продолжать с согласования viewport/output,
-связанных проекций/culling, HUD/прицела и атрибуции основной gameplay-камеры;
-до этого native UltraWide в лаунчере не включать. Layout исходного trace pinned
-к2d112d64, экспериментального — кe3ab3704. Детали/evidence — LAUNCHER_PACKAGE.
+UltraWide current reference: experimental wide_view and TRG setting now support
+UltraWide/16:10; user accepted the experimental output. Accepted separate
+WideView package is described in LAUNCHER_PACKAGE; current hooks/census are in
+NATIVE_REXGLUE_LINUX. Edge culling, reticle, cut-scenes and other missions still
+need acceptance. Older one-callsite-only experiments are historical.
 
-- Latest tested candidate: tmp/acv-minimal-admission-fix/,
-  runtimeebf338a1/GPUc558cb37/accepted FFX0933159a. General full/native FSI
-  producer remains opt-in; low16MiB mirror excluded. Minimum oldest-prefix
-  admission built, queue/retirement/bridge ASan and real GPU12-copy/8-fault
-  capacity/overlap/reuse regression PASS. Same-input512x4MiB pressure benchmark
-  gives296.900→228.750ms, component throughput1.298x; not gameplay FPS.
-- Menu-only runtime20261027T043019725818Z ended180s child0/fatal0/runtime_errors0;
-  PID13740 ended. Full log confirms NVIDIA selected (llvmpipe only enumerated).
-  No live game/build.60Hz menu cadence is not mission acceptance. User was
-  asynchronously asked which mission to use; await that input for comparison.
-- Next independent work: allocator currently drains all when no free slot fits.
-  Retire oldest fitting occupied slot safely before full-drain fallback. Not
-  implemented yet. Preserve GPU lifetime/failure guards and compare targeted
-  mixed-size pressure. Accepted package/original saves/config remain unchanged.
-- Previous mission capture20261026T191748089182Z used envelope-only GPU14154063:
-  4019 bridge waits, all pool-related (~31.6% inclusive wall). Do not compare
-  its mission timing against the newer menu capture as a gameplay FPS gain.
-  [Current checkpoint](../logs/acv-readback-minimal-admission-20261026/checkpoint.json),
-  [prior mission/profile](../logs/acv-provider-range-rejection-20261026/checkpoint.json).
+- Latest built/host+GPU-tested candidate: tmp/acv-fitting-slot-fix/,
+  host08045fae/runtimeebf338a1/GPUf1ccdfb9/accepted FFX0933159a. Minimal-prefix
+  admission plus oldest-fitting-slot retirement are implemented.64-slot/64MiB
+  limits retained; invalid/failed/uncommitted slots cannot be reused. New
+  admission/fitting-reuse/full-drain metrics retain the >=90s gate.
+- Latest candidate has NOT been launched in the game. Last game run was menu-only
+  GPUc558cb37/session20261027T043019725818Z,180s child0/fatal0; ended.
+  No gameplay60FPS claim. Synthetic admission1.298x and mixed-pool1.280x are
+  separate component results and must not be treated as/multiplied for FPS.
+- All owned build/test sessions completed at save. Scripted A/B has NOT started.
+  Offline clones tmp/acv-readback-script-control and ...-candidate contain
+  identical userdata/cache copies, made under source writer lock/verified backup.
+  Reuse12:Return/20..100:Space sequence from existing census sessions; begin
+  sampling after120s, without concurrent build/replay/GPU tests. User mission
+  preference can override the diagnostic scenario. Preserve original saves,
+  canonical config, current WideView package and all earlier candidates.
+- Resume with the full ledger and explicit prepared/unstarted distinction:
+  [FPS_READBACK_PROGRESS_20261027](FPS_READBACK_PROGRESS_20261027.md),
+  [latest hashes/tests](../logs/acv-readback-fitting-slot-20261027/checkpoint.json),
+  [comparison plan/backup](../logs/acv-readback-fitting-slot-20261027/scripted-comparison-plan.json).

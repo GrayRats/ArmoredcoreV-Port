@@ -208,3 +208,39 @@ system.properties. Shm orphan0 до/после. Интервалы XE_SWAP да�
 этой экспериментальной сборкой не заменён.
 [Результат](../logs/acv-ultrawide-2560x1080-20261024/result.json),
 [запуск](../logs/acv-native-linux/20261024T120920332499Z/launch.json).
+
+## TRG-кандидат — 2026-10-25
+
+Отдельная папка `../../ACV-Linux-TRG-20261025/start.sh`,185 файлов manifest;
+прежний Qt-пакет `../../ACV-Linux/` сохранён. TRG/C++17, ImGui1.92.9b,
+SDL2 2.32.10, OpenGL3.3, Ember, шесть страниц и кириллица. Используется
+прежний Python backend, асинхронные снимки и атомарная проверенная запись;
+профили/UUID/XUID/backup/restore и данные XDG сохранены. Qt/ICU отсутствуют.
+Реальный тест GUI→probe→game подтвердил выбранные библиотеки, обычную сессию
+без таймера, запрет второго writer, продолжение игры и блокировки после закрытия
+GUI, освобождение после выхода. Метрики подачи кадров не доказывают скорость игры.
+
+Реальный ISO: проверены Title ID4E4D0853 и все26 хешей, отказ при существующей
+установке, отмена/удаление staging; оригинал не изменён. Публикация атомарная,
+без замены существующего каталога. Тест переноса выявил package/tmp/acv-system-root;
+пустой system: теперь создаётся в кэше выбранного профиля. Исправлен также
+счётчик fatal_error_count в наблюдателе probe; baseline тест падал, исправленный проходит.
+Пакет включает шрифты/лицензии и не зависит от дерева SDK для runtime mappings.
+
+Подробные ссылки и границы проверок: [English checkpoint](LAUNCHER_PACKAGE.md#trg-frontend-and-installation--2026-10-25).
+Не приняты: игровой цикл save/load, выбор другой миссии, аппаратные controller/HiDPI,
+интерактивная установка через UI, картинка CAS/FSR/10 бит, UltraWide HUD/culling,
+высокая FPS и новый RUNTIME_BASELINE. Это static recomp, не полный восстановленный source.
+
+Финальный артефакт проверен из cwd `/`: [checkpoint](../logs/acv-trg-final-20261025-r2/checkpoint.json).
+Child0/fatal0, один user_language, XUID совпал, новых shm-сирот нет. Закрытие окна
+через WM_DELETE_WINDOW оставляет игру и lock живыми до штатной остановки теста.
+В оконном режиме рабочая область ограничила2560×1080 до2560×1052; изображение16:9
+вписано1870×1052. Это не повтор fullscreen-теста21:9 и не проверка темпа gameplay.
+
+
+### WaitFix-кандидат — 2026-10-25
+
+Новый пакет: ../ACV-Linux-TRG-WaitFix-20261025/start.sh,185 файлов. Runtimeca04c1c6 исправляет дробную паузу WaitMultiple; Audio Worker78,05%→0,56% ядра.190с child0/fatal0. Стабильные60FPS ещё открыты. Манифест/зависимости проверены, Qt/ICU нет. Старые пакеты и сейвы сохранены.
+
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).

@@ -9,6 +9,71 @@ entry `docs/PROGRESS.md`; SHA-256, headers and links are in the [manifest](../lo
 
 ## Native Linux
 
+2026-10-26: TimerQueue now blocks for publication/deadline instead of spin polling.
+Actual shared-library1ms timer workload CPU10.03%→1.19%, deadline p95≈1.00→0.069ms.
+2048 concurrent-producer callbacks, self-disarm, cancellation, earlier deadline and
+shutdown pass; prior WaitMultiple/join fixes preserved. Runtime7b1f69a0 built,
+isolated session20261025T215215281009Z running; user confirmed gameplay before90s,
+CPU/IP sampling gated at90.00036s.90 rows/6393 IPs, lost0; actual timer CPU
+9.33%→0.64% of one core. Later21–24FPS remains; game left open, fast image
+acceptance and normal game exit still unverified.
+[Evidence](NATIVE_REXGLUE_LINUX.md#timerqueue-blocking-wait-and-deadline-validation-2026-10-26).
+
+2026-10-26:90s-gated split timers rule out pending-slot reuse in observed full/fast
+runs (180s each, child0/fatal0). Fast waited for the new generation9217 times when
+the previous one merely had not completed. Fixed fast-only generation selection;
+actual SDK-tail ASan/UBSan checks previous/current bytes and failure handling.
+Candidate45dbaab6 isolated;180s child0/fatal0, heavy-scene15–17FPS remains.
+Nonblocking fast-submit candidate d2404533 also completed180s child0/fatal0;
+user confirmed gameplay,25 CPU/GPU rows plus1869 IP samples after90s.
+Late cadence22–25FPS, GPU88.4%; observed sessions are not identical-input A/B.
+Fast image/generation acceptance pending. Full/default preserved;
+no stable60FPS claim. [Details](NATIVE_REXGLUE_LINUX.md#resolve-wait-attribution-and-fast-generation-correction-2026-10-26).
+
+2026-10-25: user90s diagnostic gate implemented and tested. Actual sampling began
+at90.000408s,6917 user-IP samples without loss. Opt-in gated Vulkan stage timers
+identify Resolve readback≈78% inclusive command-thread wall time, fence checks
+≈64% nested; full-mode default retained. No stable60FPS fix claimed.
+[Evidence](NATIVE_REXGLUE_LINUX.md#fps-diagnostics-gated-at-game-age90s-2026-10-25).
+
+
+2026-10-25: fixed fractional1ms busy polling in SDK WaitMultiple. Actual shared-library
+wait CPU99.5%→1.1%; semaphore/event/WaitAll/alertable callbacks pass, once-only join
+preserved. Normal190s session20261025T171212311161Z child0/fatal0; audio-thread
+CPU78.05%→0.56% of one core. Separate185-file TRG candidate
+../ACV-Linux-TRG-WaitFix-20261025/ hashes/dependencies verified.
+Heavy-scene16–21FPS remains unresolved.
+[Evidence](NATIVE_REXGLUE_LINUX.md#waitmultiple-fractional-sleep-and-measured-cpu-fix-2026-10-25).
+
+
+2026-10-25: user confirmed the mission now works. Normal session `20261025T165411391172Z`
+on the isolated profile ran180s and exited0/fatal0. No original save was replaced.
+The last diagnostic-session abort belonged to GDB PID36997 (breakpoint.c:9182 assertion),
+not a game SIGABRT. Thread-scoped finish probes replaced with explicit native-return correlation;
+actual GDB stress test160 exiting threads/3840 callbacks PASS (`139606fa-7bfb-4c09-8c0e-69864e3741a9`).
+Full profile migration/save-load remains open. [Details](NATIVE_REXGLUE_LINUX.md#mission-accepted-and-debugger-failure-2026-10-25).
+
+
+2026-10-25: TRG frontend built (C++17,SDL2 2.32.10,ImGui1.92.9b), six pages and existing Python settings/profile bridge. X11 smoke covers page rendering, resize and Cyrillic glyph availability. Actual GUI→probe→game test verifies selected runtime libraries, unbounded session, writer rejection, game/lock survival after GUI exit and release after game exit (`572164e8-9aea-42a1-a046-defec0e456a0`). Real ISO import verifies all26 payloads, no overwrite, cancellation cleanup and unchanged original ISO (`0151026f-deb8-472b-a478-217cfa620632`). Separate185-file candidate `../ACV-Linux-TRG-20261025/`; final relocated test child0/fatal0, XUID matches, one language option and no new shm orphans: [checkpoint](../logs/acv-trg-final-20261025-r2/checkpoint.json). Package/tmp path fixed into profile cache; original Qt package retained. Probe fatal counter independently fixed and regression-tested. See [TRG package checkpoint](LAUNCHER_PACKAGE.md#trg-frontend-and-installation--2026-10-25). Gameplay, physical controller/HiDPI, visual CAS/FSR and new baseline acceptance remain open.
+
+2026-10-25: verified profile backup and isolated two-field name trial created; original APGD SHA unchanged. Auto-input did not reach mission selection; the one trace_ready row does not establish save-load or checksum acceptance. [Trial manifest](../logs/acv-save-name-trial-20261025/trial.json).
+
+2026-10-25 16:40: keyboard-fix runtimef3600aca still aborts on selection with loaded save; trace confirms empty lookup key, no keyboard call, old LE name remains in memory. APGD.DAT and two aligned name offsets identified read-only. Save migration and integrity validation not performed; gameplay fix remains open. See latest [native checkpoint](NATIVE_REXGLUE_LINUX.md#resume-checkpoint-selection-still-aborts-with-old-save-2026-10-25-1640).
+
+2026-10-25: fixed independently reproduced guest UTF-16 double swap in headless keyboard and fallback. Actual SDK lambda with real MappedPtr passes ASan/UBSan; baseline corrupts ARTEM bytes. Mission selection trace confirms empty resource lookup key and pre-cleanup failure. Runtimef3600aca built; gameplay verification session `20261025T112001461079Z` pending.
+
+2026-10-25: mission-selection core registry reconstructed (52 entries): ac_0/ac_2 present, both state4. Missing-key hypothesis excluded for the snapshot; failed initializer branch remains unknown because cleanup ran. Bounded read-only factory trace prepared and launched (`20261025T110650354101Z`).
+
+2026-10-25: aligned AGENTS with PLAN_GUI queue ownership, TOOLS routing and scoped acceptance; updated PLAN English/Russian summaries with TRG decision and latest mission evidence. Previous document bytes and SHA-256 manifest: `logs/plan-agents-20261025/manifest.json` (verified during operation `f8124de2-3060-4ba2-b7dc-c3dc0c8596f8`). Documentation only; no new runtime validation.
+
+2026-10-25: checked out ReAnswered, TRG Launcher and extract-xiso under ignored tools directories; exact revisions in `tools/external-references.json`. PLAN_GUI now specifies TRG migration instead of Qt; README acknowledgements and asset/WIP notices updated. Local documentation links verified (operation `11d4b36d-607d-4862-bbe8-d343b7ba441f`); no new GUI build, ISO extraction or game launch.
+
+2026-10-24: user confirmed mission2 transition resolved with join-fix runtime2b346825. Subsequent different mission selection abort is a separate open defect; core shows null scene-object return before virtual call. hang_watch signal capture and normal-exit handling tested successfully.
+
+2026-10-24: fixed repeated POSIX thread reaping in SDK. Same runtime-boundary regression: baseline3 joins / fixed1 join for3 waits (operation `50fdd9aa-2caa-428a-9af5-3ec03b90edc6`). Mission-2 freeze reproduced with IMMEDIATE; new join-fix session `20261024T171241321091Z` awaits gameplay verification.
+
+2026-10-24: mission-2 diagnostic runtime built and launched in isolated `tmp/acv-mission2-watchdog/`; actual IMMEDIATE presentation verified, accepted ELF/GPU retained. Session `20261024T170256271467Z`; manual mission-2 outcome pending. See [native evidence](NATIVE_REXGLUE_LINUX.md#mission-2-watchdog-runtime-and-vsync-off-test-2026-10-24-2203).
+
 | Stage | Result and evidence | Verification boundary |
 |---|---|---|
 | Input data | XEX SHA-256 4fac87348f827e84633013375012284cd8c769a3c155a675b2989757e666a12b; 26 XDVDFS files match tmp/iso_root | A full disc does not guarantee correct reading/use of every resource |
@@ -628,3 +693,82 @@ The ACV-Linux package remains the earlier display build; the experimental host i
 on the selected callsite. Child 0, the optional system.properties remains, orphans 0.
 The late scene ≈ 15.5–15.9 XE_SWAP FPS at cap 60; visual acceptance/HUD/culling
 remain open. [Result and limits](LAUNCHER_PACKAGE.md#full-screen-test-2560×1080--2026-10-24).
+
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+
+2026-10-25: isolated fast comparison240s child0/fatal0; post90s Resolve still76.80% inclusive wall time, full77.35%; no stable60FPS or image acceptance. Full default retained. [Checkpoint](../logs/acv-fps-after90-20261025/checkpoint.json).
+
+- 2026-10-26: FBO/full retested on current runtime; user confirmed black gameplay.
+  Replay proves black source and output, but capture contains only presentation.
+  Test stopped cleanly; FSI/full restored. GPU timestamp replay utility built and
+  exercised; no60FPS claim. [Evidence](../logs/acv-fbo-retest-20261026/checkpoint.json).
+
+- 2026-10-26: user confirmed FSI/full image restored and gameplay entered.
+ 60s read-only sample after90s gate completed (3103IPs, zero lost); ~15FPS,
+ no new speed improvement claimed. [Evidence](../logs/acv-fsi-full-confirmed-20261026/summary.json).
+
+- 2026-10-26: deferred readback scheduling core implemented and host-tested with ASan/UBSan. Runtime integration and FPS validation remain open. [Checkpoint](../logs/acv-deferred-readback-core-20261026/checkpoint.json).
+
+- 2026-10-26: actual SDK dispatch/WAIT host regression passed ASan/UBSan, 96000 callbacks plus dependency-cycle/shutdown checks. Final GPU48994593 built, not runtime-tested. Source analysis identified pre-write/free and alias protection requirements; no FPS claim. [Checkpoint](../logs/acv-readback-dispatch-20261026/checkpoint.json).
+
+- 2026-10-26: compiled SDK physical provider/allocator regression passed real A/C/E
+  read/write faults, partial writes, read-only rearming and same-address reuse;
+  explicit bridge passed ASan/UBSan. Isolated runtime a9125a31 passed75s X11/full/FSI smoke child0/fatal0;
+  general GPU deferral remains off, no FPS gain claimed.
+  [Checkpoint](../logs/acv-memory-provider-bridge-20261026/checkpoint.json).
+
+- 2026-10-26: physical file IO reservation built; actual XFile source/SDK memory test
+  and alias regression PASS, no temporary texture copy. Runtime not launched;
+  XMA and general Vulkan deferral remain open. [Checkpoint](../logs/acv-host-physical-io-20261026/checkpoint.json).
+
+- 2026-10-26: XMA atomic physical access built; actual Work/RAII + SDK Memory test
+  and file/alias regressions PASS. Runtime5b126405 passed75s X11/full/FSI startup
+  child0/fatal0. General GPU deferral off, no gameplay/FPS acceptance.
+  [Checkpoint](../logs/acv-xma-physical-access-20261026/checkpoint.json).
+
+- 2026-10-26: graphics CPU snapshots, packet provenance, upload reopening and
+  completed-provider retirement built and host-tested. Runtime131b829f /
+  GPUf2f3ee56 passed75s X11/full/FSI startup, child0/fatal0,
+  session20261026T181420117779Z ended. General producer off in that build;
+  no gameplay/FPS gain established.
+  [Checkpoint](../logs/acv-graphics-cpu-coherence-20261026/checkpoint.json).
+
+- 2026-10-26: general Vulkan producer integrated behind explicit flag, full/native
+  FSI with low16MiB excluded. Real GPU/SDK oracle verifies11 copies/8 faults,
+  overlap/current bytes, reuse and partial CPU writes. IO/XMA/alias regressions
+  and actual-source8-case teardown ASan/UBSan PASS. First180s runtime
+  20261026T183953558552Z ended child0/fatal0; >=90s general-path activity
+  confirmed. No verified gameplay FPS gain. Safer teardown buildb0bf9b46/
+  06400c82 is isolated; second CPU/GPU profile in progress.
+  [Checkpoint](../logs/acv-general-vulkan-readback-20261026/checkpoint.json).
+
+- 2026-10-26 UTC: coherent CPU read fast path built; allocation count6→0 and
+  same-input host median107.546→22.275ns. SDK IO/owner/hole/readonly/packet,
+  real GPU, file/XMA and alias/ABA regressions PASS. Runtimee12818a0 /
+  GPU06400c82 passed180s X11/full/FSI child0/fatal0, session
+  20261026T185840508042Z ended. Profile started >=90s,2468 IPs lost0.
+  No identical-scene gameplay FPS acceptance; next provider scan/wait reason.
+  [Checkpoint](../logs/acv-physical-read-fastpath-20261026/checkpoint.json).
+
+- 2026-10-27 local: provider envelope/matched SDK build and real GPU/SDK
+  regressions completed. Runtimeebf338a1/GPU14154063 passed180s
+  X11/full/native FSI20261026T191748089182Z child0/fatal0/runtime_errors0;
+  process ended. >=90s profile:2389 IPs lost0,4019 pool waits and0 CPU-demand
+  bridge waits. Next admission-prefix optimization not yet implemented.
+  No stable60FPS, image/game-time or package-promotion acceptance.
+  [Latest checkpoint](../logs/acv-provider-range-rejection-20261026/checkpoint.json).
+
+- 2026-10-27: minimal-prefix readback admission built; queue/retirement/bridge
+  ASan/UBSan and actual GPU12-copy/8-fault/partial-prefix regression PASS.
+  Reproducible512x4MiB pressure test improves component throughput1.298x.
+  Runtimeebf338a1/GPUc558cb37 passed180s menu-only X11/full/native FSI
+  20261027T043019725818Z child0/fatal0, ended. No gameplay60FPS claim.
+  [Checkpoint](../logs/acv-readback-minimal-admission-20261026/checkpoint.json).
+
+- 2026-10-27: oldest fitting-slot retirement built4cf700f5; selector/teardown
+  ASan/UBSan04e3f279, actual GPU/SDK12-copy/8-fault a2f09d07 and90с gate
+  0fac27ff PASS. Mixed-size benchmark619bb271:183.850→143.635мс median,
+  allocator full drains32→0. Candidate ebf338a1/f1ccdfb9 is not runtime-tested.
+  Identical offline profile clones prepared under source lock/verified backup;
+  scripted comparison not started. No gameplay60FPS or promotion claim.
+  [Consolidated progress](FPS_READBACK_PROGRESS_20261027.md).

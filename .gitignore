@@ -4,6 +4,7 @@
 !/README.md
 !/README.RU.MD
 !/AGENTS.md
+!/TOOLS.MD
 !/TASK-SQL.MD
 !/PLAN_GUI.MD
 !/ABOUT_DE-AC5.MD
@@ -57,6 +58,9 @@
 /tools/rexglue-sdk/
 /tools/XenonRecomp/
 /tools/XenosRecomp/
+/tools/Armored-core-ReAnswered/
+/tools/trg-launcher/
+/tools/extract-xiso/
 /tools/360toolsUpdated/
 /tools/360tools-skill/
 /tools/c-xbox_tool_2.0.7/

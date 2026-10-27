@@ -520,3 +520,12 @@ No live game/build remains from this test. Accepted package unchanged.
   user input. Next independently remove allocator full drains when an older
   fitting occupied slot can be retired; no such slot-selection change yet.
   [Checkpoint](logs/acv-readback-minimal-admission-20261026/checkpoint.json).
+
+- Старейший подходящий staging-слот реализован и собран (runtimeebf338a1/
+  GPUf1ccdfb9, tmp/acv-fitting-slot-fix/). Reuse требует успешного retirement и
+  occupied=false; неизвестный ticket/ошибка не освобождают владение. Selector/
+  teardown ASan/UBSan, реальный GPU12-copy/8-fault и90с gate PASS. На одинаковом
+  mixed-size GPU-тесте183.850→143.635мс,32→0 полных allocator drain; это не FPS.
+  Последний кандидат ещё не запускался в игре. Подготовлены два одинаковых
+  offline-профиля для scripted A/B; сравнение не стартовало.
+  [Все изменения и следующий шаг](docs/FPS_READBACK_PROGRESS_20261027.md).

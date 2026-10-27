@@ -12,9 +12,14 @@ In parallel, an independent C/C++ reconstruction of the game's behaviour is bein
 
 Repository: <https://github.com/GrayRats/DEArmoredcoreV>
 
-> **Important.** This repository contains no game: no ISO, no XEX, no unpacked resources, no DLC.
-> To work with it you need your own legally obtained image of the game. The rights to Armored Core V belong
-> to their rights holders; this project does not distribute and must not distribute game data.
+> [!IMPORTANT]
+> This repository does not include, distribute, or provide access to any game assets.
+> It only contains the source code to build the recompilation. You must own a legitimate
+> copy of Armored Core V and extract the required assets from it.
+
+> [!CAUTION]
+> This project is a work-in-progress. You might experience bugs and crashes;
+> full playability has not been verified. See the current status and known blockers below.
 
 > **Not affiliated.** This project is not connected to, and is not endorsed by, the rights holders of Armored Core V.
 > Names and trademarks belong to their owners.
@@ -124,6 +129,16 @@ node tools/decomp-logging/cli.mjs run --stage <stage_name> -- <command> [argumen
 - The original ISO and the live Ghidra database are read-only.
 - Screenshots and PNG previews are not kept for analysis: the evidence is logs, RenderDoc RDC/XML,
   instructions and numeric dumps.
+
+## Acknowledgements
+
+[ReXGlue](https://github.com/rexglue/rexglue-sdk) and [Xenia](https://xenia.jp/) — the runtime this port stands
+on; [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) and the recompilation projects that showed the way.
+
+[Armored-core-ReAnswered](https://github.com/rensoftworks/Armored-core-ReAnswered/) is a reference for future
+improvements. [TRG Launcher](https://github.com/TekRantGaming/trg-launcher) is the selected GUI for the
+[launcher migration plan](PLAN_GUI.MD). [extract-xiso](https://github.com/XboxDev/extract-xiso) provides disc-image
+extraction tooling. Local checkout revisions and usage notes: [tool selection guide](TOOLS.MD).
 
 ## License
 

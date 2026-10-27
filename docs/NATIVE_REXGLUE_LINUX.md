@@ -2665,3 +2665,30 @@ Next independently retire an oldest fitting occupied slot when pool allocation
 pressure would otherwise drain every pending copy. That policy is not yet
 implemented. Maintain slot/fence ownership and fail-closed reuse.
 [Patch, runtime records and reproducible benchmark](../logs/acv-readback-minimal-admission-20261026/checkpoint.json).
+
+### Oldest fitting staging slot and complete progress save, 2026-10-27
+
+Allocation pressure now retires the fitting occupied slot with the oldest known
+submission before falling back to draining/reclaiming differently sized buffers.
+The queue must publish it successfully and clear occupied; missing jobs, unknown
+IDs/tickets, failed waits and exceptions do not authorize reuse. Slots retain
+submission metadata; the callback cannot remove/destroy the pool allocation.
+Full drain remains for genuine size growth. No budget increase or Memory ABI change.
+
+Selector/teardown ASan/UBSan04e3f279, actual Vulkan/SDK12-copy/8-fault test
+a2f09d07 and extended90s gate0fac27ff PASS. Build4cf700f5 and zero-fuzz patch
+preserved. Mixed-size real-GPU benchmark uses the same minimal-prefix queue
+and fixed16-slot40MiB pool for both policies:512 alternating1/4MiB requests,
+median183.850→143.635ms, throughput1.280x, allocator full drains32→0.
+This synthetic allocator result is separate from the earlier1.298x admission
+benchmark; neither is a game FPS measurement and they must not be multiplied.
+
+Latest isolated candidate tmp/acv-fitting-slot-fix/ uses runtimeebf338a1,
+GPUf1ccdfb9, host08045fae and preserved FFX0933159a. It has not been launched
+in the game yet. Two identical offline profile clones were prepared under
+writer lock with a verified source backup; saved SDL input sequences were found
+in the existing projection-census sessions. Control/candidate comparison remains
+unstarted; sampling is planned after120s. No live-copy or protected-save/config
+modification was performed. The separate accepted WideView package is preserved.
+[Hashes, tests, benchmark](../logs/acv-readback-fitting-slot-20261027/checkpoint.json),
+[complete Russian progress and remaining work](FPS_READBACK_PROGRESS_20261027.md).
