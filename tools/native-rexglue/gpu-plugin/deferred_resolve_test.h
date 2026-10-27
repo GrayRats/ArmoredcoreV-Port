@@ -105,11 +105,12 @@ bool AcvResolveReadbackForCpu(uint32_t address,uint32_t bytes) {
   auto* processor=state.processor.load();
   if(!processor || !AcvDeferredEligible(address,bytes))return true;
   auto promise=std::make_shared<std::promise<bool>>();auto ready=promise->get_future();
-  processor->CallInThread([processor,promise]() {
+  processor->CallInThreadForReadback([processor,promise]() {
     if(AcvDeferred().processor.load()!=processor) {promise->set_value(false);return;}
     promise->set_value(AcvFlushDeferred(processor,"cpu_consumer"));
   });
-  // Requests retain their state if the worker is stuck in a guest WAIT packet.
+  // Dedicated readback requests are serviced even in a guest WAIT packet.
+  // Requests retain their state if a driver call stalls the worker.
   // Fail closed on a bounded timeout rather than copying an unready buffer.
   if(ready.wait_for(std::chrono::seconds(5))!=std::future_status::ready) {
     std::fprintf(stderr,"[acv-deferred] GPU worker request timed out\n");return false;

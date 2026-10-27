@@ -13,7 +13,8 @@ wait = s[a:b]
 a = s.index("  readback.submission_written[write_index] = GetCurrentSubmission();", b)
 b = s.index("\nvoid VulkanCommandProcessor::EvictOldReadbackBuffers", a)
 tail = s[a:b]
-harness = r'''#include <array>
+harness = r'''#include "gpu_stage_profile.h"
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -34,6 +35,9 @@ struct ReadbackBuffer {
 struct Memory {
  std::array<uint8_t,16> data{};
  uint8_t* TranslatePhysical(uint32_t a){assert(a==4096);return data.data();}
+ bool PublishPhysicalGpuReadback(uint32_t a,const void* source,uint32_t bytes) {
+   assert(bytes<=data.size());std::memcpy(TranslatePhysical(a),source,bytes);return true;
+ }
 };
 struct Functions {
  VkResult result=VK_SUCCESS;
@@ -45,9 +49,10 @@ struct Functions {
 struct VulkanCommandProcessor {
  Memory memory;Memory* memory_=&memory;
  Functions dfn;VkDevice device=(VkDevice)1;
- bool device_lost_=false,wait_fails=false,lose_on_poll=false;
+ bool device_lost_=false,wait_fails=false,lose_on_poll=false,submit_fails=false;
  uint64_t submission_completed_=0,current=10,last_wait=0;
- int waits=0;
+ int waits=0,submits=0;
+ bool EndSubmission(bool is_swap){assert(!is_swap);++submits;if(submit_fails)return false;++current;return true;}
  uint64_t GetCurrentSubmission(){return current;}
  void CheckSubmissionFenceAndDeviceLoss(uint64_t ticket){
   if(lose_on_poll)device_lost_=true;
@@ -61,6 +66,26 @@ TAIL
 WAIT
 int main(){
  using Mode=ReadbackResolveMode;
+ {VulkanCommandProcessor p;ReadbackBuffer r;p.submit_fails=true;
+  assert(!p.Publish(r,0,Mode::kFast));assert(p.submits==1);
+  assert(p.dfn.calls==0 && p.memory.data[0]==0 && r.current_index==0);}
+
+ for(uint32_t write=0;write<2;++write){
+  const uint32_t previous=1-write;
+  {VulkanCommandProcessor p;ReadbackBuffer r;r.current_index=write;
+   r.submission_written[previous]=9;r.written_size[previous]=16;p.submission_completed_=8;
+   assert(p.Publish(r,write,Mode::kFast));assert(p.last_wait==9 && p.submits==1);
+   assert(p.memory.data==r.data[previous] && r.current_index==previous);}
+  {VulkanCommandProcessor p;ReadbackBuffer r;r.current_index=write;
+   r.submission_written[previous]=9;r.written_size[previous]=16;p.submission_completed_=8;
+   assert(p.Publish(r,write,Mode::kFull));assert(p.last_wait==10 && p.submits==0);
+   assert(p.memory.data==r.data[write] && r.current_index==previous);}
+  {VulkanCommandProcessor p;ReadbackBuffer r;r.current_index=write;
+   r.submission_written[previous]=9;r.written_size[previous]=16;p.dfn.result=VK_ERROR_MEMORY_MAP_FAILED;
+   assert(!p.Publish(r,write,Mode::kFast));assert(p.last_wait==9);
+   assert(p.memory.data[0]==0 && r.current_index==write);}
+ }
+
  {VulkanCommandProcessor p;ReadbackBuffer r;
   assert(p.Publish(r,0,Mode::kFull));assert(p.last_wait==10);
   assert(p.memory.data==r.data[0] && p.dfn.calls==1 && r.current_index==1);}
@@ -73,8 +98,16 @@ int main(){
   assert(!p.Publish(r,0,Mode::kFull));assert(p.dfn.calls==0);}
  {VulkanCommandProcessor p;ReadbackBuffer r;r.submission_written[1]=9;r.written_size[1]=16;
   p.submission_completed_=8;
-  assert(p.Publish(r,0,Mode::kFast));assert(p.last_wait==10);
-  assert(p.memory.data==r.data[0]);} // allocated but unfinished previous slot
+  assert(p.Publish(r,0,Mode::kFast));assert(p.last_wait==9);
+  assert(p.memory.data==r.data[1]);} // wait for valid previous generation only
+ {VulkanCommandProcessor p;ReadbackBuffer r;r.submission_written[1]=9;r.written_size[1]=16;
+  p.wait_fails=true;
+  assert(!p.Publish(r,0,Mode::kFast));assert(p.last_wait==9);
+  assert(p.dfn.calls==0 && p.memory.data[0]==0 && r.current_index==0);}
+ {VulkanCommandProcessor p;ReadbackBuffer r;r.submission_written[1]=9;r.written_size[1]=16;
+  p.submission_completed_=8;
+  assert(p.Publish(r,0,Mode::kSome));assert(p.last_wait==10);
+  assert(p.memory.data==r.data[0]);} // some retains existing cache-miss policy
  {VulkanCommandProcessor p;ReadbackBuffer r;r.submission_written[1]=9;r.written_size[1]=16;
   p.submission_completed_=9;
   assert(p.Publish(r,0,Mode::kFast));assert(p.waits==0);
@@ -97,5 +130,5 @@ harness=harness.replace("TAIL",tail).replace("WAIT",wait)
 with tempfile.TemporaryDirectory(prefix="acv-resolve-") as d:
     cpp=Path(d)/"test.cpp"; exe=Path(d)/"test"
     cpp.write_text(harness)
-    subprocess.run(["clang++","-std=c++17","-O1","-g","-fsanitize=address,undefined",str(cpp),"-o",str(exe)],check=True)
+    subprocess.run(["clang++","-std=c++17","-O1","-g","-fsanitize=address,undefined","-I",str(root/"tools/native-rexglue"),str(cpp),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

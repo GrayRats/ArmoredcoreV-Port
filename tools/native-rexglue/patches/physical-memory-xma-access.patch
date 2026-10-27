@@ -1,0 +1,354 @@
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -229,6 +229,7 @@
+   void Reset();
+ 
+  protected:
++  friend class Memory;
+   BaseHeap();
+ 
+   // Callers must hold the global critical region - see
+@@ -330,6 +331,7 @@
+   bool TriggerCallbacksLocked(std::unique_lock<std::recursive_mutex>& global_lock_locked_once,
+                               uint32_t virtual_address, uint32_t length, bool is_write,
+                               bool unwatch_exact_range, bool unprotect = true);
++  friend class Memory;
+   bool IsHostPageWriteWatched(uint32_t host_page_number) const override;
+   bool IsHostPageDataProviderWatched(uint32_t host_page_number) const override;
+ 
+@@ -488,13 +490,14 @@
+   //
+   // - Data providers:
+   //
+-  // TODO(Triang3l): Implement data providers - more complicated because they
+-  // will need to be able to release the global lock.
++  // Explicit providers release the global lock while awaiting GPU completion.
++  // No general GPU producer is enabled until every host access path is covered.
+ 
+   // Explicit host access bridge only. Registration does not protect guest aliases:
+   // producers must arrange all CPU accesses, allocator mutations and teardown
+   // through this boundary before using deferred results. Not enabled by default.
+   using PhysicalReadbackProvider = detail::PhysicalReadbackProviders::Provider;
++  // Acquires the lock itself. Use the Locked overload when already holding it.
+   bool RegisterExplicitPhysicalReadback(PhysicalReadbackProvider provider);
+   bool RegisterExplicitPhysicalReadbackLocked(std::unique_lock<std::recursive_mutex>& lock,
+                                                PhysicalReadbackProvider provider);
+@@ -503,12 +506,18 @@
+   uint64_t BeginPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock,
+                                   uint32_t physical_address, uint32_t length);
+   bool EndPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock, uint64_t token);
++  uint64_t BeginPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock,
++                                  const std::vector<detail::PhysicalReadbackProviders::Range>& ranges);
++  bool EndPhysicalCpuWriteAccess(std::unique_lock<std::recursive_mutex>& lock, uint64_t token,
++                                 uint32_t physical_address, uint32_t length);
++
+ 
+   // Caller holds the global critical region exactly once, including after return.
+   // Completion is awaited without that lock; publication and the subsequent CPU
+   // access must stay under it. False forbids accessing stale guest bytes.
+   bool SynchronizeExplicitPhysicalReadback(std::unique_lock<std::recursive_mutex>& lock,
+-                                           uint32_t physical_address, uint32_t length);
++                                           uint32_t physical_address, uint32_t length,
++                                           bool allow_owned_cpu_access = false);
+   // Device and all access threads must be stopped before cancellation/destruction.
+   bool CancelExplicitPhysicalReadbacksAfterDeviceStopped();
+ 
+@@ -534,8 +543,7 @@
+   // Forces triggering of watch callbacks for a virtual address range if pages
+   // are watched there and unwatching them. Returns whether any page was
+   // watched. Must be called with global critical region locking depth of 1.
+-  // TODO(Triang3l): Implement data providers - this is why locking depth of 1
+-  // will be required in the future.
++  // Data providers may wait with this lock released; recursive depth must be 1.
+   bool TriggerPhysicalMemoryCallbacks(
+       std::unique_lock<std::recursive_mutex> global_lock_locked_once, uint32_t virtual_address,
+       uint32_t length, bool is_write, bool unwatch_exact_range, bool unprotect = true);
+--- a/include/rex/system/physical_readback_providers.h
++++ b/include/rex/system/physical_readback_providers.h
+@@ -11,6 +11,7 @@
+ #include <memory>
+ #include <mutex>
+ #include <utility>
++#include <thread>
+ #include <vector>
+ namespace rex::memory::detail {
+ class PhysicalReadbackProviders {
+@@ -42,6 +43,7 @@
+   bool RegisterLocked(std::unique_lock<std::recursive_mutex>& lock, Provider provider,
+                       const std::function<bool()>& still_owned = {}) {
+     if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !provider.range.valid() || publishing_ || failed_) return false;
++    if(HasOwnedCpuAccess(provider.range)) return false;
+     while(!failed_ && HasCpuAccess(provider.range)) access_changed_.wait(lock);
+     if(failed_ || publishing_ || !provider.range.valid() || !provider.await || !provider.publish ||
+        providers_.size()>=64) return false;
+@@ -52,11 +54,13 @@
+     catch(...) { failed_=true; access_changed_.notify_all(); return false; }
+     return true;
+   }
+-  bool Synchronize(std::unique_lock<std::recursive_mutex>& lock, Range range) {
++  bool Synchronize(std::unique_lock<std::recursive_mutex>& lock, Range range,
++                   bool allow_owned_cpu_access = false) {
+     if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !range.valid()) return false;
+     if(publishing_ || failed_) return false;
+     for (;;) {
+-      while(!failed_ && HasCpuAccess(range)) access_changed_.wait(lock);
++      if(!allow_owned_cpu_access && HasOwnedCpuAccess(range)) return false;
++      while(!failed_ && HasCpuAccess(range, allow_owned_cpu_access)) access_changed_.wait(lock);
+       if(failed_) return false;
+       auto end=providers_.begin();
+       for(auto it=providers_.begin();it!=providers_.end();++it)
+@@ -90,18 +94,46 @@
+   // decoding: overlapping GPU registration, CPU access and allocator mutation
+   // wait until EndCpuAccess, without holding the memory-system mutex.
+   uint64_t BeginCpuAccess(std::unique_lock<std::recursive_mutex>& lock, Range range) {
+-    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !range.valid() || publishing_ || failed_) return 0;
+-    if(!Synchronize(lock, range) || cpu_accesses_.size()>=64 || next_access_==UINT64_MAX) return 0;
+-    const uint64_t token=next_access_++;
+-    try { cpu_accesses_.push_back({token,range}); }
+-    catch(...) { failed_=true;access_changed_.notify_all();return 0; }
+-    return token;
++    return BeginCpuAccess(lock, std::vector<Range>{range});
++  }
++  uint64_t BeginCpuAccess(std::unique_lock<std::recursive_mutex>& lock,
++                          const std::vector<Range>& ranges) {
++    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || ranges.empty() ||
++       ranges.size()>64 || publishing_ || failed_) return 0;
++    for(const auto& range:ranges) if(!range.valid()) return 0;
++    for(;;) {
++      // No partial reservations while waiting on GPU. Another CPU may register
++      // new work for an earlier range while a later range wait unlocks us.
++      for(const auto& range:ranges) if(!Synchronize(lock,range)) return 0;
++      bool retry=false;
++      for(const auto& range:ranges) {
++        if(HasCpuAccess(range) || std::any_of(providers_.begin(),providers_.end(),
++             [range](const auto& provider){return provider->range.overlaps(range);})) {
++          retry=true;break;
++        }
++      }
++      if(retry) continue;
++      if(cpu_accesses_.size()>=64 || next_access_==UINT64_MAX) return 0;
++      const uint64_t token=next_access_++;
++      try { cpu_accesses_.push_back({token,ranges,std::this_thread::get_id()}); }
++      catch(...) { failed_=true;access_changed_.notify_all();return 0; }
++      return token;
++    }
++  }
++  bool OwnsCpuRange(std::unique_lock<std::recursive_mutex>& lock, uint64_t token, Range range) const {
++    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !token || !range.valid()) return false;
++    auto it=std::find_if(cpu_accesses_.begin(),cpu_accesses_.end(),
++                         [token](const CpuAccess& access){return access.token==token;});
++    return it!=cpu_accesses_.end() && it->owner==std::this_thread::get_id() &&
++        std::any_of(it->ranges.begin(),it->ranges.end(),[range](Range owned){
++          return owned.address<=range.address && uint64_t(owned.address)+owned.bytes>=uint64_t(range.address)+range.bytes;
++        });
+   }
+   bool EndCpuAccess(std::unique_lock<std::recursive_mutex>& lock, uint64_t token) {
+     if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !token) return false;
+     auto it=std::find_if(cpu_accesses_.begin(),cpu_accesses_.end(),
+                          [token](const CpuAccess& access){return access.token==token;});
+-    if(it==cpu_accesses_.end()) return false;
++    if(it==cpu_accesses_.end() || it->owner!=std::this_thread::get_id()) return false;
+     cpu_accesses_.erase(it);access_changed_.notify_all();return true;
+   }
+   bool CancelAfterDeviceStopped() {
+@@ -113,10 +145,21 @@
+     std::lock_guard<std::recursive_mutex> lock(mutex_); return providers_.size();
+   }
+  private:
+-  struct CpuAccess { uint64_t token; Range range; };
+-  bool HasCpuAccess(Range range) const {
++  struct CpuAccess { uint64_t token; std::vector<Range> ranges; std::thread::id owner; };
++  bool HasCpuAccess(Range range, bool ignore_owned=false) const {
+     return std::any_of(cpu_accesses_.begin(),cpu_accesses_.end(),
+-                       [range](const CpuAccess& access){return access.range.overlaps(range);});
++        [range,ignore_owned](const CpuAccess& access){
++          if(ignore_owned && access.owner==std::this_thread::get_id()) return false;
++          return std::any_of(access.ranges.begin(),access.ranges.end(),
++                            [range](Range owned){return owned.overlaps(range);});
++        });
++  }
++  bool HasOwnedCpuAccess(Range range) const {
++    return std::any_of(cpu_accesses_.begin(),cpu_accesses_.end(),[range](const CpuAccess& access){
++      return access.owner==std::this_thread::get_id() &&
++          std::any_of(access.ranges.begin(),access.ranges.end(),
++                      [range](Range owned){return owned.overlaps(range);});
++    });
+   }
+   std::vector<CpuAccess> cpu_accesses_;
+   std::condition_variable_any access_changed_;
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -135,22 +135,87 @@
+ 
+ uint64_t Memory::BeginPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock,
+                                         uint32_t physical_address, uint32_t length) {
++  return BeginPhysicalCpuAccess(lock,
++      std::vector<detail::PhysicalReadbackProviders::Range>{{physical_address, length}});
++}
++
++uint64_t Memory::BeginPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock,
++    const std::vector<detail::PhysicalReadbackProviders::Range>& ranges) {
+   if (!lock.owns_lock() || lock.mutex() != &rex::thread::global_critical_region::mutex() ||
+-      !detail::PhysicalReadbackProviders::Range{physical_address, length}.valid()) return 0;
++      ranges.empty() || ranges.size() > 64) return 0;
++  for (const auto& range : ranges) if (!range.valid()) return 0;
+   if (physical_mutation_generations_.empty()) physical_mutation_generations_.resize(0x20000);
+-  const uint32_t first = physical_address >> 12;
+-  const uint32_t end = uint32_t((uint64_t(physical_address) + length + 4095) >> 12);
+-  const auto begin = physical_mutation_generations_.begin() + first;
+-  const std::vector<uint64_t> snapshot(begin, physical_mutation_generations_.begin() + end);
+-  const uint64_t token = explicit_physical_readbacks_.BeginCpuAccess(lock, {physical_address, length});
+-  if (token && !std::equal(snapshot.begin(), snapshot.end(), begin)) {
+-    explicit_physical_readbacks_.EndCpuAccess(lock, token);
+-    return 0;
++  std::vector<std::pair<uint32_t, std::vector<uint64_t>>> snapshots;
++  for (const auto& range : ranges) {
++    const uint32_t first = range.address >> 12;
++    const uint32_t end = uint32_t((uint64_t(range.address) + range.bytes + 4095) >> 12);
++    snapshots.emplace_back(first, std::vector<uint64_t>(physical_mutation_generations_.begin() + first,
++                                                      physical_mutation_generations_.begin() + end));
++  }
++  const uint64_t token = explicit_physical_readbacks_.BeginCpuAccess(lock, ranges);
++  if (token) {
++    for (const auto& snapshot : snapshots) {
++      if (!std::equal(snapshot.second.begin(), snapshot.second.end(),
++                      physical_mutation_generations_.begin() + snapshot.first)) {
++        explicit_physical_readbacks_.EndCpuAccess(lock, token);
++        return 0;
++      }
++    }
++  }
++  if (token && physical_membase_) {
++    // Host hardware accesses bypass guest permissions through the physical
++    // mapping, but must still own committed allocation pages.
++    bool valid = true;
++    {
++      std::lock_guard<std::recursive_mutex> heap_lock(heaps_.physical.heap_mutex_);
++      for (const auto& range : ranges) {
++        const uint32_t first = range.address >> 12;
++        const uint32_t end = uint32_t((uint64_t(range.address) + range.bytes + 4095) >> 12);
++        bool writable = true;
++        for (uint32_t i = first; i < end; ++i) {
++          const auto& page = heaps_.physical.page_table_[i];
++          if (!(page.state & kMemoryAllocationCommit)) { valid = false; break; }
++          if (!(page.current_protect & kMemoryProtectWrite)) writable = false;
++        }
++        if (!valid) break;
++        if (!writable) {
++          const uint32_t start = range.address & ~(system_page_size_ - 1);
++          const uint64_t limit = (uint64_t(range.address) + range.bytes + system_page_size_ - 1) &
++                                 ~uint64_t(system_page_size_ - 1);
++          if (!rex::memory::Protect(TranslatePhysical(start), size_t(limit - start),
++                                   rex::memory::PageAccess::kReadWrite)) { valid = false; break; }
++        }
++      }
++    }
++    if (!valid) {
++      explicit_physical_readbacks_.EndCpuAccess(lock, token);
++      return 0;
++    }
+   }
+   return token;
+ }
+ 
+ bool Memory::EndPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock, uint64_t token) {
++  return explicit_physical_readbacks_.EndCpuAccess(lock, token);
++}
++
++bool Memory::EndPhysicalCpuWriteAccess(std::unique_lock<std::recursive_mutex>& lock, uint64_t token,
++                                        uint32_t physical_address, uint32_t length) {
++  if (length) {
++    if (!explicit_physical_readbacks_.OwnsCpuRange(lock, token, {physical_address, length})) return false;
++    // Notify after hardware/host writes, before releasing ownership to new GPU
++    // providers. Every guest alias has independent invalidation/watch flags.
++    for (auto* heap : {&heaps_.vA0000000, &heaps_.vC0000000, &heaps_.vE0000000}) {
++      const uint32_t offset = heap->GetPhysicalAddress(heap->heap_base());
++      const uint64_t first = std::max(uint64_t(physical_address), uint64_t(offset));
++      const uint64_t end = std::min(uint64_t(physical_address) + length,
++                                    uint64_t(offset) + heap->heap_size());
++      if (first < end) {
++        heap->TriggerCallbacksLocked(lock, heap->heap_base() + uint32_t(first - offset),
++                                     uint32_t(end - first), true, true);
++      }
++    }
++  }
+   return explicit_physical_readbacks_.EndCpuAccess(lock, token);
+ }
+ 
+@@ -186,8 +251,9 @@
+ }
+ 
+ bool Memory::SynchronizeExplicitPhysicalReadback(
+-    std::unique_lock<std::recursive_mutex>& lock, uint32_t physical_address, uint32_t length) {
+-  return explicit_physical_readbacks_.Synchronize(lock, {physical_address, length});
++    std::unique_lock<std::recursive_mutex>& lock, uint32_t physical_address, uint32_t length,
++    bool allow_owned_cpu_access) {
++  return explicit_physical_readbacks_.Synchronize(lock, {physical_address, length}, allow_owned_cpu_access);
+ }
+ 
+ bool Memory::CancelExplicitPhysicalReadbacksAfterDeviceStopped() {
+@@ -2341,7 +2407,7 @@
+     const uint32_t relative_end = std::min(
+         rex::sat_sub((system_page_last + 1) * system_page_size_, host_address_offset()), heap_size_);
+     if (!memory_->SynchronizeExplicitPhysicalReadback(global_lock_locked_once,
+-            GetPhysicalAddress(heap_base_) + relative_first, relative_end - relative_first)) {
++            GetPhysicalAddress(heap_base_) + relative_first, relative_end - relative_first, true)) {
+       // Do not enter AccessViolationCallback's stale-protection recovery path.
+       rex::FatalError("Physical readback completion/publication failed");
+     }
+--- a/src/audio/xma_context.cpp
++++ b/src/audio/xma_context.cpp
+@@ -92,6 +92,22 @@
+   return 0;
+ }
+ 
++namespace {
++struct PhysicalAudioAccess {
++  memory::Memory* memory;
++  uint64_t token;
++  uint32_t output_address;
++  uint32_t output_bytes;
++  ~PhysicalAudioAccess() {
++    if (!token) return;
++    auto lock = rex::thread::global_critical_region::AcquireDirect();
++    if (!memory->EndPhysicalCpuWriteAccess(lock, token, output_address, output_bytes)) {
++      rex::FatalError("XMA physical access reservation was lost");
++    }
++  }
++};
++}  // namespace
++
+ bool XmaContext::Work() {
+   if (!is_allocated() || !is_enabled()) {
+     return false;
+@@ -107,6 +123,30 @@
+   if (!data.output_buffer_valid) {
+     return true;
+   }
++
++  std::vector<memory::detail::PhysicalReadbackProviders::Range> physical_ranges;
++  const uint32_t output_bytes = data.output_buffer_block_count * kOutputBytesPerBlock;
++  if (output_bytes) physical_ranges.push_back({data.output_buffer_ptr, output_bytes});
++  if (!data.IsConsumeOnlyContext()) {
++    for (uint8_t index = 0; index < 2; ++index) {
++      const uint32_t bytes = data.GetInputBufferPacketCount(index) * kBytesPerPacket;
++      if (data.IsInputBufferValid(index) && bytes) {
++        physical_ranges.push_back({data.GetInputBufferAddress(index), bytes});
++      }
++    }
++  }
++  if (auto* heap = memory()->LookupHeap(guest_ptr());
++      heap && heap->heap_type() == memory::HeapType::kGuestPhysical) {
++    physical_ranges.push_back({memory()->GetPhysicalAddress(guest_ptr()), sizeof(XMA_CONTEXT_DATA)});
++  }
++  auto memory_lock = rex::thread::global_critical_region::AcquireDirect();
++  const uint64_t physical_token = physical_ranges.empty() ? 0 :
++      memory()->BeginPhysicalCpuAccess(memory_lock, physical_ranges);
++  if (!physical_ranges.empty() && !physical_token) {
++    rex::FatalError("XMA physical allocation changed while awaiting memory providers");
++  }
++  PhysicalAudioAccess physical_access{memory(), physical_token, data.output_buffer_ptr, output_bytes};
++  memory_lock.unlock();
+ 
+   memory::RingBuffer output_rb = PrepareOutputRingBuffer(&data);
+ 

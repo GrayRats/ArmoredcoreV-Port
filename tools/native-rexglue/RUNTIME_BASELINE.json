@@ -10,52 +10,79 @@
   "rexglue_sdk": {
     "head": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
     "describe": "Release v0.10.0",
-    "working_diff_sha256": "3cb3d5eecbf501060631d8286d2d514f86701010866dd005a01578055e40dc5c",
+    "working_diff_sha256": "2370061f53291c4cfe5cd55b3c5fb22b48030b59d1a9804a29782b8f11e54a51",
     "working_diff_files": [
       "include/rex/graphics/command_processor.h",
       "include/rex/graphics/vulkan/command_processor.h",
+      "include/rex/graphics/vulkan/render_target_cache.h",
+      "include/rex/system/xmemory.h",
       "include/rex/ui/vulkan/submission_tracker.h",
+      "src/audio/xma_context.cpp",
       "src/core/memory_posix.cpp",
+      "src/core/threading_posix.cpp",
+      "src/core/timer_queue.cpp",
       "src/graphics/command_processor.cpp",
+      "src/graphics/pipeline/shader/interpreter.cpp",
       "src/graphics/pipeline/shader/spirv_translator_fetch.cpp",
       "src/graphics/pipeline/texture/cache.cpp",
+      "src/graphics/util/draw.cpp",
       "src/graphics/vulkan/command_processor.cpp",
+      "src/graphics/vulkan/render_target_cache.cpp",
       "src/graphics/vulkan/shared_memory.cpp",
       "src/kernel/xam/xam_ui.cpp",
       "src/kernel/xboxkrnl/xboxkrnl_video.cpp",
       "src/system/xam/user_profile.cpp",
+      "src/system/xfile.cpp",
+      "src/system/xmemory.cpp",
       "src/ui/renderdoc_api.cpp",
       "src/ui/vulkan/vulkan_presenter.cpp",
       "src/ui/vulkan/vulkan_submission_tracker.cpp",
-      "src/ui/window_sdl.cpp"
+      "src/ui/window_sdl.cpp",
+      "thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp"
     ],
     "reproducible_patches": {
+      "general-vulkan-physical-readback.patch": "1eafbba7c61ac4b3da22ac98ee9d9d770d56650e02560c3cedc4020533bb343e",
+      "gpu-readback-service-during-wait.patch": "fcbeff000d38613a1a218ab50ec049bd63342c48c71fac03fc7f7f0fa5fc0c45",
+      "gpu-worker-dispatch-lock.patch": "6dfcb5d0e051f7d3ec9695c4d8f6113c002f608a6b79ba2823a3abfa8bf5736d",
+      "graphics-physical-cpu-coherence.patch": "b0bcdd1646a7cd5914bdf754844fe14299009ad6778d319121501ba5f325df12",
       "keyboard-dialog-utf8-boundaries.patch": "9ef2a52520bc12af91bb7e87a160c336a9e24e9e27ae7ea1a88a3be395d79c35",
+      "keyboard-guest-endian-copy.patch": "5c2139f273183f0aaef149fcfd0280dee2a3160d28738250d92b7cba3b6285e2",
       "launcher-display-output.patch": "2e751e9b7d15fefd03e993300ed792117f7c94daa66a1668753527e57d8da830",
       "launcher-runtime-limiter-xuid-shm.patch": "7ddcd746b9e54fc35458324855bd544b47c3f8f03c9a14a9eef05e7a96ef2a64",
-      "present-acquire-timeout-and-fetch-warning.patch": "d10ec65234d5f62eb298af40233699a58082e8924282d2ae75bca19082f89dfe",
+      "physical-cpu-read-fastpath.patch": "fcbbc45baea11c09ba31115743ad8a3c38fa23f1c9d20af04fc1addb08f428ba",
+      "physical-memory-host-file-io.patch": "b1f11d4d9cc6ee1c21b9c5712be8bb87cf5b43be39d1bf36a6769fa90046b691",
+      "physical-memory-readback-providers.patch": "dd2709c095547c6df964b4f439505f54faf5d18246483dca62331ab62d115fa1",
+      "physical-memory-xma-access.patch": "d024d91177bca83cd1729c0437e2dcbbdf39a71ba799a3ddc1b8b99216d41f66",
+      "physical-provider-range-rejection.patch": "16f167f97089f65345bc8044e88e1b5d5d7afc0c11ca3568acfce99d1595e490",
+      "posix-thread-wait-reap-once.patch": "2d82360317989369b36ccd9087fd152d2b614b2231694e0bf576eb157857ce72",
+      "posix-wait-multiple-fractional-sleep.patch": "2aae0750c05e00be294fd3b905996529d4ff4b1a1133b0aa0f93005cee718c51",
+      "present-acquire-timeout-and-fetch-warning.patch": "9647ba058a2b223dcd60d1835a342252ecadbd7234cf36507672243db4718f1c",
       "renderdoc-opt-in.patch": "39f3cb4344cd23e6f1c6159b12c3e4baa2c87ee4762986a111b6069c7f825dbc",
       "resolve-readback-completion.patch": "ea9eb4ba6e6068c3af2ab35e85405c97bf82e8f0982327213141d394a27f8fe9",
       "shared-memory-compute-write.patch": "cfee8c7da6c29a8c282226d6537f996f40b0087e1993d7459753324c060564f7",
-      "texture-fetch-exponent-word.patch": "c712d3ad8752ad365d8596429426b4556fc92158ce965b7ba2fc5c4954d11bfb"
+      "texture-fetch-exponent-word.patch": "c712d3ad8752ad365d8596429426b4556fc92158ce965b7ba2fc5c4954d11bfb",
+      "timer-queue-blocking-wait.patch": "019629c5c090fe8e94102cbfa7d9c3615ebed3a777aaafd1b0fe3b2302378d4b",
+      "vulkan-delayed-stage-profile.patch": "c5fdd7cc1fcb51e5eb757be0690c19c22eaad0906fd595afb32cd18c0c00db65",
+      "vulkan-fast-previous-generation-wait.patch": "8ea7248b366d1eba872caa462444ec8a071d1baf8d5ded3567988067300524ca",
+      "vulkan-fast-readback-submit-experiment.patch": "88d0372bd073beb33932168afbcc23c208d8ce4835d4eb1f45e39b7de3fe3781"
     }
   },
   "runtime_artifacts": {
     "acv_linux_probe": {
       "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
-      "sha256": "08045fae38fba7923e6dd8631ef5902e81e8f95676b6b6124b05a7a908c935bf"
+      "sha256": "6cd54abf0b011e5f93cd209b51bbe39c8aa4020095df6e10b3943c3b552d0715"
     },
     "librexruntime.so": {
       "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexruntime.so",
-      "sha256": "0472a30eb9aea62982bc1151d234a9804ab81dd29d47661262ba07b26e309397"
+      "sha256": "ebf338a181f341f395db534122639d83844dd35368ba56c8d7201f12c6f8e3d8"
     },
     "librexgpu-xenos.so": {
       "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexgpu-xenos.so",
-      "sha256": "fe3b0dc4ecf4dba3a13ea50d121853c8dd69c47a07a6832b333c6509900e48ac"
+      "sha256": "141540635406a8d90abbb20feb17e1fac6399ba6676d72c765344495c659d434"
     },
     "libamd_fidelityfx_vk.so": {
       "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/libamd_fidelityfx_vk.so",
-      "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
+      "sha256": "eaafe390586c3cb80bbd9f2155264db9d9054483664b7cdaaf22f6a9d748ece0"
     }
   },
   "build_notes": [
@@ -100,5 +127,33 @@
         "sha256": "2d112d64471913c64c88d127aa83f81a84a612ad06989f6a4cb0e3e2056c5aeb"
       }
     }
-  }
+  },
+  "history": [
+    {
+      "acv_linux_probe": {
+        "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
+        "sha256": "08045fae38fba7923e6dd8631ef5902e81e8f95676b6b6124b05a7a908c935bf"
+      },
+      "reason": "replaced by the host with the wide-view/census hooks (default-off)"
+    },
+    {
+      "acv_linux_probe": {
+        "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
+        "sha256": "6cd54abf0b011e5f93cd209b51bbe39c8aa4020095df6e10b3943c3b552d0715"
+      },
+      "reason": "Hor+ handling of outputs narrower than 16:9 added to the wide-view hooks"
+    },
+    {
+      "librexruntime.so": {
+        "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexruntime.so",
+        "sha256": "ebf338a181f341f395db534122639d83844dd35368ba56c8d7201f12c6f8e3d8"
+      },
+      "librexgpu-xenos.so": {
+        "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexgpu-xenos.so",
+        "sha256": "141540635406a8d90abbb20feb17e1fac6399ba6676d72c765344495c659d434"
+      },
+      "reason": "runtime rebuilt from the current SDK tree: includes the thread-join, TimerQueue and WaitMultiple fixes made after 2026-10-24"
+    }
+  ],
+  "recorded_utc_host_update": "2026-10-27"
 }

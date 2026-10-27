@@ -1,0 +1,18 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -4809,6 +4809,15 @@
+ 
+   readback.submission_written[write_index] = GetCurrentSubmission();
+   readback.written_size[write_index] = written_length;
++  if (readback_mode == ReadbackResolveMode::kFast) {
++    // Submit the new copy without a CPU wait. Otherwise an unfinished previous
++    // slot may share this still-open submission, and awaiting it also submits
++    // and waits for the current Resolve. Explicit fast mode may pipeline them.
++    acv::gpu_profile::Scope submit_scope(acv::gpu_profile::Stage::kFastSubmit);
++    if (!EndSubmission(false)) {
++      return false;
++    }
++  }
+   const bool use_delayed_sync =
+       readback_mode == ReadbackResolveMode::kFast || readback_mode == ReadbackResolveMode::kSome;
+   uint32_t read_index = use_delayed_sync ? 1 - write_index : write_index;

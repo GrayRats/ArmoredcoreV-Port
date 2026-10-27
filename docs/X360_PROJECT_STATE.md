@@ -1,9 +1,55 @@
 # ACV — короткий контекст продолжения
 
-Обновлено:2026-10-24. Очередь реализации — [PLAN_GUI](../PLAN_GUI.MD), краткий
+Обновлено:2026-10-26. Исторический подтверждённый запуск: FSI/full PID73719 после отклонённого
+FBO/full (чёрный gameplay подтверждён пользователем). FBO test child0/fatal0;
+[checkpoint](../logs/acv-fbo-retest-20261026/checkpoint.json). Пользователь подтвердил отсутствие чёрного экрана и вход в gameplay.
+Замер после137с: ~15FPS; [CPU/GPU](../logs/acv-fsi-full-confirmed-20261026/summary.json).
+ Очередь реализации — [PLAN_GUI](../PLAN_GUI.MD), краткий
 статус — [PLAN](PLAN.md), технические факты —
 [NATIVE](NATIVE_REXGLUE_LINUX.md), этапы — [PROGRESS](PROGRESS.md).
 
+- **Актуальный пакет (2026-10-27):** `../ACV-Linux-TRG-WideView-20261027/start.sh` — TRG, обновлённый рантайм
+  (`librexruntime` ebf338a1…, содержит join/таймеры/WaitMultiple), хуки `wide_view` (UltraWide/16:10, эксперимент),
+  RenderDoc по запросу, `system:` смонтирован. Верификация пакета и жизненного цикла GUI→игра пройдена; пользователь
+  подтвердил работу. Не проверено: отсечение по краям, прицел, ролики, другие миссии. [LAUNCHER_PACKAGE](LAUNCHER_PACKAGE.md).
+- **Сохранения проверены по файлам (2026-10-27):** сейв лежит под XUID профиля `00094AF2A434841E`
+  (`APGD.DAT` 230672 B, `PAINT.DAT` 116248 B); в копии `tmp/acv-user-data-name-trial/` `APGD.DAT` перезаписан
+  26.10 02:31 (размер тот же, хеш другой) — игра загрузила скопированный сейв и записала новый. Backup/restore на
+  копии настоящих данных проходит (порча → исходный хеш, повреждённая копия отвергается). Не проверено: что внутри
+  изменилось, перенос на другой XUID, другие миссии. [PLAN_GUI](../PLAN_GUI.MD).
+- **Миссия работает — подтверждено пользователем 2026-10-25.** Обычная сессия без GDB
+  `20261025T165411391172Z`, runtimef3600aca, изолированный профиль `tmp/acv-user-data-name-trial/`:
+  180с, child0/fatal0. Оригинал сейва не изменён; принятие не означает безопасную миграцию
+  всего профиля или завершённый save/load round trip.
+- **Последний диагностический вылет был в GDB:** PID36997, SIGABRT, `thr != nullptr`
+  в breakpoint.c:9182. Return observer заменён;160 потоков/3840 callbacks PASS.
+  Опрос ввода каждый кадр по умолчанию выключен. Следующая работа — FPS в миссии
+  без GDB и с прогретым cache; далее прежние UltraWide/экран/цвет/CAS/FSR.
+  [Новый checkpoint](NATIVE_REXGLUE_LINUX.md#mission-accepted-and-debugger-failure-2026-10-25).
+- **FPS: диагностика только после90с.** Split timers: full wait≈57%, memcpy≈13%,
+ pending-slot waits0. Fast9217 раз ждал новое поколение из-за незавершённого прошлого;
+ исправлен выбор поколения (host ASan/UBSan PASS), isolated GPU45dbaab6,
+ tmp/acv-gpu-fast-generation-fix/. 180с child0/fatal0, всё ещё15–17FPS; GPUd2404533 с неблокирующей отправкой fast-копий:
+ 180с child0/fatal0, пользователь вошёл в gameplay, поздние22–25FPS, GPU88,4%.
+ Картинка fast не принята; TimerQueue CPU fix подтверждён ниже. Full/default и
+ accepted package сохранены; stable60FPS открыт. [Checkpoint](NATIVE_REXGLUE_LINUX.md#resolve-wait-attribution-and-fast-generation-correction-2026-10-26).
+- **Завершённый тест таймеров:** PID69477, session20261025T215215281009Z,
+ runtime7b1f69a0/GPUd2404533, tmp/acv-timer-queue-fix/. User вошёл в gameplay,
+ CPU/IP gate90.00036s; при продолжении PID уже отсутствовал.
+ Host1ms CPU10.03%→1.19%; callback/cancel/WaitMultiple/join PASS. Runtime90 rows/6393 IPs:
+ timer CPU9.33%→0.64%, GPU≈88%, cadence21–24FPS;
+ fast картинка не принята. [Таймеры](NATIVE_REXGLUE_LINUX.md#timerqueue-blocking-wait-and-deadline-validation-2026-10-26).
+- **Новый CPU fix:** WaitMultiple сохраняет дробную часть1мс и соблюдает deadline
+  при contention. Host99,5%→1,1%, Audio Worker78,05%→0,56% ядра в игре.
+  Runtimeca04c1c6, сессия20261025T171212311161Z190с child0/fatal0.
+  Пакет ../ACV-Linux-TRG-WaitFix-20261025/start.sh,185 файлов.
+  Тяжёлая сцена16–21FPS, стабильные60 открыты. [Замеры и patch](NATIVE_REXGLUE_LINUX.md#waitmultiple-fractional-sleep-and-measured-cpu-fix-2026-10-25).
+- **TRG checkpoint:** frontend C++17/SDL2/ImGui собран, UI/JSON/process и реальный ISO импорт проверены.
+  Выбранный runtimef3600aca и игра запущены из GUI; закрытие GUI не снимает профильный lock.
+  Новый отдельный кандидат `../ACV-Linux-TRG-20261025/start.sh`,185 файлов,Qt/ICU нет.
+  Последний запуск `20261025T161149596052Z`: child0/fatal0, XUID совпал, shm без новых сирот;
+  [checkpoint](../logs/acv-trg-final-20261025-r2/checkpoint.json). Пакет и игровая приёмка ещё не заменяют baseline; старый `../ACV-Linux/` сохранён.
+  Последний источник реализации/ограничений — [LAUNCHER_PACKAGE](LAUNCHER_PACKAGE.md#trg-frontend-and-installation--2026-10-25).
 - **Цель:** корректный native Linux gameplay. Пользователь разрешил исправления,
   сборки и bounded tests. Windows/Wine/Unity вне текущей задачи.
 - **Правила:** [AGENTS](../AGENTS.md). ISO/assets/live Ghidra DB read-only;
@@ -145,12 +191,29 @@ SDK разделяет guest/window mode; вписывание/resize подтв
 CAS/FSR shader passes исполнены, качество картинки/скорость игры ещё не приняты.
 Native FOV/HUD и >60 остаются незавершёнными. Детали — LAUNCHER_PACKAGE.
 
-UltraWide resume: default-off native experiment в scene_aspect_experiment.cpp
-изменяет только callsite0x822B450C→0x82BC8980. Host e3ab3704… в
-`tmp/acv-ultrawide-test/`; прежний host — `tmp/acv-ultrawide-before/`.
-60s trace20261024T120037853774Z:6 матриц64:27,58 остальных16:9,
-max error3.285e-7, orphan0;30 boundary cases прошли. Config98d1c2ed… сохранён.
-ACV-Linux не заменён экспериментом. Продолжать с согласования viewport/output,
-связанных проекций/culling, HUD/прицела и атрибуции основной gameplay-камеры;
-до этого native UltraWide в лаунчере не включать. Layout исходного trace pinned
-к2d112d64, экспериментального — кe3ab3704. Детали/evidence — LAUNCHER_PACKAGE.
+UltraWide current reference: experimental wide_view and TRG setting now support
+UltraWide/16:10; user accepted the experimental output. Accepted separate
+WideView package is described in LAUNCHER_PACKAGE; current hooks/census are in
+NATIVE_REXGLUE_LINUX. Edge culling, reticle, cut-scenes and other missions still
+need acceptance. Older one-callsite-only experiments are historical.
+
+- Latest built/host+GPU-tested candidate: tmp/acv-fitting-slot-fix/,
+  host08045fae/runtimeebf338a1/GPUf1ccdfb9/accepted FFX0933159a. Minimal-prefix
+  admission plus oldest-fitting-slot retirement are implemented.64-slot/64MiB
+  limits retained; invalid/failed/uncommitted slots cannot be reused. New
+  admission/fitting-reuse/full-drain metrics retain the >=90s gate.
+- Latest candidate has NOT been launched in the game. Last game run was menu-only
+  GPUc558cb37/session20261027T043019725818Z,180s child0/fatal0; ended.
+  No gameplay60FPS claim. Synthetic admission1.298x and mixed-pool1.280x are
+  separate component results and must not be treated as/multiplied for FPS.
+- All owned build/test sessions completed at save. Scripted A/B has NOT started.
+  Offline clones tmp/acv-readback-script-control and ...-candidate contain
+  identical userdata/cache copies, made under source writer lock/verified backup.
+  Reuse12:Return/20..100:Space sequence from existing census sessions; begin
+  sampling after120s, without concurrent build/replay/GPU tests. User mission
+  preference can override the diagnostic scenario. Preserve original saves,
+  canonical config, current WideView package and all earlier candidates.
+- Resume with the full ledger and explicit prepared/unstarted distinction:
+  [FPS_READBACK_PROGRESS_20261027](FPS_READBACK_PROGRESS_20261027.md),
+  [latest hashes/tests](../logs/acv-readback-fitting-slot-20261027/checkpoint.json),
+  [comparison plan/backup](../logs/acv-readback-fitting-slot-20261027/scripted-comparison-plan.json).

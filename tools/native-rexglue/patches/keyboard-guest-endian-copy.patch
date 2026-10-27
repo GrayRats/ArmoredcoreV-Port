@@ -1,0 +1,20 @@
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -448,7 +448,7 @@
+       if (!default_text) {
+         std::memset(buffer, 0, buffer_size);
+       } else {
+-        rex::string::copy_and_swap_truncating(buffer, default_text.value(), buffer_length);
++        acv::profile::CopyGuestUtf16Be(buffer.host_address(), default_text.host_address(), buffer_length);
+       }
+       return X_ERROR_SUCCESS;
+     };
+@@ -499,7 +499,7 @@
+         if (!default_text) {
+           std::memset(buffer, 0, buffer_size);
+         } else {
+-          rex::string::copy_and_swap_truncating(buffer, default_text.value(), buffer_length);
++          acv::profile::CopyGuestUtf16Be(buffer.host_address(), default_text.host_address(), buffer_length);
+         }
+         return X_ERROR_SUCCESS;
+       };

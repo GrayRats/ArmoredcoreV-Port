@@ -1,0 +1,56 @@
+--- a/src/graphics/vulkan/deferred_readback_queue.h
++++ b/src/graphics/vulkan/deferred_readback_queue.h
+@@ -1,5 +1,5 @@
+ #pragma once
+-// GPU-worker-owned scheduling core. Not enabled in the runtime yet.
++// GPU-worker-owned scheduling core; experimental runtime integration is opt-in.
+ // Integration MUST intercept all CPU read/write aliases and drain before free,
+ // protection changes or host access. Never await while holding the memory lock.
+ // BeforeSlotReuse MUST run before recording a copy into a staging slot.
+@@ -45,9 +45,7 @@
+     if(!Enter()) return false;
+     Guard guard(*this);
+     if(!bytes || !await_ || !max_jobs_ || bytes>max_bytes_) return false;
+-    if(jobs_.size()>=max_jobs_ || bytes_>max_bytes_-bytes)
+-      return Flush([](const Job&) { return true; });
+-    return true;
++    return MakeRoom(bytes);
+   }
+   bool Enqueue(Job job) {
+     if(!Enter()) return false;
+@@ -58,9 +56,7 @@
+     // Enqueue is too late to protect old bytes from an already submitted copy.
+     // Require the producer to retire the slot BEFORE recording that copy.
+     for(const auto& j : jobs_) if(j.slot == job.slot) return false;
+-    if(jobs_.size() >= max_jobs_ || bytes_ > max_bytes_ - job.range.bytes) {
+-      if(!Flush([](const Job&) { return true; })) return false;
+-    }
++    if(!MakeRoom(job.range.bytes)) return false;
+     const auto ticket = job.ticket;
+     const auto bytes = job.range.bytes;
+     try { jobs_.push_back(std::move(job)); }
+@@ -105,6 +101,24 @@
+   bool Enter() {
+     return std::this_thread::get_id() == owner_ && !busy_ && !failed_;
+   }
++  bool MakeRoom(uint32_t bytes) {
++    if(jobs_.size()<max_jobs_ && bytes_<=max_bytes_-bytes) return true;
++    // Release the smallest oldest prefix satisfying BOTH caps. Waiting for the
++    // newest queued copy here would unnecessarily serialize CPU and GPU work.
++    // Slot IDs are unique among pending jobs, even when tickets are shared.
++    uint64_t released_bytes=0, boundary_slot=0;
++    size_t released_jobs=0;
++    for(const auto& job:jobs_) {
++      released_bytes+=job.range.bytes;
++      ++released_jobs;
++      if(jobs_.size()-released_jobs<max_jobs_ &&
++         bytes_-released_bytes<=max_bytes_-bytes) {
++        boundary_slot=job.slot;break;
++      }
++    }
++    if(!boundary_slot) return false;
++    return Flush([boundary_slot](const Job& job){return job.slot==boundary_slot;});
++  }
+   template<class Select> bool Flush(Select select) {
+     // Publishing a newer overlapping job first would allow an older delayed job
+     // to overwrite it later. Include all earlier overlapping predecessors.

@@ -1,0 +1,19 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -4828,7 +4828,15 @@
+   if (use_delayed_sync && previous_ready) {
+     acv::gpu_profile::Scope ready_scope(acv::gpu_profile::Stage::kPreviousReady);
+   }
+-  if (!use_delayed_sync || is_cache_miss) {
++  if (readback_mode == ReadbackResolveMode::kFast && previous_valid && !previous_ready) {
++    // Fast explicitly publishes the previous generation. If it is still in
++    // flight, wait for that generation rather than serializing on the new one.
++    // Slot lifetime, size validation and cache invalidation remain mandatory.
++    acv::gpu_profile::Scope previous_wait_scope(acv::gpu_profile::Stage::kWaitPrevious);
++    if (!AwaitReadbackSubmission(readback.submission_written[read_index])) {
++      return false;
++    }
++  } else if (!use_delayed_sync || is_cache_miss) {
+     acv::gpu_profile::Scope wait_scope(
+         !use_delayed_sync ? acv::gpu_profile::Stage::kWaitFull
+         : previous_valid ? acv::gpu_profile::Stage::kWaitIncomplete

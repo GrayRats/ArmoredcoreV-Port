@@ -11,6 +11,7 @@ docs не является разрешением возобновить ост�
 | Текущий статус native линии | [PLAN](PLAN.md) | Быстрый обзор и ограничения |
 | Где остановились | [STATE](X360_PROJECT_STATE.md) | В начале сессии; это не вторая очередь |
 | Что реально проверено | [PROGRESS](PROGRESS.md) | Перед повтором этапа/заявлением результата |
+| Все текущие изменения FPS/readback и остаток | [FPS_READBACK_PROGRESS_20261027](FPS_READBACK_PROGRESS_20261027.md) | Проверенные результаты, кандидаты, подготовленное сравнение и следующий шаг |
 | Timing, buffers, DrawThread, lookup | [ACV_TIMING](ACV_TIMING.md) | Для соответствующих guest VA/полей |
 | Runtime boundaries, слои | [ARCHITECTURE](ARCHITECTURE.md) | Перед архитектурным изменением; исторические даты учитывать |
 | Отдельная папка игры/лаунчера | [LAUNCHER_PACKAGE](LAUNCHER_PACKAGE.md) | Сборка, пути и проверка standalone-пакета |

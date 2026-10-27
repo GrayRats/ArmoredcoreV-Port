@@ -1,0 +1,20 @@
+{
+  "checked_out_on": "2026-10-25",
+  "repositories": [
+    {
+      "directory": "Armored-core-ReAnswered",
+      "url": "https://github.com/rensoftworks/Armored-core-ReAnswered.git",
+      "commit": "52684b385aa726972fedfbc05b9dbefb5388b679"
+    },
+    {
+      "directory": "trg-launcher",
+      "url": "https://github.com/TekRantGaming/trg-launcher.git",
+      "commit": "b384a28c712c9320eea8f9d50639dec49981b6c1"
+    },
+    {
+      "directory": "extract-xiso",
+      "url": "https://github.com/XboxDev/extract-xiso.git",
+      "commit": "3f5b62cfe68f000b0e3c8a30104973f3a297948e"
+    }
+  ]
+}

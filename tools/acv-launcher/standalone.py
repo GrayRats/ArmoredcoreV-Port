@@ -39,6 +39,8 @@ def main():
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--runtime-dir', type=Path, default=BUILD)
     ap.add_argument('--include-game-data', action='store_true')
+    ap.add_argument('--frontend', choices=('qt', 'trg'), default='qt')
+    ap.add_argument('--launcher', type=Path)
     ap.add_argument('--qt-plugins', type=Path, default=Path('/usr/lib/qt6/plugins'))
     args = ap.parse_args()
     out = args.out.resolve()
@@ -53,7 +55,7 @@ def main():
     accepted = all(hashes.get(name) == record['sha256']
                    for name, record in baseline['runtime_artifacts'].items())
     tests = {}
-    for name in ['test_acv_settings.py', 'test_acv_profiles.py', 'test_acv_shm.py', 'test_acv_display.py']:
+    for name in ['test_acv_settings.py', 'test_acv_profiles.py', 'test_acv_shm.py', 'test_acv_display.py', 'test_acv_sessions.py', 'test_probe_runtime_errors.py', 'test_acv_install.py']:
         result = subprocess.run([sys.executable, '-I', str(NATIVE / name)],
                                 text=True, capture_output=True)
         tests[name] = {'returncode': result.returncode, 'output': result.stdout + result.stderr}
@@ -79,25 +81,39 @@ def main():
         files[relative] = {'sha256': digest(target), 'size': target.stat().st_size}
 
     try:
-        put(ROOT / 'tmp/acv-launcher-build/acv-launcher', 'bin/acv-launcher')
-        for name in ['acv_paths.py', 'acv_display.py', 'acv_shm.py', 'acv_settings.py', 'acv_profiles.py',
+        put(args.launcher or ROOT / ('tmp/acv-trg-build/acv-launcher' if args.frontend == 'trg' else 'tmp/acv-launcher-build/acv-launcher'), 'bin/acv-launcher')
+        if args.frontend == 'trg':
+            put(ROOT / 'tools/acv-trg-launcher/backend.py', 'tools/acv-trg-launcher/backend.py')
+            for name in ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf'):
+                put(Path('/usr/share/fonts/TTF') / name, 'data/fonts/' + name)
+            put(Path('/usr/share/licenses/ttf-dejavu/LICENSE'), 'licenses/DejaVu.txt')
+            for source, name in [('tools/trg-launcher/README.md', 'TRG-upstream-notice'),
+                                  ('tmp/acv-trg-build/_deps/acv_sdl2-src/LICENSE.txt', 'SDL2'),
+                                  ('tmp/acv-trg-build/_deps/trg_imgui_src-src/LICENSE.txt', 'ImGui'),
+                                  ('tools/rexglue-sdk/thirdparty/inja/third_party/include/nlohmann/LICENSE.MIT', 'nlohmann-json')]:
+                if not (ROOT / source).is_file():
+                    raise RuntimeError(f'Missing dependency license: {source}')
+                put(ROOT / source, 'licenses/' + name + '.txt')
+        for name in ['acv_paths.py', 'acv_display.py', 'acv_sessions.py', 'acv_install.py', 'game_data_manifest.json', 'acv_shm.py', 'acv_settings.py', 'acv_profiles.py',
                      'acv_profile_cli.py', 'probe_linux.py', 'profile_startup.py', 'trace_projection.py',
                      'acv.config', 'input-profile.json', 'RUNTIME_BASELINE.json']:
             put(NATIVE / name, 'tools/native-rexglue/' + name)
         for name, source in artifacts.items():
             put(source, 'bin/game/' + name)
-        for name in ['libqxcb.so', 'libqoffscreen.so']:
-            put(args.qt_plugins / 'platforms' / name, 'plugins/platforms/' + name)
         env = dict(os.environ, LD_LIBRARY_PATH=str(stage / 'bin/game'))
-        # Bundle Qt and its version-specific ICU dependencies; OS libraries and GPU drivers stay system-owned.
-        for binary in [stage / 'bin/acv-launcher', *list((stage / 'plugins/platforms').glob('*.so'))]:
-            for name, source in dependencies(binary, env).items():
-                if name.startswith(('libQt6', 'libicu')) and 'lib/' + name not in files:
-                    put(source, 'lib/' + name)
-        write('bin/qt.conf', '[Paths]\nPrefix=..\nPlugins=plugins\nLibraries=lib\n')
-        write('acv-package.json', json.dumps({'schema_version': 1, 'layout': 'standalone',
+        if args.frontend == 'qt':
+            for name in ['libqxcb.so', 'libqoffscreen.so']:
+                put(args.qt_plugins / 'platforms' / name, 'plugins/platforms/' + name)
+            env = dict(os.environ, LD_LIBRARY_PATH=str(stage / 'bin/game'))
+            # Bundle Qt and its version-specific ICU dependencies; OS libraries and GPU drivers stay system-owned.
+            for binary in [stage / 'bin/acv-launcher', *list((stage / 'plugins/platforms').glob('*.so'))]:
+                for name, source in dependencies(binary, env).items():
+                    if name.startswith(('libQt6', 'libicu')) and 'lib/' + name not in files:
+                        put(source, 'lib/' + name)
+            write('bin/qt.conf', '[Paths]\nPrefix=..\nPlugins=plugins\nLibraries=lib\n')
+        write('acv-package.json', json.dumps({'schema_version': 1, 'layout': 'standalone', 'frontend': args.frontend,
               'runtime_status': 'accepted baseline' if accepted else 'candidate: gameplay acceptance pending'}, indent=2)+'\n')
-        write('start.sh', '''#!/bin/sh
+        startup = '''#!/bin/sh
 set -eu
 ACV_PACKAGE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 export ACV_ROOT="$ACV_PACKAGE_DIR"
@@ -105,7 +121,11 @@ export LD_LIBRARY_PATH="$ACV_PACKAGE_DIR/lib:$ACV_PACKAGE_DIR/bin/game${LD_LIBRA
 export QT_PLUGIN_PATH="$ACV_PACKAGE_DIR/plugins"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 exec "$ACV_PACKAGE_DIR/bin/acv-launcher" "$@"
-''', True)
+'''
+        if args.frontend == 'trg':
+            startup = startup.replace('export QT_PLUGIN_PATH="$ACV_PACKAGE_DIR/plugins"\n', '').replace('export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"\n', '')
+            startup = startup.replace('exec "$ACV_PACKAGE_DIR/bin/acv-launcher"', 'export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"\nexec "$ACV_PACKAGE_DIR/bin/acv-launcher"')
+        write('start.sh', startup, True)
         if args.include_game_data:
             for source, relative in [(ROOT / 'tmp/iso_root', 'data/game'),
                                      (ROOT / 'tmp/acv-dlc-sound', 'data/acv-dlc-sound'),
@@ -119,7 +139,7 @@ exec "$ACV_PACKAGE_DIR/bin/acv-launcher" "$@"
                         put(path, relative + '/' + path.relative_to(source).as_posix())
             if digest(stage / 'data/game/default.xex') != '4fac87348f827e84633013375012284cd8c769a3c155a675b2989757e666a12b':
                 raise RuntimeError('Game XEX differs from pinned input')
-        write('README.txt', '''ARMORED CORE V — Linux / ReXGlue
+        readme = '''ARMORED CORE V — Linux / ReXGlue
 Запуск: ./start.sh (можно из другого рабочего каталога).
 Игра: bin/game/acv_linux_probe; игровые данные: data/game/.
 Лаунчер и runtime находятся в этой папке; дерево разработки и SDK не нужны.
@@ -134,7 +154,10 @@ CAS/FSR экспериментальны. Игровой save/load и темп �
 Высокие FPS и адаптивные FOV/HUD пока не реализованы.
 10-битный SDR экспериментален: при отсутствии формата поверхности используется 8 бит.
 Фактические режим, геометрия и интервалы подачи кадров отображаются в лаунчере.
-''')
+'''
+        if args.frontend == 'trg':
+            readme = readme.replace('Qt/ICU и плагины платформ включены;', 'TRG / Dear ImGui / SDL2 включены, Qt/ICU не используются;')
+        write('README.txt', readme)
         env['LD_LIBRARY_PATH'] = str(stage / 'lib') + ':' + str(stage / 'bin/game')
         system_dependencies = {}
         binaries = [stage / 'bin/acv-launcher', *[stage / 'bin/game' / name for name in artifacts],
@@ -153,10 +176,17 @@ CAS/FSR экспериментальны. Игровой save/load и темп �
         features = json.loads(check.stdout)
         if not features['exists'] or (args.include_game_data and not features['game_data']):
             raise RuntimeError(f'Package self-check failed: {features}')
-        manifest = {'created_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        frontend_dependencies = None
+        if args.frontend == 'trg':
+            frontend_dependencies = json.loads((ROOT / 'tools/acv-trg-launcher/dependencies.json').read_text())
+            for item in frontend_dependencies['repositories']:
+                actual = subprocess.check_output(['git', '-C', str(ROOT / item['directory']), 'rev-parse', 'HEAD'], text=True).strip()
+                if actual != item['commit']:
+                    raise RuntimeError(f'Frontend dependency drift: {item["directory"]}')
+        manifest = {'frontend_dependencies': frontend_dependencies, 'created_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     'files': files, 'runtime_hashes': hashes, 'accepted_baseline': accepted,
                     'tests': tests, 'system_dependencies': system_dependencies,
-                    'game_data_included': args.include_game_data,
+                    'game_data_included': args.include_game_data, 'frontend': args.frontend,
                     'not_verified': ['in-game save/load', 'CAS/FSR image', 'gameplay speed', 'other Linux distributions']}
         (stage / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
         os.rename(stage, out)

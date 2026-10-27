@@ -1,0 +1,718 @@
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -10,6 +10,7 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <atomic>
+ #include <cstdint>
+ #include <memory>
+ #include <mutex>
+@@ -496,6 +497,40 @@
+   // Explicit host access bridge only. Registration does not protect guest aliases:
+   // producers must arrange all CPU accesses, allocator mutations and teardown
+   // through this boundary before using deferred results. Not enabled by default.
++  // Enabled only by explicit providers/experimental GPU preparation. Default
++  // full-mode CPU graphics accesses retain their existing direct copy path.
++  bool explicit_gpu_coherence_enabled() const {
++    return explicit_gpu_coherence_enabled_.load(std::memory_order_acquire);
++  }
++  bool ReadPhysicalCpu(uint32_t address, void* destination, uint32_t length) const;
++  bool WritePhysicalCpu(uint32_t address, const void* source, uint32_t length);
++  // GPU already owns the current shared-memory bytes: preserve GPU cache validity.
++  bool PublishPhysicalGpuReadback(uint32_t address, const void* source, uint32_t length);
++  bool CollectPublishedPhysicalReadbacks();
++
++  bool SynchronizePhysicalCpu(uint32_t address, uint32_t length) const;
++  class PhysicalGpuWriteScope {
++   public:
++    PhysicalGpuWriteScope(Memory& memory, uint32_t address, uint32_t length);
++    ~PhysicalGpuWriteScope();
++    PhysicalGpuWriteScope(const PhysicalGpuWriteScope&) = delete;
++    PhysicalGpuWriteScope& operator=(const PhysicalGpuWriteScope&) = delete;
++    bool valid() const { return valid_; }
++    bool ValidateLocked() const;
++    bool WaitForCpuAccess();
++    std::unique_lock<std::recursive_mutex>& lock() { return lock_; }
++    void Unlock();
++   private:
++    friend class Memory;
++    Memory& memory_;
++    detail::PhysicalReadbackProviders::Range range_;
++    std::unique_lock<std::recursive_mutex> lock_;
++    uint32_t first_page_ = 0;
++    std::vector<uint64_t> generations_;
++    bool valid_ = false;
++    static thread_local PhysicalGpuWriteScope* active_;
++  };
++
+   using PhysicalReadbackProvider = detail::PhysicalReadbackProviders::Provider;
+   // Acquires the lock itself. Use the Locked overload when already holding it.
+   bool RegisterExplicitPhysicalReadback(PhysicalReadbackProvider provider);
+@@ -667,6 +702,13 @@
+   detail::PhysicalReadbackProviders explicit_physical_readbacks_;
+   // Lazily allocated only once an explicit producer registers, one epoch per 4KB.
+   std::vector<uint64_t> physical_mutation_generations_;
++  std::atomic<bool> explicit_gpu_coherence_enabled_{false};
++  bool WritePhysicalCpuImpl(uint32_t address, const void* source, uint32_t length, bool notify);
++  bool SynchronizePhysicalCpuLocked(std::unique_lock<std::recursive_mutex>& lock,
++                                    uint32_t address, uint32_t length);
++  void NotifyPhysicalCpuWriteLocked(std::unique_lock<std::recursive_mutex>& lock,
++                                    uint32_t address, uint32_t length);
++
+   bool BeginPhysicalReadbackMutation(std::unique_lock<std::recursive_mutex>& lock,
+                                      uint32_t physical_address, uint32_t length);
+   void RecordPhysicalReadbackMutation(uint32_t physical_address, uint32_t length);
+--- a/include/rex/system/physical_readback_providers.h
++++ b/include/rex/system/physical_readback_providers.h
+@@ -30,6 +30,9 @@
+     // idempotent completion future. Publish runs once under the memory lock.
+     std::function<bool()> await;
+     std::function<bool()> publish;
++    // Optional non-blocking proof that an owner queue already published bytes.
++    // Allows completed providers to release staging even if no CPU faults occur.
++    std::function<bool()> already_published = {};
+   };
+   explicit PhysicalReadbackProviders(std::recursive_mutex& mutex) : mutex_(mutex) {}
+   PhysicalReadbackProviders(const PhysicalReadbackProviders&) = delete;
+@@ -45,14 +48,38 @@
+     if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !provider.range.valid() || publishing_ || failed_) return false;
+     if(HasOwnedCpuAccess(provider.range)) return false;
+     while(!failed_ && HasCpuAccess(provider.range)) access_changed_.wait(lock);
+-    if(failed_ || publishing_ || !provider.range.valid() || !provider.await || !provider.publish ||
+-       providers_.size()>=64) return false;
++    if(failed_ || publishing_ || !provider.range.valid() || !provider.await || !provider.publish) return false;
++    if(providers_.size()>=64 && !CollectPublished(lock)) return false;
++    if(providers_.size()>=64) return false;
+     if(still_owned) {
+       try { if(!still_owned()) return false; } catch(...) { return false; }
+     }
+     try { providers_.push_back(std::make_shared<Provider>(std::move(provider))); }
+     catch(...) { failed_=true; access_changed_.notify_all(); return false; }
+     return true;
++  }
++  bool CollectPublished(std::unique_lock<std::recursive_mutex>& lock) {
++    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || publishing_ || failed_) return false;
++    publishing_=true;
++    try {
++      while(!providers_.empty()) {
++        const auto& provider=providers_.front();
++        if(!provider->already_published || !provider->already_published()) break;
++        if(!provider->publish()) { failed_=true;break; }
++        providers_.pop_front();
++      }
++    } catch(...) { failed_=true; }
++    publishing_=false;
++    if(failed_) access_changed_.notify_all();
++    return !failed_;
++  }
++  // Wait for host IO/decoder ownership without forcing older GPU copies to
++  // publish. Used before a new GPU write; actual CPU reads still Synchronize.
++  bool WaitCpuAccess(std::unique_lock<std::recursive_mutex>& lock, Range range) {
++    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !range.valid() || publishing_ || failed_ ||
++       HasOwnedCpuAccess(range)) return false;
++    while(!failed_ && HasCpuAccess(range)) access_changed_.wait(lock);
++    return !failed_;
+   }
+   bool Synchronize(std::unique_lock<std::recursive_mutex>& lock, Range range,
+                    bool allow_owned_cpu_access = false) {
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -124,6 +124,7 @@
+                              rex::memory::PageAccess::kReadWrite)) return false;
+   }
+   if (physical_mutation_generations_.empty()) physical_mutation_generations_.resize(0x20000);
++  explicit_gpu_coherence_enabled_.store(true, std::memory_order_release);
+   const uint32_t first = provider.range.address >> 12;
+   const uint32_t end = uint32_t((uint64_t(provider.range.address) + provider.range.bytes + 4095) >> 12);
+   const auto begin = physical_mutation_generations_.begin() + first;
+@@ -203,9 +204,16 @@
+                                         uint32_t physical_address, uint32_t length) {
+   if (length) {
+     if (!explicit_physical_readbacks_.OwnsCpuRange(lock, token, {physical_address, length})) return false;
+-    // Notify after hardware/host writes, before releasing ownership to new GPU
+-    // providers. Every guest alias has independent invalidation/watch flags.
+-    for (auto* heap : {&heaps_.vA0000000, &heaps_.vC0000000, &heaps_.vE0000000}) {
++    NotifyPhysicalCpuWriteLocked(lock, physical_address, length);
++  }
++  return explicit_physical_readbacks_.EndCpuAccess(lock, token);
++}
++
++void Memory::NotifyPhysicalCpuWriteLocked(std::unique_lock<std::recursive_mutex>& lock,
++                                           uint32_t physical_address, uint32_t length) {
++  // Notify after hardware/host writes, before releasing ownership to new GPU
++  // providers. Every guest alias has independent invalidation/watch flags.
++  for (auto* heap : {&heaps_.vA0000000, &heaps_.vC0000000, &heaps_.vE0000000}) {
+       const uint32_t offset = heap->GetPhysicalAddress(heap->heap_base());
+       const uint64_t first = std::max(uint64_t(physical_address), uint64_t(offset));
+       const uint64_t end = std::min(uint64_t(physical_address) + length,
+@@ -215,8 +223,124 @@
+                                      uint32_t(end - first), true, true);
+       }
+     }
+-  }
+-  return explicit_physical_readbacks_.EndCpuAccess(lock, token);
++}
++
++thread_local Memory::PhysicalGpuWriteScope* Memory::PhysicalGpuWriteScope::active_ = nullptr;
++
++Memory::PhysicalGpuWriteScope::PhysicalGpuWriteScope(Memory& memory, uint32_t address, uint32_t length)
++    : memory_(memory), range_{address, length},
++      lock_(rex::thread::global_critical_region::mutex(), std::defer_lock) {
++  if (active_ || !range_.valid() || !memory_.physical_membase_) return;
++  lock_.lock();
++  if (memory_.heaps_.physical.QueryRangeAccess(address, address + length - 1) ==
++      rex::memory::PageAccess::kNoAccess) { Unlock(); return; }
++  if (memory_.physical_mutation_generations_.empty()) memory_.physical_mutation_generations_.resize(0x20000);
++  first_page_ = address >> 12;
++  const uint32_t end = uint32_t((uint64_t(address) + length + 4095) >> 12);
++  generations_.assign(memory_.physical_mutation_generations_.begin() + first_page_,
++                       memory_.physical_mutation_generations_.begin() + end);
++  if (!memory_.explicit_physical_readbacks_.WaitCpuAccess(lock_, range_)) { Unlock(); return; }
++  valid_ = true;
++  if (!ValidateLocked()) { Unlock(); return; }
++  memory_.explicit_gpu_coherence_enabled_.store(true, std::memory_order_release);
++  active_ = this;
++}
++
++Memory::PhysicalGpuWriteScope::~PhysicalGpuWriteScope() { Unlock(); }
++
++bool Memory::PhysicalGpuWriteScope::ValidateLocked() const {
++  return valid_ && lock_.owns_lock() && std::equal(generations_.begin(), generations_.end(),
++      memory_.physical_mutation_generations_.begin() + first_page_);
++}
++
++bool Memory::PhysicalGpuWriteScope::WaitForCpuAccess() {
++  return ValidateLocked() && memory_.explicit_physical_readbacks_.WaitCpuAccess(lock_, range_) &&
++      ValidateLocked();
++}
++
++void Memory::PhysicalGpuWriteScope::Unlock() {
++  if (active_ == this) active_ = nullptr;
++  valid_ = false;
++  if (lock_.owns_lock()) lock_.unlock();
++}
++
++bool Memory::SynchronizePhysicalCpuLocked(std::unique_lock<std::recursive_mutex>& lock,
++                                           uint32_t address, uint32_t length) {
++  if (!detail::PhysicalReadbackProviders::Range{address, length}.valid()) return false;
++  if (physical_mutation_generations_.empty()) physical_mutation_generations_.resize(0x20000);
++  const uint32_t first = address >> 12;
++  const uint32_t end = uint32_t((uint64_t(address) + length + 4095) >> 12);
++  const std::vector<uint64_t> snapshot(physical_mutation_generations_.begin() + first,
++                                      physical_mutation_generations_.begin() + end);
++  return SynchronizeExplicitPhysicalReadback(lock, address, length) &&
++      std::equal(snapshot.begin(), snapshot.end(), physical_mutation_generations_.begin() + first);
++}
++
++bool Memory::SynchronizePhysicalCpu(uint32_t address, uint32_t length) const {
++  address &= 0x1FFFFFFF;
++  if (!detail::PhysicalReadbackProviders::Range{address, length}.valid() || !physical_membase_) return false;
++  if (!explicit_gpu_coherence_enabled()) return true;
++  auto* self = const_cast<Memory*>(this);
++  auto* scope = PhysicalGpuWriteScope::active_;
++  if (scope && &scope->memory_ == this) {
++    return self->SynchronizePhysicalCpuLocked(scope->lock_, address, length);
++  }
++  auto lock = rex::thread::global_critical_region::AcquireDirect();
++  return self->SynchronizePhysicalCpuLocked(lock, address, length);
++}
++
++bool Memory::ReadPhysicalCpu(uint32_t address, void* destination, uint32_t length) const {
++  address &= 0x1FFFFFFF;
++  if (!length) return true;
++  if (!destination || !physical_membase_ ||
++      !detail::PhysicalReadbackProviders::Range{address, length}.valid()) return false;
++  if (!explicit_gpu_coherence_enabled()) {
++    std::memcpy(destination, TranslatePhysical(address), length); return true;
++  }
++  auto* self = const_cast<Memory*>(this);
++  auto copy = [&](std::unique_lock<std::recursive_mutex>& lock) {
++    const uint64_t pin = self->BeginPhysicalCpuAccess(lock, address, length);
++    if (!pin) return false;
++    std::memcpy(destination, TranslatePhysical(address), length);
++    return self->EndPhysicalCpuAccess(lock, pin);
++  };
++  auto* scope = PhysicalGpuWriteScope::active_;
++  if (scope && &scope->memory_ == this) return copy(scope->lock_);
++  auto lock = rex::thread::global_critical_region::AcquireDirect();
++  return copy(lock);
++}
++
++bool Memory::WritePhysicalCpu(uint32_t address, const void* source, uint32_t length) {
++  return WritePhysicalCpuImpl(address, source, length, true);
++}
++
++bool Memory::PublishPhysicalGpuReadback(uint32_t address, const void* source, uint32_t length) {
++  return WritePhysicalCpuImpl(address, source, length, false);
++}
++
++bool Memory::CollectPublishedPhysicalReadbacks() {
++  auto lock = rex::thread::global_critical_region::AcquireDirect();
++  return explicit_physical_readbacks_.CollectPublished(lock);
++}
++
++bool Memory::WritePhysicalCpuImpl(uint32_t address, const void* source, uint32_t length, bool notify) {
++  address &= 0x1FFFFFFF;
++  if (!length) return true;
++  if (!source || !physical_membase_ ||
++      !detail::PhysicalReadbackProviders::Range{address, length}.valid()) return false;
++  if (!explicit_gpu_coherence_enabled()) {
++    std::memcpy(TranslatePhysical(address), source, length); return true;
++  }
++  auto copy = [&](std::unique_lock<std::recursive_mutex>& lock) {
++    const uint64_t pin = BeginPhysicalCpuAccess(lock, address, length);
++    if (!pin) return false;
++    std::memcpy(TranslatePhysical(address), source, length);
++    return notify ? EndPhysicalCpuWriteAccess(lock, pin, address, length) : EndPhysicalCpuAccess(lock, pin);
++  };
++  auto* scope = PhysicalGpuWriteScope::active_;
++  if (scope && &scope->memory_ == this) return copy(scope->lock_);
++  auto lock = rex::thread::global_critical_region::AcquireDirect();
++  return copy(lock);
+ }
+ 
+ bool Memory::BeginPhysicalReadbackMutation(std::unique_lock<std::recursive_mutex>& lock,
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -15,6 +15,8 @@
+ #include <chrono>
+ #include <cstring>
+ #include <string_view>
++#include <optional>
++#include "acv_gpu_packet_snapshot.h"
+ 
+ #include <fmt/format.h>
+ 
+@@ -298,8 +300,7 @@
+     // TODO(benvanik): use reader->Read_update_freq_ and only issue after moving
+     //     that many indices.
+     if (read_ptr_writeback_ptr_) {
+-      memory::store_and_swap<uint32_t>(memory_->TranslatePhysical(read_ptr_writeback_ptr_),
+-                                       read_ptr_index_);
++      WritePhysicalMemory32(read_ptr_writeback_ptr_, rex::byte_swap(read_ptr_index_));
+     }
+ 
+     // FIXME: We're supposed to process the WAIT_UNTIL register at this point,
+@@ -384,6 +385,20 @@
+ void CommandProcessor::UpdateWritePointer(uint32_t value) {
+   write_ptr_index_ = value;
+   write_ptr_index_event_->Set();
++}
++
++uint32_t CommandProcessor::ReadPhysicalMemory32(uint32_t address) const {
++  uint32_t value;
++  if (!memory_->ReadPhysicalCpu(address, &value, sizeof(value))) {
++    rex::FatalError("GPU physical word read synchronization failed");
++  }
++  return value;
++}
++
++void CommandProcessor::WritePhysicalMemory32(uint32_t address, uint32_t value) {
++  if (!memory_->WritePhysicalCpu(address, &value, sizeof(value))) {
++    rex::FatalError("GPU physical word write synchronization failed");
++  }
+ }
+ 
+ uint32_t CommandProcessor::ReadRegisterValue(uint32_t index) const {
+@@ -420,7 +435,7 @@
+       // Enabled - write to address.
+       uint32_t scratch_addr = regs.values[XE_GPU_REG_SCRATCH_ADDR];
+       uint32_t mem_addr = scratch_addr + (scratch_reg * 4);
+-      memory::store_and_swap<uint32_t>(memory_->TranslatePhysical(mem_addr), value);
++      WritePhysicalMemory32(mem_addr, rex::byte_swap(value));
+     }
+   } else {
+     switch (index) {
+@@ -717,6 +732,19 @@
+ }
+ 
+ bool CommandProcessor::ExecutePacket(memory::RingBuffer* reader) {
++  std::vector<uint8_t> coherent_packet;
++  std::optional<memory::RingBuffer> coherent_reader;
++  std::optional<acv::gpu_coherence::PacketOrigin> coherent_origin;
++  if (memory_->explicit_gpu_coherence_enabled()) {
++    uint32_t physical_base, source_start;
++    const uint32_t source_capacity = reader->capacity();
++    if (!acv::gpu_coherence::SnapshotPacket(*memory_, *reader, coherent_packet,
++                                           physical_base, source_start)) return false;
++    coherent_reader.emplace(coherent_packet.data(), coherent_packet.size());
++    coherent_reader->set_write_offset(coherent_packet.size() - 4);
++    coherent_origin.emplace(*coherent_reader, physical_base, source_capacity, source_start);
++    reader = &*coherent_reader;
++  }
+   const uint32_t packet = reader->ReadAndSwap<uint32_t>();
+   const uint32_t packet_type = packet >> 30;
+   if (packet == 0) {
+@@ -1075,7 +1103,7 @@
+     uint32_t value = 0;
+     if (is_memory) {
+       value =
+-          *reinterpret_cast<uint32_t*>(memory_->TranslatePhysical(poll_reg_addr & ~uint32_t(0x3)));
++          ReadPhysicalMemory32(poll_reg_addr & ~uint32_t(0x3));
+       value = xenos::GpuSwap(value, static_cast<xenos::Endian>(poll_reg_addr & 0x3));
+     } else {
+       value = ReadRegisterValue(poll_reg_addr);
+@@ -1180,7 +1208,7 @@
+   auto endianness = static_cast<xenos::Endian>(mem_addr & 0x3);
+   mem_addr &= ~0x3;
+   reg_val = GpuSwap(reg_val, endianness);
+-  memory::store(memory_->TranslatePhysical(mem_addr), reg_val);
++  WritePhysicalMemory32(mem_addr, reg_val);
+ 
+   return true;
+ }
+@@ -1194,7 +1222,7 @@
+     auto endianness = static_cast<xenos::Endian>(write_addr & 0x3);
+     auto addr = write_addr & ~0x3;
+     write_data = GpuSwap(write_data, endianness);
+-    memory::store(memory_->TranslatePhysical(addr), write_data);
++    WritePhysicalMemory32(addr, write_data);
+     write_addr += 4;
+   }
+ 
+@@ -1215,7 +1243,7 @@
+     // Memory.
+     auto endianness = static_cast<xenos::Endian>(poll_reg_addr & 0x3);
+     poll_reg_addr &= ~0x3;
+-    value = memory::load<uint32_t>(memory_->TranslatePhysical(poll_reg_addr));
++    value = ReadPhysicalMemory32(poll_reg_addr);
+     value = GpuSwap(value, endianness);
+   } else {
+     // Register.
+@@ -1255,7 +1283,7 @@
+       auto endianness = static_cast<xenos::Endian>(write_reg_addr & 0x3);
+       write_reg_addr &= ~0x3;
+       write_data = GpuSwap(write_data, endianness);
+-      memory::store(memory_->TranslatePhysical(write_reg_addr), write_data);
++      WritePhysicalMemory32(write_reg_addr, write_data);
+     } else {
+       // Register.
+       WriteRegister(write_reg_addr, write_data);
+@@ -1300,7 +1328,7 @@
+   auto endianness = static_cast<xenos::Endian>(address & 0x3);
+   address &= ~0x3;
+   data_value = GpuSwap(data_value, endianness);
+-  memory::store(memory_->TranslatePhysical(address), data_value);
++  WritePhysicalMemory32(address, data_value);
+   return true;
+ }
+ 
+@@ -1327,8 +1355,8 @@
+       1,                                         // max z
+   };
+   assert_true(endianness == xenos::Endian::k8in16);
+-  memory::copy_and_swap_16_unaligned(memory_->TranslatePhysical(address), extents,
+-                                     rex::countof(extents));
++  for (auto& extent : extents) extent = rex::byte_swap(extent);
++  if (!memory_->WritePhysicalCpu(address, extents, sizeof(extents))) return false;
+   return true;
+ }
+ 
+@@ -1346,11 +1374,10 @@
+   // As a workaround report some fixed amount of passed samples.
+   auto fake_sample_count = REXCVAR_GET(query_occlusion_fake_sample_count);
+   if (fake_sample_count >= 0) {
+-    auto* pSampleCounts = memory_->TranslatePhysical<xe_gpu_depth_sample_counts*>(
+-        register_file_->values[XE_GPU_REG_RB_SAMPLE_COUNT_ADDR]);
+-    if (!pSampleCounts) {
+-      return true;
+-    }
++    const uint32_t sample_address = register_file_->values[XE_GPU_REG_RB_SAMPLE_COUNT_ADDR];
++    xe_gpu_depth_sample_counts sample_snapshot;
++    if (!memory_->ReadPhysicalCpu(sample_address, &sample_snapshot, sizeof(sample_snapshot))) return false;
++    auto* pSampleCounts = &sample_snapshot;
+     // 0xFFFFFEED is written to this two locations by D3D only on D3DISSUE_END
+     // and used to detect a finished query.
+     bool is_end_via_z_pass =
+@@ -1363,6 +1390,7 @@
+       pSampleCounts->ZPass_A = fake_sample_count;
+       pSampleCounts->Total_A = fake_sample_count;
+     }
++    if (!memory_->WritePhysicalCpu(sample_address, &sample_snapshot, sizeof(sample_snapshot))) return false;
+   }
+ 
+   return true;
+@@ -1565,7 +1593,13 @@
+   uint32_t size_dwords = reader->ReadAndSwap<uint32_t>();
+   size_dwords &= 0xFFF;
+   uint32_t type = (offset_type >> 16) & 0xFF;
++  std::vector<uint32_t> constants_snapshot;
+   uint32_t* xlat_address = memory_->TranslatePhysical<uint32_t*>(address);
++  if (memory_->explicit_gpu_coherence_enabled()) {
++    constants_snapshot.resize(size_dwords);
++    if (!memory_->ReadPhysicalCpu(address, constants_snapshot.data(), size_dwords * sizeof(uint32_t))) return false;
++    xlat_address = constants_snapshot.data();
++  }
+   switch (type) {
+     case 0:  // ALU
+       WriteALURangeFromMem(index, xlat_address, size_dwords);
+@@ -1610,8 +1644,14 @@
+   uint32_t size_dwords = start_size & 0xFFFF;  // dwords
+   assert_true(start == 0);
+ 
+-  auto shader =
+-      LoadShader(shader_type, addr, memory_->TranslatePhysical<uint32_t*>(addr), size_dwords);
++  std::vector<uint32_t> shader_snapshot;
++  const uint32_t* shader_code = memory_->TranslatePhysical<uint32_t*>(addr);
++  if (memory_->explicit_gpu_coherence_enabled()) {
++    shader_snapshot.resize(size_dwords);
++    if (!memory_->ReadPhysicalCpu(addr, shader_snapshot.data(), size_dwords * sizeof(uint32_t))) return false;
++    shader_code = shader_snapshot.data();
++  }
++  auto shader = LoadShader(shader_type, addr, shader_code, size_dwords);
+   switch (shader_type) {
+     case xenos::ShaderType::kVertex:
+       active_vertex_shader_ = shader;
+@@ -1640,7 +1680,7 @@
+   assert_true(start == 0);
+   assert_true(reader->read_count() >= size_dwords * 4);
+   assert_true(count - 2 >= size_dwords);
+-  auto shader = LoadShader(shader_type, uint32_t(reader->read_ptr()),
++  auto shader = LoadShader(shader_type, acv::gpu_coherence::PacketOrigin::PhysicalAddress(*reader),
+                            reinterpret_cast<uint32_t*>(reader->read_ptr()), size_dwords);
+   switch (shader_type) {
+     case xenos::ShaderType::kVertex:
+--- a/src/graphics/util/draw.cpp
++++ b/src/graphics/util/draw.cpp
+@@ -793,8 +793,10 @@
+     assert_always();
+     return false;
+   }
+-  const float* vertices_guest =
+-      reinterpret_cast<const float*>(memory.TranslatePhysical(fetch.address * sizeof(uint32_t)));
++  float vertices_snapshot[6];
++  if (!memory.ReadPhysicalCpu(fetch.address * sizeof(uint32_t), vertices_snapshot,
++                              sizeof(vertices_snapshot))) return false;
++  const float* vertices_guest = vertices_snapshot;
+   // Most vertices have a negative half-pixel offset applied, which we reverse.
+   float half_pixel_offset =
+       regs.Get<reg::PA_SU_VTX_CNTL>().pix_center == xenos::PixelCenter::kD3DZero ? 0.5f : 0.0f;
+--- a/src/graphics/vulkan/shared_memory.cpp
++++ b/src/graphics/vulkan/shared_memory.cpp
+@@ -275,6 +275,13 @@
+   if (upload_page_ranges.empty()) {
+     return true;
+   }
++  // Finish any deferred GPU publication before allocating upload resources or
++  // capturing their submission ticket. A GPU wait may close that submission.
++  for (const auto& range : upload_page_ranges) {
++    if (!memory().SynchronizePhysicalCpu(range.first << page_size_log2(),
++                                         range.second << page_size_log2())) return false;
++  }
++  if (!command_processor_.EnsureSubmissionAfterMemoryWait()) return false;
+   // upload_page_ranges are sorted, use them to determine the range for the
+   // ordering barrier.
+   Use(Usage::kTransferDestination,
+@@ -303,9 +310,8 @@
+         break;
+       }
+       MakeRangeValid(upload_range_start << page_size_log2(), uint32_t(upload_buffer_size), false);
+-      std::memcpy(upload_buffer_mapping,
+-                  memory().TranslatePhysical(upload_range_start << page_size_log2()),
+-                  upload_buffer_size);
++      if (!memory().ReadPhysicalCpu(upload_range_start << page_size_log2(), upload_buffer_mapping,
++                                     uint32_t(upload_buffer_size))) return false;
+       if (upload_buffer_previous != upload_buffer && !upload_regions_.empty()) {
+         assert_true(upload_buffer_previous != VK_NULL_HANDLE);
+         command_buffer.CmdVkCopyBuffer(upload_buffer_previous, buffer_,
+--- a/src/graphics/pipeline/shader/interpreter.cpp
++++ b/src/graphics/pipeline/shader/interpreter.cpp
+@@ -949,7 +949,6 @@
+       xenos::GetVertexFormatNeededWords(instr.data_format(), used_result_components);
+   if (needed_dwords) {
+     uint32_t data[4] = {};
+-    const uint32_t* memory_dwords = reinterpret_cast<const uint32_t*>(memory_.physical_membase());
+     uint32_t buffer_end_dwords = fetch_constant.address + fetch_constant.size;
+     uint32_t dword_0_address_dwords =
+         uint32_t(int32_t(state_.vfetch_address_dwords) + instr.offset());
+@@ -961,7 +960,12 @@
+       uint32_t dword_address_dwords = dword_0_address_dwords + i;
+       if (dword_address_dwords >= fetch_constant.address &&
+           dword_address_dwords < buffer_end_dwords) {
+-        dword_value = xenos::GpuSwap(memory_dwords[dword_address_dwords], fetch_constant.endian);
++        uint32_t memory_dword;
++        if (!memory_.ReadPhysicalCpu(dword_address_dwords * sizeof(uint32_t), &memory_dword,
++                                     sizeof(memory_dword))) {
++          rex::FatalError("Shader interpreter physical memory synchronization failed");
++        }
++        dword_value = xenos::GpuSwap(memory_dword, fetch_constant.endian);
+       }
+       data[i] = dword_value;
+     }
+--- a/include/rex/graphics/command_processor.h
++++ b/include/rex/graphics/command_processor.h
+@@ -150,6 +150,8 @@
+ 
+   virtual void WriteRegister(uint32_t index, uint32_t value);
+   uint32_t ReadRegisterValue(uint32_t index) const;
++  uint32_t ReadPhysicalMemory32(uint32_t address) const;
++  void WritePhysicalMemory32(uint32_t address, uint32_t value);
+   virtual void WriteRegistersFromMem(uint32_t start_index, uint32_t* base, uint32_t num_registers);
+   virtual void WriteRegisterRangeFromRing(memory::RingBuffer* ring, uint32_t base,
+                                           uint32_t num_registers);
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -660,14 +660,11 @@
+   WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, initiator & 0x3F);
+ 
+   uint32_t sample_count_addr = register_file_->values[XE_GPU_REG_RB_SAMPLE_COUNT_ADDR];
+-  auto* sample_counts =
+-      memory_->TranslatePhysical<xenos::xe_gpu_depth_sample_counts*>(sample_count_addr);
+-  if (!sample_counts) {
+-    DisableHostOcclusionQueries();
+-    return true;
+-  }
+-
+-  auto write_fallback_result = [sample_counts]() -> bool {
++  xenos::xe_gpu_depth_sample_counts sample_snapshot;
++  if (!memory_->ReadPhysicalCpu(sample_count_addr, &sample_snapshot, sizeof(sample_snapshot))) return false;
++  auto* sample_counts = &sample_snapshot;
++
++  auto write_fallback_result = [this, sample_count_addr, sample_counts]() -> bool {
+     auto fake_sample_count = REXCVAR_GET(query_occlusion_fake_sample_count);
+     if (fake_sample_count < 0) {
+       return true;
+@@ -681,7 +678,7 @@
+       sample_counts->ZPass_A = fake_sample_count;
+       sample_counts->Total_A = fake_sample_count;
+     }
+-    return true;
++    return memory_->WritePhysicalCpu(sample_count_addr, sample_counts, sizeof(*sample_counts));
+   };
+ 
+   bool is_end_via_z_pass =
+@@ -4303,8 +4300,8 @@
+ 
+   const uint8_t* readback_bytes = reinterpret_cast<const uint8_t*>(readback_mapping);
+   for (const draw_util::MemExportRange& memexport_range : memexport_ranges_) {
+-    std::memcpy(memory_->TranslatePhysical(memexport_range.base_address_dwords << 2),
+-                readback_bytes, memexport_range.size_bytes);
++    if (!memory_->PublishPhysicalGpuReadback(memexport_range.base_address_dwords << 2,
++                                   readback_bytes, memexport_range.size_bytes)) return false;
+     readback_bytes += memexport_range.size_bytes;
+   }
+   dfn.vkUnmapMemory(device, readback_memory);
+@@ -4492,8 +4489,8 @@
+   const uint8_t* readback_bytes =
+       reinterpret_cast<const uint8_t*>(readback.mapped_data[read_index]);
+   for (const draw_util::MemExportRange& memexport_range : memexport_ranges_) {
+-    std::memcpy(memory_->TranslatePhysical(memexport_range.base_address_dwords << 2),
+-                readback_bytes, memexport_range.size_bytes);
++    if (!memory_->PublishPhysicalGpuReadback(memexport_range.base_address_dwords << 2,
++                                   readback_bytes, memexport_range.size_bytes)) return false;
+     readback_bytes += memexport_range.size_bytes;
+   }
+ 
+@@ -4879,7 +4876,8 @@
+     uint8_t* destination = memory_->TranslatePhysical(written_address);
+     if (destination) {
+       acv::gpu_profile::Scope copy_scope(acv::gpu_profile::Stage::kPublishCopy);
+-      std::memcpy(destination, readback.mapped_data[read_index], written_length);
++      if (!memory_->PublishPhysicalGpuReadback(written_address, readback.mapped_data[read_index],
++                                     written_length)) return false;
+     }
+   }
+ 
+@@ -5142,11 +5140,8 @@
+ 
+ void VulkanCommandProcessor::WriteGuestOcclusionResult(uint32_t sample_count_address,
+                                                        uint64_t samples) {
+-  auto* sample_counts =
+-      memory_->TranslatePhysical<xenos::xe_gpu_depth_sample_counts*>(sample_count_address);
+-  if (!sample_counts) {
+-    return;
+-  }
++  xenos::xe_gpu_depth_sample_counts sample_snapshot = {};
++  auto* sample_counts = &sample_snapshot;
+   uint32_t clamped = samples > uint64_t(UINT32_MAX) ? UINT32_MAX : uint32_t(samples);
+   sample_counts->Total_A = clamped;
+   sample_counts->Total_B = 0;
+@@ -5156,6 +5151,9 @@
+   sample_counts->ZFail_B = 0;
+   sample_counts->StencilFail_A = 0;
+   sample_counts->StencilFail_B = 0;
++  if (!memory_->WritePhysicalCpu(sample_count_address, sample_counts, sizeof(*sample_counts))) {
++    rex::FatalError("Occlusion result physical memory synchronization failed");
++  }
+ }
+ 
+ void VulkanCommandProcessor::CheckSubmissionFenceAndDeviceLoss(uint64_t await_submission) {
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -154,6 +154,7 @@
+   uint64_t GetCurrentSubmission() const {
+     return submission_completed_ + uint64_t(submissions_in_flight_fences_.size()) + 1;
+   }
++  bool EnsureSubmissionAfterMemoryWait() { return BeginSubmission(true); }
+   uint64_t GetCompletedSubmission() const { return submission_completed_; }
+ 
+   // Sparse binds are:
+--- /dev/null
++++ b/src/graphics/acv_gpu_packet_snapshot.h
+@@ -0,0 +1,65 @@
++#pragma once
++// Snapshot one physical GPU packet before executing it. Never pin a whole ring
++// while executing WAIT/indirect packets, which may depend on other CPU accesses.
++#include <algorithm>
++#include <cstdint>
++#include <cstring>
++#include <vector>
++#include <rex/memory/ring_buffer.h>
++#include <rex/system/xmemory.h>
++namespace acv::gpu_coherence {
++class PacketOrigin {
++ public:
++  PacketOrigin(const rex::memory::RingBuffer& reader,uint32_t physical_base,
++               uint32_t capacity,uint32_t start)
++      : reader_(&reader),base_(physical_base),capacity_(capacity),start_(start),previous_(active_) {
++    active_=this;
++  }
++  ~PacketOrigin() {active_=previous_;}
++  PacketOrigin(const PacketOrigin&)=delete;
++  PacketOrigin& operator=(const PacketOrigin&)=delete;
++  static uint32_t PhysicalAddress(const rex::memory::RingBuffer& reader) {
++    for(auto* origin=active_;origin;origin=origin->previous_)
++      if(origin->reader_==&reader)
++        return origin->base_+(uint64_t(origin->start_)+reader.read_offset())%origin->capacity_;
++    return uint32_t(reader.read_ptr());
++  }
++ private:
++  const rex::memory::RingBuffer* reader_;
++  uint32_t base_,capacity_,start_;
++  PacketOrigin* previous_;
++  static inline thread_local PacketOrigin* active_=nullptr;
++};
++inline bool SnapshotPacket(rex::memory::Memory& memory,rex::memory::RingBuffer& source,
++                           std::vector<uint8_t>& snapshot,uint32_t& physical_base,
++                           uint32_t& source_start) {
++  const uintptr_t host_base=reinterpret_cast<uintptr_t>(source.buffer());
++  const uintptr_t memory_base=reinterpret_cast<uintptr_t>(memory.physical_membase());
++  const uint32_t capacity=source.capacity();
++  if(host_base<memory_base || host_base-memory_base>=0x20000000ULL ||
++     capacity<4 || (capacity&3) || uint64_t(host_base-memory_base)+capacity>0x20000000ULL) return false;
++  physical_base=uint32_t(host_base-memory_base);source_start=source.read_offset();
++  const uint32_t available=source.read_count()?source.read_count():capacity;
++  if((source_start&3) || available<4) return false;
++  auto copy=[&](void* destination,uint32_t length) {
++    const uint32_t first=std::min(length,capacity-source_start);
++    return memory.ReadPhysicalCpu(physical_base+source_start,destination,first) &&
++        (first==length || memory.ReadPhysicalCpu(physical_base,static_cast<uint8_t*>(destination)+first,
++                                                length-first));
++  };
++  for(unsigned retry=0;retry<8;++retry) {
++    uint32_t raw_header;
++    if(!copy(&raw_header,4)) return false;
++    const uint32_t packet=rex::byte_swap(raw_header),type=packet>>30;
++    const uint32_t words=!packet || type==2?0:type==1?2:((packet>>16)&0x3FFF)+1;
++    const uint32_t bytes=(words+1)*4;
++    if(bytes>available || bytes>capacity) return false;
++    snapshot.resize(bytes+4); // The local reader needs a spare dword to represent "full".
++    if(!copy(snapshot.data(),bytes)) return false;
++    uint32_t captured_header;std::memcpy(&captured_header,snapshot.data(),4);
++    if(captured_header!=raw_header) continue;
++    source.AdvanceRead(bytes);return true;
++  }
++  return false; // Concurrently rewritten command header never became stable.
++}
++} // namespace acv::gpu_coherence

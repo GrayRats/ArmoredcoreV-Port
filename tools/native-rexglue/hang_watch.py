@@ -2,8 +2,8 @@
 """Run the game under gdb and capture every thread's stack when the runtime log goes quiet.
 
 Why: a freeze on a mission load left no stack. ptrace_scope=1 forbids attaching gdb to a game started by
-the launcher, so the only way to see the stacks is to start the game as gdb's child. The probe is asked
-(ACV_PROBE_DRYRUN) for the exact command and environment; gdb then runs the game itself.
+the launcher, so the only way to see the stacks is to start the game as gdb's child. GDB starts the normal probe and follows its game child at exec. The probe owns the profile lock
+and passes its descriptor to the game, including after the debugger detaches.
 
 A watcher thread sends SIGINT when runtime.log has not changed for --idle seconds. The stop is handled by
 the gdb main thread, which writes `thread apply all bt` to the session folder and then detaches: the game keeps
@@ -24,10 +24,13 @@ import gdb, json, os, signal, threading, time
 from pathlib import Path
 cfg = json.loads(os.environ["ACV_HANG_CFG"])
 gdb.execute("set pagination off"); gdb.execute("set confirm off"); gdb.execute("set debuginfod enabled off")
-for sig in ("SIGSEGV", "SIGBUS", "SIGUSR1", "SIGUSR2", "SIG34", "SIG35", "SIG36", "SIGALRM", "SIGPIPE"):
+for sig in ("SIGSEGV", "SIGBUS", "SIGUSR1", "SIGUSR2", "SIG34", "SIG35", "SIG36", "SIGALRM", "SIGPIPE", "SIGTERM"):
     gdb.execute(f"handle {sig} nostop noprint pass")
-state = {"fired": False, "pid": None}
-log = Path(cfg["log"]); out = Path(cfg["out"])
+state = {"fired": False, "pid": None, "stop_signal": None}
+def record_stop(event):
+    state["stop_signal"] = getattr(event, "stop_signal", None)
+gdb.events.stop.connect(record_stop)
+log = Path(cfg["log"]) if cfg.get("log") else None; out = Path(cfg["out"])
 def watcher():
     last = time.monotonic(); size = -1
     while not state["fired"]:
@@ -43,17 +46,45 @@ def watcher():
             state["fired"] = True
             state["reason"] = "manual" if manual else "silence"
             os.kill(state["pid"], signal.SIGINT)
-threading.Thread(target=watcher, daemon=True).start()
+# Follow the normal probe's exec: it acquires/inherits the writer lock itself.
+gdb.execute("set startup-with-shell off")
+gdb.execute("set follow-fork-mode child")
+gdb.execute("set detach-on-fork on")
+gdb.execute("set follow-exec-mode same")
 gdb.execute("starti")
-state["pid"] = gdb.selected_inferior().pid
+gdb.execute("catch exec", to_string=True)
 gdb.execute("continue", to_string=True)
-if state["fired"]:
+state["pid"] = gdb.selected_inferior().pid
+if not state["pid"]:
+    raise RuntimeError("Probe exited before game exec")
+actual = Path(f"/proc/{state['pid']}/exe").resolve()
+if actual != Path(cfg["executable"]).resolve():
+    raise RuntimeError(f"Unexpected exec target: {actual}")
+argv = Path(f"/proc/{state['pid']}/cmdline").read_bytes().split(b"\0")
+if log is None:
+    log = Path(next(a.split(b"=",1)[1].decode() for a in argv if a.startswith(b"--log_file=")))
+(out / "observed-child.json").write_text(json.dumps({"pid":state["pid"],"executable":str(actual),"log":str(log),"argv":[a.decode(errors="replace") for a in argv if a]}))
+# Other execs are not expected in the game; discard the setup catchpoint.
+gdb.execute("delete breakpoints", to_string=True)
+threading.Thread(target=watcher, daemon=True).start()
+if cfg.get("diagnostics"):
+    gdb.execute("source " + cfg["diagnostics"])
+continued = gdb.execute("continue", to_string=True)
+(out / "gdb-run.txt").write_text(continued)
+diagnostic_failed = "Python Exception" in continued or "Error occurred in Python" in continued
+if diagnostic_failed:
+    (out / "observer-error.json").write_text(json.dumps({"error":"GDB diagnostic callback failed","detail":continued[-8000:]}))
+    gdb.write("GDB diagnostic callback failed; see observer-error.json\n", gdb.STDERR)
+if gdb.selected_inferior().pid and (state["fired"] or state["stop_signal"]):
+    state["reason"] = state.get("reason", "signal:" + str(state["stop_signal"]))
     text = gdb.execute("thread apply all bt 40", to_string=True)
     (out / "bt.txt").write_text(text)
     (out / "hang.json").write_text(json.dumps({"reason": state["reason"], "log_size": log.stat().st_size, "idle_s": cfg["idle"],
                                                "time": time.strftime("%Y-%m-%dT%H:%M:%S")}))
 # Detach, do not kill: a long but healthy load must keep running after the stacks were captured.
-gdb.execute("detach"); gdb.execute("quit")
+if gdb.selected_inferior().pid:
+    gdb.execute("detach")
+gdb.execute("quit 1" if diagnostic_failed else "quit")
 '''
 
 def main():
@@ -61,27 +92,29 @@ def main():
     ap.add_argument("--profile", required=True)
     ap.add_argument("--settings", type=Path, required=True)
     ap.add_argument("--build", type=Path, default=ROOT / "tmp/acv-ffx-test/acv_linux_probe")
+    ap.add_argument("--profiles-root", type=Path, default=ROOT / "tmp/acv-user-data")
     ap.add_argument("--idle", type=int, default=90)
+    ap.add_argument("--diagnostics", type=Path, help="Read-only GDB diagnostic script loaded before gameplay")
+    ap.add_argument("--seconds",type=int,choices=range(1,301),metavar="1..300",help="Optional bounded normal probe; default is an unbounded play session")
     args = ap.parse_args()
     stamp = time.strftime("%Y%m%dT%H%M%S")
     out = ROOT / "logs/acv-hang-watch" / stamp; out.mkdir(parents=True)
-    dry = out / "command.json"
-    env = dict(os.environ, ACV_PROBE_DRYRUN=str(dry))
-    r = subprocess.run([sys.executable, "-I", str(PROBE), "--session", "--profile", args.profile,
-                        "--profiles-root", str(ROOT / "tmp/acv-user-data"), "--settings", str(args.settings),
-                        "--allow-experimental", "--executable", str(args.build), "--video-driver", "x11"],
-                       env=env, capture_output=True, text=True)
-    if r.returncode or not dry.is_file():
-        sys.exit(f"probe dry run failed: {r.stderr.strip()[-400:]}")
-    spec = json.loads(dry.read_text())
-    log_file = next(c.split("=", 1)[1] for c in spec["command"] if c.startswith("--log_file="))
-    cfg = {"log": log_file, "out": str(out), "idle": args.idle}
+    command = [sys.executable, "-I", str(PROBE), "--profile", args.profile,
+               "--profiles-root", str(args.profiles_root.resolve()), "--settings", str(args.settings.resolve()),
+               "--allow-experimental", "--executable", str(args.build.resolve()), "--video-driver", "x11"]
+    command += ["--seconds", str(args.seconds)] if args.seconds else ["--session"]
+    cfg = {"out":str(out), "idle":args.idle, "executable":str(args.build.resolve())}
+    if args.diagnostics:
+        cfg["diagnostics"] = str(args.diagnostics.resolve(strict=True))
     inner = out / "inner.py"; inner.write_text(INNER)
-    run_env = dict(spec["env"], ACV_HANG_CFG=json.dumps(cfg))
-    print(f"session folder: {out}\nlog: {log_file}\nfreeze threshold: {args.idle} s without log output", flush=True)
-    rc = subprocess.run(["gdb", "-batch", "-nx", "-x", str(inner), "--args", *spec["command"]],
-                        cwd=spec["cwd"], env=run_env).returncode
+    (out / "command.json").write_text(json.dumps({"mode":"follow-normal-probe", "command":command},indent=2))
+    run_env = dict(os.environ, ACV_HANG_CFG=json.dumps(cfg))
+    run_env.pop("ACV_PROBE_DRYRUN",None)
+    print(f"session folder: {out}\nnormal probe owns profile lock; freeze threshold: {args.idle} s",flush=True)
+    rc = subprocess.run(["gdb", "-batch", "-nx", "-x", str(inner), "--args", *command],
+                        cwd=ROOT,env=run_env).returncode
     print(f"gdb exit {rc}; stacks (if any): {out / 'bt.txt'}")
+    return rc
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

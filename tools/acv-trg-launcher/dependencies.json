@@ -1,0 +1,7 @@
+{
+  "repositories": [
+    {"directory":"tools/trg-launcher","commit":"b384a28c712c9320eea8f9d50639dec49981b6c1","license":"not declared in checkout; local build only"},
+    {"directory":"tmp/acv-trg-build/_deps/acv_sdl2-src","tag":"release-2.32.10","commit":"5d249570393f7a37e037abf22cd6012a4cc56a71","license":"zlib"},
+    {"directory":"tmp/acv-trg-build/_deps/trg_imgui_src-src","tag":"v1.92.9b","commit":"f1cc2ae15e53a861a874c3034aae6798fde194ab","license":"MIT"}
+  ]
+}

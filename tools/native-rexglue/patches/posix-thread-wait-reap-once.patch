@@ -1,0 +1,34 @@
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 9ac8d15..c2f9231 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -1014,9 +1014,20 @@ class PosixCondition<Thread> : public PosixConditionBase {
+   static void* ThreadStartRoutine(void* parameter);
+   inline bool signaled() const override { return signaled_; }
+   inline void post_execution() override {
++    // Wait/WaitMultiple hold mutex_. A finished thread stays signaled, but its
++    // native pthread and suspend semaphore may be reaped only once. A second
++    // pthread_join can target an unrelated thread after pthread_t reuse.
++    if (post_execution_completed_) {
++      return;
++    }
+     if (thread_) {
+-      pthread_join(thread_, nullptr);
++      const int result = pthread_join(thread_, nullptr);
++      if (result != 0) {
++        REXLOG_ERROR("Failed to join completed POSIX thread: {}", result);
++        return;
++      }
+     }
++    post_execution_completed_ = true;
+ #if defined(__APPLE__)
+     if (suspend_sem_ != SEM_FAILED) {
+       sem_close(suspend_sem_);
+@@ -1027,6 +1038,7 @@ class PosixCondition<Thread> : public PosixConditionBase {
+ #endif
+   }
+   pthread_t thread_;
++  bool post_execution_completed_ = false;  // Protected by mutex_.
+   bool signaled_;
+   int exit_code_;
+   State state_;             // Protected by state_mutex_

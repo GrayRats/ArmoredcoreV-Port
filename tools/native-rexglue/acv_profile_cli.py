@@ -41,20 +41,8 @@ def main(argv=None):
     store = P.ProfileStore(a.profiles_root.resolve())
     try:
         if a.cmd == "last-run":
-            import json as _json
-            runs = sorted((ROOT / "logs/acv-native-linux").glob("2*"))
-            if not runs:
-                out = {"error": "no launch evidence found"}
-            else:
-                run = runs[-1]
-                launch = _json.loads((run / "launch.json").read_text()) if (run / "launch.json").is_file() else {}
-                display = launch.get("display", {})
-                pacing = display.get("pacing", [])
-                out = {"evidence": str(run), "child_returncode": launch.get("child_returncode"),
-                       "fatal_error_count": launch.get("fatal_error_count", 0),
-                       "output": display.get("output"), "applied": display.get("applied"),
-                       "pacing_last": pacing[-1] if pacing else None,
-                       "limit_reached": launch.get("limit_reached")}
+            import acv_sessions
+            out = acv_sessions.latest(acv_paths.LOGS)
         elif a.cmd == "shm-status":
             out = acv_shm.status()
         elif a.cmd == "shm-clean":

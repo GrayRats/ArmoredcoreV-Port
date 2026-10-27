@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "title_id": "4E4D0853",
+  "files": {
+    "$SystemUpdate/su20076000_00000000": {
+      "sha256": "8556342d4400dd8a0e07feb3e981f03afbbba0cb25b914cbcafd1a7a711d911f",
+      "size": 11649024
+    },
+    "$SystemUpdate/system.manifest": {
+      "sha256": "d4bcbaff488a6274652b6394057946d5884d16f9f7b99cf52736410947f6b408",
+      "size": 6276
+    },
+    "NxeArt": {
+      "sha256": "26d3ba81c3da960f72dbf7f8b9e8b4482a118a9ffb82c2f2ad0d5966f007402a",
+      "size": 1085440
+    },
+    "bind/dvdbnd.bdt": {
+      "sha256": "a66d5305c5a2977c2cf13aab20c8916c4b2924bdbac2de3c74a66a23d963b7ca",
+      "size": 3279025311
+    },
+    "bind/dvdbnd5.bhd": {
+      "sha256": "816fa23bc3721fbe11d29a56e335b6a9f6945fc67fd561e730602ea2b5330bb2",
+      "size": 338592
+    },
+    "bind/script.bdt": {
+      "sha256": "2ce4b715e34c552cb670de349d2799cec2d7d62cf99471653ade6d04fba9b5f6",
+      "size": 1328198
+    },
+    "bind/script.bhd": {
+      "sha256": "c08a425434ae3c83e113c7b9b8b4928828b12015731263c3a0e5d0d2cfe782f5",
+      "size": 18308
+    },
+    "default.xex": {
+      "sha256": "4fac87348f827e84633013375012284cd8c769a3c155a675b2989757e666a12b",
+      "size": 23281664
+    },
+    "movie/jp/acv_opening.wmv": {
+      "sha256": "015df8ea69fcedb80d62515e0151a2bf8c4effb3749bb0e236767007ca4b156d",
+      "size": 173369732
+    },
+    "movie/jp/btu_adv_move_us.wmv": {
+      "sha256": "7ded893946d84f4a26f8dfa2760eca917c4d89f9782c1ab0b3aacdd2efd9f951",
+      "size": 5523252
+    },
+    "movie/jp/btu_boost_us.wmv": {
+      "sha256": "53979d40e8fa8271b16369637b86eb017648c1fbdcf97cbab02d8cc2531b0f33",
+      "size": 4742043
+    },
+    "movie/jp/chap00_movie.wmv": {
+      "sha256": "a694fc772b819f48bb95f5c7fdc2b9453cabf7d6772319452380f94c8b7d03a0",
+      "size": 3524997
+    },
+    "movie/jp/inisettings.wmv": {
+      "sha256": "57f6e9e7ae3444bf58a2795e113260da9b898d95003ecb060b98c45fbf9deb53",
+      "size": 7932507
+    },
+    "movie/jp/inisettings_bg.wmv": {
+      "sha256": "0ca54fb218d3271859ecbbff977c9fb1440f7d9844fca5e8893c3018ff862d3a",
+      "size": 1776336
+    },
+    "movie/jp/moh_emblem.wmv": {
+      "sha256": "ba87a7ab9bb4975f86b8924ed4eb431a7b457e77263a7774e5c4be838facc348",
+      "size": 1567857
+    },
+    "movie/jp/tu_adv_move.wmv": {
+      "sha256": "7a1ef5ebbc86af760e6040f343bbc7856184981f12296776741682bed86df996",
+      "size": 4684476
+    },
+    "movie/jp/tu_adv_move2.wmv": {
+      "sha256": "18f777a511069ad4d4465ffdcf8fbad3a886e35a5951c412d3be9b644b4ab64b",
+      "size": 4857171
+    },
+    "movie/jp/tu_attack.wmv": {
+      "sha256": "a5cec2d96729f4b547925feab48388ea90b8cca49a637ebe534236a45ba5e654",
+      "size": 4100637
+    },
+    "movie/jp/tu_boost.wmv": {
+      "sha256": "bb78e8963f40c802386c6b26ff2864281e5e90ab54716b08dc54c0474bf13ac7",
+      "size": 2439543
+    },
+    "movie/jp/tu_garage_p2_us.wmv": {
+      "sha256": "83d39e9898d51dd59cbc018aed2bb54e54fd1887d2fbae236d41290ffa232a2e",
+      "size": 1214286
+    },
+    "movie/jp/tu_garage_p_us.wmv": {
+      "sha256": "83d39e9898d51dd59cbc018aed2bb54e54fd1887d2fbae236d41290ffa232a2e",
+      "size": 1214286
+    },
+    "movie/jp/tu_mode2_us.wmv": {
+      "sha256": "bcc49cfec33b897c34775b9d34a04cfa8625d1be828cb53de9247693251844f8",
+      "size": 1666563
+    },
+    "movie/jp/tu_mode_us.wmv": {
+      "sha256": "95b010879f94825dfc5ad484bb95f61a52045ed2eaa162ca53203b013e7c0838",
+      "size": 2102388
+    },
+    "movie/jp/tu_move.wmv": {
+      "sha256": "4cb9398d38803b557d8e19d656e852d35d9a0020a5e927d402663a5b48b2acb4",
+      "size": 2809590
+    },
+    "movie/jp/tu_recon_us.wmv": {
+      "sha256": "6b0bbb19f79ccfea757d2b6daf679670235f577316b6698d7cac6ecbf13737d5",
+      "size": 4914732
+    },
+    "movie/jp/tu_scan.wmv": {
+      "sha256": "d9bba1342c288c6219b8bc9faa8886c468e8bc4698a8592cda720942195f00c8",
+      "size": 2217516
+    }
+  }
+}
