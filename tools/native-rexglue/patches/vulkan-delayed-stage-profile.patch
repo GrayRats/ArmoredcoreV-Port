@@ -1,0 +1,135 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -8,6 +8,8 @@
+  *
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
++
++#include "acv_gpu_stage_profile.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -3590,6 +3592,7 @@
+ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type, uint32_t index_count,
+                                        IndexBufferInfo* index_buffer_info,
+                                        bool major_mode_explicit) {
++  acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kDraw);
+ #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
+   SCOPE_profile_cpu_f("gpu");
+ #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
+@@ -4528,6 +4531,7 @@
+ }
+ 
+ bool VulkanCommandProcessor::IssueCopy_ReadbackResolvePath() {
++  acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kResolve);
+   const ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+@@ -4557,6 +4561,7 @@
+       return true;
+     }
+ 
++    acv::gpu_profile::Scope allocation_scope(acv::gpu_profile::Stage::kSlotAllocate);
+     VkBuffer new_buffer = VK_NULL_HANDLE;
+     VkDeviceMemory new_memory = VK_NULL_HANDLE;
+     if (!ui::vulkan::util::CreateDedicatedAllocationBuffer(
+@@ -4616,9 +4621,14 @@
+   }
+   // A ring index alone does not establish completion. Never overwrite or free
+   // a staging slot whose previous GPU copy is still in flight.
+-  if (readback.submission_written[write_index] &&
+-      !AwaitReadbackSubmission(readback.submission_written[write_index])) {
+-    return false;
++  if (readback.submission_written[write_index]) {
++    acv::gpu_profile::Scope reuse_scope(
++        readback.submission_written[write_index] > submission_completed_
++            ? acv::gpu_profile::Stage::kReusePending
++            : acv::gpu_profile::Stage::kReuseReady);
++    if (!AwaitReadbackSubmission(readback.submission_written[write_index])) {
++      return false;
++    }
+   }
+   // Waiting may close the current submission; record Resolve's copy in a new
+   // submission on the same queue if needed, preserving shared-memory hazards.
+@@ -4806,15 +4816,23 @@
+   if (device_lost_) {
+     return false;
+   }
+-  const bool previous_ready =
++  const bool previous_valid =
+       readback.buffers[read_index] != VK_NULL_HANDLE &&
+       readback.memories[read_index] != VK_NULL_HANDLE &&
+       readback.mapped_data[read_index] != nullptr &&
+       readback.written_size[read_index] >= written_length &&
+-      readback.submission_written[read_index] != 0 &&
++      readback.submission_written[read_index] != 0;
++  const bool previous_ready = previous_valid &&
+       readback.submission_written[read_index] <= submission_completed_;
+   const bool is_cache_miss = use_delayed_sync && !previous_ready;
++  if (use_delayed_sync && previous_ready) {
++    acv::gpu_profile::Scope ready_scope(acv::gpu_profile::Stage::kPreviousReady);
++  }
+   if (!use_delayed_sync || is_cache_miss) {
++    acv::gpu_profile::Scope wait_scope(
++        !use_delayed_sync ? acv::gpu_profile::Stage::kWaitFull
++        : previous_valid ? acv::gpu_profile::Stage::kWaitIncomplete
++                         : acv::gpu_profile::Stage::kWaitMissing);
+     read_index = write_index;
+     // Full mode publishes this Resolve's generation. Fast/some retain their
+     // explicitly delayed semantics only when the previous slot is complete.
+@@ -4831,8 +4849,11 @@
+     readback_memory_range.memory = readback.memories[read_index];
+     readback_memory_range.offset = 0;
+     readback_memory_range.size = VK_WHOLE_SIZE;
+-    const VkResult invalidate_result =
+-        dfn.vkInvalidateMappedMemoryRanges(device, 1, &readback_memory_range);
++    VkResult invalidate_result;
++    {
++      acv::gpu_profile::Scope invalidate_scope(acv::gpu_profile::Stage::kInvalidate);
++      invalidate_result = dfn.vkInvalidateMappedMemoryRanges(device, 1, &readback_memory_range);
++    }
+     if (invalidate_result != VK_SUCCESS) {
+       REXGPU_ERROR("Resolve readback invalidate failed: {}", int32_t(invalidate_result));
+       return false;  // Never publish stale host cache bytes as a successful readback.
+@@ -4840,6 +4861,7 @@
+ 
+     uint8_t* destination = memory_->TranslatePhysical(written_address);
+     if (destination) {
++      acv::gpu_profile::Scope copy_scope(acv::gpu_profile::Stage::kPublishCopy);
+       std::memcpy(destination, readback.mapped_data[read_index], written_length);
+     }
+   }
+@@ -5120,6 +5142,7 @@
+ }
+ 
+ void VulkanCommandProcessor::CheckSubmissionFenceAndDeviceLoss(uint64_t await_submission) {
++  acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kFence);
+   // Only report once, no need to retry a wait that won't succeed anyway.
+   if (device_lost_) {
+     return;
+@@ -5406,6 +5429,7 @@
+ }
+ 
+ bool VulkanCommandProcessor::EndSubmission(bool is_swap) {
++  acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kSubmit);
+   const ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+--- a/src/graphics/vulkan/shared_memory.cpp
++++ b/src/graphics/vulkan/shared_memory.cpp
+@@ -19,6 +19,7 @@
+ #include <rex/graphics/vulkan/command_processor.h>
+ #include <rex/graphics/vulkan/deferred_command_buffer.h>
+ #include <rex/graphics/vulkan/shared_memory.h>
++#include "acv_gpu_stage_profile.h"
+ #include <rex/logging.h>
+ #include <rex/math.h>
+ #include <rex/ui/vulkan/util.h>
+@@ -270,6 +271,7 @@
+ 
+ bool VulkanSharedMemory::UploadRanges(
+     const std::vector<std::pair<uint32_t, uint32_t>>& upload_page_ranges) {
++  acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kUpload);
+   if (upload_page_ranges.empty()) {
+     return true;
+   }

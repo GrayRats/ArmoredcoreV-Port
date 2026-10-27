@@ -1,0 +1,674 @@
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -47,6 +47,10 @@
+ 
+ class VulkanCommandProcessor : public CommandProcessor {
+  public:
++  // Render-target hooks; no-op unless an experimental resolve is prepared.
++  bool PrepareGeneralResolveDestination(uint32_t address, uint32_t length);
++  bool RegisterGeneralResolveWrite(uint32_t address, uint32_t length);
++
+   // Single-descriptor layouts for use within a single frame.
+   enum class SingleTransientDescriptorLayout {
+     kStorageBufferCompute,
+@@ -849,6 +853,12 @@
+ 
+   // Temporary storage for memexport stream constants used in the draw.
+   std::vector<draw_util::MemExportRange> memexport_ranges_;
++
++  // Appended: preserve existing member offsets for the accepted executable.
++  struct GeneralReadbackContext;
++  std::unique_ptr<GeneralReadbackContext> general_readback_;
++  bool IssueCopy_GeneralReadback(const draw_util::ResolveInfo& info);
++
+ };
+ 
+ }  // namespace rex::graphics::vulkan
+--- a/include/rex/graphics/vulkan/render_target_cache.h
++++ b/include/rex/graphics/vulkan/render_target_cache.h
+@@ -107,7 +107,8 @@
+   // frame for calling.
+   bool Resolve(const memory::Memory& memory, VulkanSharedMemory& shared_memory,
+                VulkanTextureCache& texture_cache, uint32_t& written_address_out,
+-               uint32_t& written_length_out);
++               uint32_t& written_length_out,
++               const draw_util::ResolveInfo* prepared_info = nullptr);
+ 
+   bool Update(bool is_rasterization_done, reg::RB_DEPTHCONTROL normalized_depth_control,
+               uint32_t normalized_color_mask, const Shader& vertex_shader) override;
+--- a/src/graphics/vulkan/acv_gpu_stage_profile.h
++++ b/src/graphics/vulkan/acv_gpu_stage_profile.h
+@@ -14,12 +14,12 @@
+ #endif
+ 
+ namespace acv::gpu_profile {
+-enum class Stage : size_t { kFence, kResolve, kUpload, kDraw, kSubmit, kSlotAllocate, kReusePending, kReuseReady, kWaitFull, kWaitMissing, kWaitIncomplete, kPreviousReady, kInvalidate, kPublishCopy, kWaitPrevious, kFastSubmit, kCount };
++enum class Stage : size_t { kFence, kResolve, kUpload, kDraw, kSubmit, kSlotAllocate, kReusePending, kReuseReady, kWaitFull, kWaitMissing, kWaitIncomplete, kPreviousReady, kInvalidate, kPublishCopy, kWaitPrevious, kFastSubmit, kGeneralResolve, kGeneralWait, kGeneralPublish, kGeneralSubmit, kGeneralFallback, kCount };
+ inline constexpr const char* kNames[] = {
+     "submission_fence", "resolve_readback", "shared_upload", "draw", "end_submission",
+     "slot_allocate", "slot_reuse_pending", "slot_reuse_ready", "wait_full",
+     "wait_previous_missing", "wait_previous_incomplete", "previous_ready",
+-    "invalidate", "publish_copy", "wait_previous_generation", "fast_readback_submit"};
++    "invalidate", "publish_copy", "wait_previous_generation", "fast_readback_submit", "general_resolve", "general_wait", "general_publish", "general_submit", "general_fallback"};
+ struct Config {
+   const char* path = std::getenv("ACV_GPU_STAGE_PROFILE");
+   double process_start = -1;
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -10,6 +10,8 @@
+  */
+ 
+ #include "acv_gpu_stage_profile.h"
++#include "general_readback_bridge.h"
++#include <cstdlib>
+ 
+ #include <algorithm>
+ #include <array>
+@@ -578,6 +580,33 @@
+     {VK_DESCRIPTOR_TYPE_SAMPLER, kLinkedTypeDescriptorPoolSetCount},
+ };
+ 
++// All Vulkan resources are owned and destroyed on the GPU worker. Provider
++// callbacks retain only the bridge's plain state, never a Vulkan allocation.
++struct VulkanCommandProcessor::GeneralReadbackContext {
++  using Bridge = acv::GeneralReadbackBridge<memory::Memory>;
++  struct Slot {
++    VkBuffer buffer = VK_NULL_HANDLE;
++    VkDeviceMemory memory = VK_NULL_HANDLE;
++    void* mapping = nullptr;
++    VkDeviceSize capacity = 0, allocation = 0;
++    uint64_t id = 0;
++    bool occupied = false;
++  };
++  explicit GeneralReadbackContext(VulkanCommandProcessor& cp)
++      : bridge(*cp.memory_, rex::thread::global_critical_region::mutex(),
++               [&cp](std::function<void()> fn) { cp.CallInThreadForReadback(std::move(fn)); },
++               [&cp](uint64_t ticket) {
++                 acv::gpu_profile::Scope profile(acv::gpu_profile::Stage::kGeneralWait);
++                 return cp.AwaitReadbackSubmission(ticket);
++               }) {}
++  Bridge bridge;
++  std::vector<std::unique_ptr<Slot>> slots;
++  VkDeviceSize allocated = 0;
++  uint64_t next_slot = 1;
++  Bridge::StatePtr prepared;
++  memory::Memory::PhysicalGpuWriteScope* scope = nullptr;
++};
++
+ VulkanCommandProcessor::VulkanCommandProcessor(VulkanGraphicsSystem* graphics_system,
+                                                system::KernelState* kernel_state)
+     : CommandProcessor(graphics_system, kernel_state),
+@@ -1896,6 +1925,25 @@
+ }
+ 
+ void VulkanCommandProcessor::ShutdownContext() {
++  if (general_readback_) {
++    auto& context = *general_readback_;
++    context.bridge.Drain();
++    context.bridge.Close();
++    const auto* vd = GetVulkanDevice();
++    // Always finish the queue, including a copy recorded/submitted but not
++    // committed to the bridge after a failed EndSubmission/Commit. An empty
++    // bridge alone does not prove that its staging allocations are unused.
++    if (!AwaitAllQueueOperationsCompletion() && !device_lost_) {
++      rex::FatalError("Cannot complete Vulkan submissions before readback teardown");
++    }
++    context.bridge.CancelAfterDeviceStopped();
++    for (auto& slot : context.slots) {
++      vd->functions().vkUnmapMemory(vd->device(), slot->memory);
++      vd->functions().vkDestroyBuffer(vd->device(), slot->buffer, nullptr);
++      vd->functions().vkFreeMemory(vd->device(), slot->memory, nullptr);
++    }
++    general_readback_.reset();
++  }
+   AwaitAllQueueOperationsCompletion();
+   InvalidateAllVertexBufferResidency();
+   ShutdownOcclusionQueryResources();
+@@ -4514,7 +4562,155 @@
+                                          written_address, written_length);
+   }
+ 
++  const char* general = std::getenv("ACV_GENERAL_DEFERRED_READBACK");
++  if (general && std::strcmp(general, "1") == 0 &&
++      readback_mode == ReadbackResolveMode::kFull &&
++      render_target_cache_->GetPath() == VulkanRenderTargetCache::Path::kPixelShaderInterlock &&
++      !texture_cache_->IsDrawResolutionScaled()) {
++    draw_util::ResolveInfo info = {};
++    if (!draw_util::GetResolveInfo(*register_file_, *memory_, 1, 1,
++            render_target_cache_->IsFixedRG16TruncatedToMinus1To1(),
++            render_target_cache_->IsFixedRGBA16TruncatedToMinus1To1(), info)) return false;
++    // The untracked 7F mirror aliases the first 16 MiB. Do not defer that range.
++    if (info.copy_dest_extent_start >= 0x1000000 && info.copy_dest_extent_length &&
++        info.copy_dest_extent_length <= (64u << 20) &&
++        uint64_t(info.copy_dest_extent_start) + info.copy_dest_extent_length <= 0x20000000ULL &&
++        !(info.copy_dest_extent_start & 3) && !(info.copy_dest_extent_length & 3)) {
++      return IssueCopy_GeneralReadback(info);
++    }
++  }
++  if (general && std::strcmp(general, "1") == 0) {
++    acv::gpu_profile::Scope fallback(acv::gpu_profile::Stage::kGeneralFallback);
++    return IssueCopy_ReadbackResolvePath();
++  }
+   return IssueCopy_ReadbackResolvePath();
++}
++
++bool VulkanCommandProcessor::PrepareGeneralResolveDestination(uint32_t address, uint32_t length) {
++  if (!general_readback_ || !general_readback_->scope) return true;
++  auto& context = *general_readback_;
++  if (!context.prepared || context.prepared->range.address != address ||
++      context.prepared->range.bytes != length || !context.scope->WaitForCpuAccess()) return false;
++  // Uploading can await old providers and temporarily unlock memory. Finish any
++  // host IO admitted during that wait, then refresh invalidated destination pages
++  // before allocating descriptors or arming this generation's provider.
++  return shared_memory_->RequestRange(address, length) && context.scope->WaitForCpuAccess() &&
++      shared_memory_->RequestRange(address, length) && context.scope->ValidateLocked() &&
++      BeginSubmission(true);
++}
++
++bool VulkanCommandProcessor::RegisterGeneralResolveWrite(uint32_t address, uint32_t length) {
++  if (!general_readback_ || !general_readback_->scope) return true;
++  auto& context = *general_readback_;
++  if (!context.prepared || context.prepared->range.address != address ||
++      context.prepared->range.bytes != length || !context.scope->ValidateLocked() ||
++      !context.bridge.RegisterLocked(context.scope->lock(), context.prepared) ||
++      !context.scope->ValidateLocked()) return false;
++  // Registration supplies the bytes; alias watches intercept guest CPU access.
++  // Both must be installed under the same memory lock before recording writes.
++  memory_->EnablePhysicalMemoryAccessCallbacks(address, length, true, true);
++  return true;
++}
++
++bool VulkanCommandProcessor::IssueCopy_GeneralReadback(const draw_util::ResolveInfo& info) {
++  acv::gpu_profile::Scope profile(acv::gpu_profile::Stage::kGeneralResolve);
++  if (!general_readback_) general_readback_ = std::make_unique<GeneralReadbackContext>(*this);
++  auto& context = *general_readback_;
++  const uint32_t address = info.copy_dest_extent_start, length = info.copy_dest_extent_length;
++  if (!context.bridge.Prepare(length)) return false;
++  const auto* vd = GetVulkanDevice();
++  const auto& dfn = vd->functions();
++  const VkDevice device = vd->device();
++  GeneralReadbackContext::Slot* slot = nullptr;
++  for (auto& candidate : context.slots) {
++    if (!candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
++  }
++  constexpr VkDeviceSize budget = 64ULL << 20;
++  if (!slot && (context.slots.size() >= 64 || context.allocated + length > budget)) {
++    if (!context.bridge.Drain()) return false;
++    for (auto& candidate : context.slots) {
++      if (!candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
++    }
++    // Reclaim completed allocations when differently sized ranges exhaust the pool.
++    if (!slot) {
++      for (auto it = context.slots.begin(); it != context.slots.end();) {
++        if ((*it)->occupied) { ++it; continue; }
++        auto& old = **it;
++        dfn.vkUnmapMemory(device, old.memory);
++        dfn.vkDestroyBuffer(device, old.buffer, nullptr);
++        dfn.vkFreeMemory(device, old.memory, nullptr);
++        context.allocated -= old.allocation;
++        it = context.slots.erase(it);
++      }
++    }
++  }
++  if (!slot) {
++    auto fresh = std::make_unique<GeneralReadbackContext::Slot>();
++    if (!ui::vulkan::util::CreateDedicatedAllocationBuffer(vd, length,
++          VK_BUFFER_USAGE_TRANSFER_DST_BIT, ui::vulkan::util::MemoryPurpose::kReadback,
++          fresh->buffer, fresh->memory, nullptr, &fresh->allocation)) return false;
++    if (context.allocated + fresh->allocation > budget ||
++        dfn.vkMapMemory(device, fresh->memory, 0, VK_WHOLE_SIZE, 0, &fresh->mapping) != VK_SUCCESS) {
++      dfn.vkDestroyBuffer(device, fresh->buffer, nullptr);
++      dfn.vkFreeMemory(device, fresh->memory, nullptr);
++      return false;
++    }
++    fresh->id = context.next_slot++;
++    fresh->capacity = length;
++    context.allocated += fresh->allocation;
++    slot = fresh.get();
++    context.slots.push_back(std::move(fresh));
++  }
++  if (!context.bridge.RetireSlot(slot->id) || !BeginSubmission(true)) return false;
++  context.prepared = context.bridge.MakeState({address, length}, slot->id);
++  if (!context.prepared) return false;
++  auto state = context.prepared;
++  memory::Memory::PhysicalGpuWriteScope scope(*memory_, address, length);
++  if (!scope.valid()) { context.prepared.reset(); return false; }
++  context.scope = &scope;
++  uint32_t written_address = 0, written_length = 0;
++  bool resolved = render_target_cache_->Resolve(*memory_, *shared_memory_, *texture_cache_,
++                                                written_address, written_length, &info);
++  context.scope = nullptr;
++  context.prepared.reset();
++  if (!resolved || !scope.ValidateLocked()) { context.bridge.Fail(state); return false; }
++  if (!written_length && !state->registered.load()) return true;
++  if (!state->registered.load() || written_address != address || written_length != length) {
++    context.bridge.Fail(state); return false;
++  }
++  slot->occupied = true;
++  shared_memory_->Use(VulkanSharedMemory::Usage::kRead);
++  SubmitBarriers(true);
++  VkBufferCopy copy = {};
++  copy.srcOffset = address;
++  copy.size = length;
++  deferred_command_buffer_.CmdVkCopyBuffer(shared_memory_->buffer(), slot->buffer, 1, &copy);
++  PushBufferMemoryBarrier(slot->buffer, 0, length,
++      VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
++      VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
++  const uint64_t ticket = GetCurrentSubmission();
++  // Never submit or await a GPU fence under the memory-system mutex.
++  scope.Unlock();
++  {
++    acv::gpu_profile::Scope submit_profile(acv::gpu_profile::Stage::kGeneralSubmit);
++    if (!EndSubmission(false)) { context.bridge.Fail(state); return false; }
++  }
++  if (!context.bridge.Commit(state, ticket, [this, slot, address, length] {
++        acv::gpu_profile::Scope publish_profile(acv::gpu_profile::Stage::kGeneralPublish);
++        const auto* vd = GetVulkanDevice();
++        VkMappedMemoryRange range = {};
++        range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
++        range.memory = slot->memory;
++        range.size = VK_WHOLE_SIZE;
++        if (vd->functions().vkInvalidateMappedMemoryRanges(vd->device(), 1, &range) != VK_SUCCESS)
++          return false;
++        // Already under the global memory lock, and the ticket has completed.
++        // Avoid CPU-write helpers: they would recursively await this provider.
++        std::memcpy(memory_->TranslatePhysical(address), slot->mapping, length);
++        slot->occupied = false;
++        return true;
++      })) { context.bridge.Fail(state); return false; }
++  return true;
+ }
+ 
+ bool VulkanCommandProcessor::AwaitReadbackSubmission(uint64_t submission) {
+--- /dev/null
++++ b/src/graphics/vulkan/deferred_readback_queue.h
+@@ -0,0 +1,138 @@
++#pragma once
++// GPU-worker-owned scheduling core. Not enabled in the runtime yet.
++// Integration MUST intercept all CPU read/write aliases and drain before free,
++// protection changes or host access. Never await while holding the memory lock.
++// BeforeSlotReuse MUST run before recording a copy into a staging slot.
++// Enqueue only submitted copies; retain staging ownership in Job::publish.
++#include <algorithm>
++#include <cstdint>
++#include <functional>
++#include <list>
++#include <iterator>
++#include <thread>
++#include <utility>
++
++namespace acv {
++class DeferredReadbackQueue {
++ public:
++  struct Range {
++    uint32_t address, bytes;
++    bool valid() const {
++      return bytes && uint64_t(address) + bytes <= 0x20000000ULL;
++    }
++    bool overlaps(Range other) const {
++      return uint64_t(address) < uint64_t(other.address) + other.bytes &&
++             uint64_t(other.address) < uint64_t(address) + bytes;
++    }
++  };
++  struct Job {
++    Range range;
++    uint64_t slot, ticket;
++    // Invalidate mapped GPU memory, then publish exact bytes. False on any failure.
++    // The callback owns the staging allocation until publication/cancellation.
++    std::function<bool()> publish;
++  };
++  using Await = std::function<bool(uint64_t)>;
++  explicit DeferredReadbackQueue(Await await, size_t max_jobs = 64,
++                                 uint64_t max_bytes = 64ULL << 20)
++      : await_(std::move(await)), owner_(std::this_thread::get_id()),
++        max_jobs_(max_jobs), max_bytes_(max_bytes) {}
++  DeferredReadbackQueue(const DeferredReadbackQueue&) = delete;
++  DeferredReadbackQueue& operator=(const DeferredReadbackQueue&) = delete;
++
++  // Reserve capacity before taking the memory lock or recording a GPU copy.
++  bool PrepareForEnqueue(uint32_t bytes) {
++    if(!Enter()) return false;
++    Guard guard(*this);
++    if(!bytes || !await_ || !max_jobs_ || bytes>max_bytes_) return false;
++    if(jobs_.size()>=max_jobs_ || bytes_>max_bytes_-bytes)
++      return Flush([](const Job&) { return true; });
++    return true;
++  }
++  bool Enqueue(Job job) {
++    if(!Enter()) return false;
++    Guard guard(*this);
++    if(!job.range.valid() || !job.slot || !job.ticket || !job.publish ||
++       !await_ || !max_jobs_ || job.range.bytes > max_bytes_ ||
++       job.ticket < last_ticket_) return false;
++    // Enqueue is too late to protect old bytes from an already submitted copy.
++    // Require the producer to retire the slot BEFORE recording that copy.
++    for(const auto& j : jobs_) if(j.slot == job.slot) return false;
++    if(jobs_.size() >= max_jobs_ || bytes_ > max_bytes_ - job.range.bytes) {
++      if(!Flush([](const Job&) { return true; })) return false;
++    }
++    const auto ticket = job.ticket;
++    const auto bytes = job.range.bytes;
++    try { jobs_.push_back(std::move(job)); }
++    catch(...) { failed_ = true; return false; }
++    last_ticket_ = ticket;
++    bytes_ += bytes;
++    return true;
++  }
++  bool BeforeSlotReuse(uint64_t slot) {
++    if(!Enter()) return false;
++    Guard guard(*this);
++    if(!slot) return false;
++    return Flush([&](const Job& j) { return j.slot == slot; });
++  }
++  // Call before ANY CPU read or write, including host accesses bypassing page faults.
++  bool BeforeCpuAccess(Range range) {
++    if(!Enter()) return false;
++    Guard guard(*this);
++    if(!range.valid()) return false;
++    return Flush([&](const Job& j) { return j.range.overlaps(range); });
++  }
++  bool Drain() {
++    if(!Enter()) return false;
++    Guard guard(*this);
++    return Flush([](const Job&) { return true; });
++  }
++  bool failed() const { return failed_; }
++  size_t pending() const { return jobs_.size(); }
++  uint64_t pending_bytes() const { return bytes_; }
++  // Caller must first stop GPU/CPU users. This releases ownership without publishing.
++  bool CancelAfterDeviceStopped() {
++    if(std::this_thread::get_id() != owner_ || busy_) return false;
++    jobs_.clear(); bytes_ = 0; failed_ = true;
++    return true;
++  }
++ private:
++  struct Guard {
++    DeferredReadbackQueue& queue;
++    explicit Guard(DeferredReadbackQueue& q) : queue(q) { queue.busy_ = true; }
++    ~Guard() { queue.busy_ = false; }
++  };
++  bool Enter() {
++    return std::this_thread::get_id() == owner_ && !busy_ && !failed_;
++  }
++  template<class Select> bool Flush(Select select) {
++    // Publishing a newer overlapping job first would allow an older delayed job
++    // to overwrite it later. Include all earlier overlapping predecessors.
++    // A prefix is conservative but guarantees ordering for partial overlaps too.
++    auto end = jobs_.begin();
++    uint64_t ticket = 0;
++    for(auto it = jobs_.begin(); it != jobs_.end(); ++it) {
++      if(select(*it)) { end = std::next(it); ticket = it->ticket; }
++    }
++    if(!ticket) return true;
++    try {
++      // Submitted tickets are monotonic on one queue: wait only for the newest.
++      if(!await_(ticket)) { failed_ = true; return false; }
++      while(jobs_.begin() != end) {
++        auto it = jobs_.begin();
++        if(!it->publish()) { failed_ = true; return false; }
++        bytes_ -= it->range.bytes;
++        jobs_.erase(it);
++      }
++    } catch(...) { failed_ = true; return false; }
++    return true;
++  }
++  Await await_;
++  const std::thread::id owner_;
++  const size_t max_jobs_;
++  const uint64_t max_bytes_;
++  std::list<Job> jobs_;
++  uint64_t bytes_ = 0, last_ticket_ = 0;
++  bool busy_ = false, failed_ = false;
++};
++} // namespace acv
+--- /dev/null
++++ b/src/graphics/vulkan/general_readback_bridge.h
+@@ -0,0 +1,164 @@
++#pragma once
++// Owner-thread GPU queue + memory-provider bridge. GPU allocations belong to the
++// caller's pool; drain/cancel this bridge before destroying that pool/device.
++#include "deferred_readback_queue.h"
++#include <atomic>
++#include <chrono>
++#include <future>
++#include <exception>
++#include <memory>
++#include <mutex>
++#include <vector>
++namespace acv {
++template<class Memory> class GeneralReadbackBridge {
++ public:
++  using Range=DeferredReadbackQueue::Range;
++  using Dispatch=std::function<void(std::function<void()>)>;
++  struct State {
++    Range range;
++    uint64_t slot;
++    const void* owner=nullptr;
++    std::atomic<bool> registered{false};
++    std::atomic<bool> published{false},failed{false},queued{false};
++    bool ready() const {return published.load(std::memory_order_acquire) && !failed.load(std::memory_order_acquire);}
++  };
++  using StatePtr=std::shared_ptr<State>;
++  GeneralReadbackBridge(Memory& memory,std::recursive_mutex& memory_mutex,Dispatch dispatch,
++                        DeferredReadbackQueue::Await await,size_t max_jobs=64,uint64_t max_bytes=64ULL<<20)
++      : memory_(memory),memory_mutex_(memory_mutex),queue_(std::move(await),max_jobs,max_bytes),
++        owner_(std::this_thread::get_id()),control_(std::make_shared<Control>()) {
++    control_->bridge=this;control_->dispatch=std::move(dispatch);
++  }
++  ~GeneralReadbackBridge() {Close();}
++  GeneralReadbackBridge(const GeneralReadbackBridge&)=delete;
++  GeneralReadbackBridge& operator=(const GeneralReadbackBridge&)=delete;
++  bool Prepare(uint32_t bytes) {
++    return IsOwner() && queue_.PrepareForEnqueue(bytes) && memory_.CollectPublishedPhysicalReadbacks();
++  }
++  bool RetireSlot(uint64_t slot) {
++    return IsOwner() && queue_.BeforeSlotReuse(slot) && memory_.CollectPublishedPhysicalReadbacks();
++  }
++  StatePtr MakeState(Range range,uint64_t slot) {
++    if(!IsOwner() || !range.valid() || !slot || closed_) return {};
++    auto state=std::make_shared<State>();state->range=range;state->slot=slot;state->owner=this;
++    if(states_.size()>=128) states_.erase(std::remove_if(states_.begin(),states_.end(),
++        [](const auto& weak){return weak.expired();}),states_.end());
++    states_.push_back(state);return state;
++  }
++  bool RegisterLocked(std::unique_lock<std::recursive_mutex>& lock,const StatePtr& state) {
++    if(!IsOwner() || closed_ || !state || state->owner!=this || state->registered.load() || state->failed.load() || state->queued.load()) return false;
++    auto control=control_;
++    typename Memory::PhysicalReadbackProvider provider{
++      {state->range.address,state->range.bytes},
++      [control,state]{return Await(control,state);},
++      [state]{return state->ready();},
++      [state]{return state->ready();}
++    };
++    if(!memory_.RegisterExplicitPhysicalReadbackLocked(lock,std::move(provider))) {
++      state->failed.store(true,std::memory_order_release);return false;
++    }
++    state->registered.store(true,std::memory_order_release);return true;
++  }
++  // The transfer and HOST_READ barrier must already be successfully submitted.
++  bool Commit(const StatePtr& state,uint64_t ticket,std::function<bool()> publish) {
++    if(!IsOwner() || closed_ || !state || state->owner!=this || !state->registered.load() || state->queued.load() || !ticket || !publish || state->failed.load()) return false;
++    const bool ok=queue_.Enqueue({state->range,state->slot,ticket,[this,state,publish=std::move(publish)] {
++      if(state->ready()) return true;
++      if(state->failed.load(std::memory_order_acquire)) return false;
++      std::lock_guard<std::recursive_mutex> lock(memory_mutex_);
++      bool copied=false;
++      try {copied=publish();} catch(...) {}
++      if(!copied) {state->failed.store(true,std::memory_order_release);return false;}
++      state->published.store(true,std::memory_order_release);return true;
++    }});
++    state->queued.store(ok,std::memory_order_release);
++    if(!ok) state->failed.store(true,std::memory_order_release);
++    return ok;
++  }
++  void Fail(const StatePtr& state) {
++    if(state) state->failed.store(true,std::memory_order_release);
++  }
++  bool Drain() {
++    return IsOwner() && queue_.Drain() && memory_.CollectPublishedPhysicalReadbacks();
++  }
++  // Normal shutdown drains first. Closing wakes all CPU awaiters, even if owner
++  // callbacks will never run. A queued callback holds no raw owner after close.
++  void Close() {
++    std::lock_guard<std::recursive_mutex> lock(control_->mutex);
++    if(closed_) return;
++    if(!IsOwner()) std::terminate();
++    closed_=true;control_->bridge=nullptr;control_->dispatch={};
++    for(const auto& weak:states_) if(auto state=weak.lock())
++      if(!state->published.load(std::memory_order_acquire)) state->failed.store(true,std::memory_order_release);
++    for(const auto& weak:control_->requests) if(auto request=weak.lock()) request->Complete(request->state->ready());
++    control_->requests.clear();
++  }
++  bool CancelAfterDeviceStopped() {
++    if(!IsOwner()) return false;
++    Close();return queue_.CancelAfterDeviceStopped();
++  }
++  size_t pending() const {return queue_.pending();}
++  uint64_t pending_bytes() const {return queue_.pending_bytes();}
++ private:
++  struct Request {
++    StatePtr state;
++    std::promise<bool> promise;
++    std::atomic<bool> finished{false};
++    void Complete(bool result) {if(!finished.exchange(true)) promise.set_value(result);}
++  };
++  struct Control {
++    std::recursive_mutex mutex;
++    GeneralReadbackBridge* bridge=nullptr;
++    Dispatch dispatch;
++    std::vector<std::weak_ptr<Request>> requests;
++  };
++  bool IsOwner() const {return owner_==std::this_thread::get_id();}
++  bool ForCpu(Range range) {
++    return IsOwner() && queue_.BeforeCpuAccess(range) && memory_.CollectPublishedPhysicalReadbacks();
++  }
++  static bool Await(const std::shared_ptr<Control>& control,const StatePtr& state) {
++    if(state->ready()) return true;
++    if(state->failed.load(std::memory_order_acquire)) return false;
++    auto request=std::make_shared<Request>();request->state=state;
++    auto completion=request->promise.get_future();
++    {
++      // Recursive for the GPU owner's inline dispatch. CPU memory-provider
++      // waits arrive here only after releasing the memory-system mutex.
++      std::lock_guard<std::recursive_mutex> lock(control->mutex);
++      if(state->ready()) return true;
++      if(!control->bridge || !control->dispatch || state->failed.load()) return false;
++      control->requests.erase(std::remove_if(control->requests.begin(),control->requests.end(),
++          [](const auto& weak){return weak.expired();}),control->requests.end());
++      control->requests.push_back(request);
++      try {
++        control->dispatch([control,request] {
++          if(request->finished.load()) return;
++          bool ok=request->state->ready();
++          if(!ok) {
++            std::lock_guard<std::recursive_mutex> owner_lock(control->mutex);
++            if(control->bridge && request->state->queued.load(std::memory_order_acquire) &&
++               !request->state->failed.load(std::memory_order_acquire)) {
++              ok=control->bridge->ForCpu(request->state->range) && request->state->ready();
++            }
++          }
++          if(!ok) request->state->failed.store(true,std::memory_order_release);
++          request->Complete(ok);
++        });
++      } catch(...) {
++        state->failed.store(true,std::memory_order_release);request->Complete(false);
++      }
++    }
++    if(completion.wait_for(std::chrono::seconds(30))!=std::future_status::ready) {
++      state->failed.store(true,std::memory_order_release);request->Complete(false);return false;
++    }
++    return completion.get();
++  }
++  Memory& memory_;
++  std::recursive_mutex& memory_mutex_;
++  DeferredReadbackQueue queue_;
++  const std::thread::id owner_;
++  std::shared_ptr<Control> control_;
++  std::vector<std::weak_ptr<State>> states_;
++  bool closed_=false;
++};
++} // namespace acv
+--- a/src/graphics/vulkan/render_target_cache.cpp
++++ b/src/graphics/vulkan/render_target_cache.cpp
+@@ -1127,14 +1127,15 @@
+ bool VulkanRenderTargetCache::Resolve(const memory::Memory& memory,
+                                       VulkanSharedMemory& shared_memory,
+                                       VulkanTextureCache& texture_cache,
+-                                      uint32_t& written_address_out, uint32_t& written_length_out) {
++                                      uint32_t& written_address_out, uint32_t& written_length_out,
++                                      const draw_util::ResolveInfo* prepared_info) {
+   written_address_out = 0;
+   written_length_out = 0;
+ 
+   bool draw_resolution_scaled = IsDrawResolutionScaled();
+ 
+-  draw_util::ResolveInfo resolve_info;
+-  if (!draw_util::GetResolveInfo(register_file(), memory, draw_resolution_scale_x(),
++  draw_util::ResolveInfo resolve_info = prepared_info ? *prepared_info : draw_util::ResolveInfo{};
++  if (!prepared_info && !draw_util::GetResolveInfo(register_file(), memory, draw_resolution_scale_x(),
+                                  draw_resolution_scale_y(), IsFixedRG16TruncatedToMinus1To1(),
+                                  IsFixedRGBA16TruncatedToMinus1To1(), resolve_info)) {
+     return false;
+@@ -1224,6 +1225,10 @@
+             "VulkanRenderTargetCache: Failed to obtain the resolve destination "
+             "memory region");
+       } else {
++        if (!command_processor_.PrepareGeneralResolveDestination(
++                resolve_info.copy_dest_extent_start, resolve_info.copy_dest_extent_length)) {
++          return false;
++        }
+         // TODO(Triang3l): Switching between descriptors if exceeding
+         // maxStorageBufferRange.
+         // TODO(Triang3l): Use a single 512 MB shared memory binding if
+@@ -1231,6 +1236,10 @@
+         VkDescriptorSet descriptor_set_dest = command_processor_.AllocateSingleTransientDescriptor(
+             VulkanCommandProcessor::SingleTransientDescriptorLayout ::kStorageBufferCompute);
+         if (descriptor_set_dest != VK_NULL_HANDLE) {
++          if (!command_processor_.RegisterGeneralResolveWrite(
++                  resolve_info.copy_dest_extent_start, resolve_info.copy_dest_extent_length)) {
++            return false;
++          }
+           // Write the destination descriptor.
+           VkDescriptorBufferInfo write_descriptor_set_dest_buffer_info;
+           write_descriptor_set_dest_buffer_info.buffer = draw_resolution_scaled
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -146,14 +146,36 @@
+       ranges.empty() || ranges.size() > 64) return 0;
+   for (const auto& range : ranges) if (!range.valid()) return 0;
+   if (physical_mutation_generations_.empty()) physical_mutation_generations_.resize(0x20000);
++  // Fault handlers and invalidation callbacks round to host pages. Reserve
++  // those same pages, or an adjacent provider could make a decoder await GPU
++  // work while that GPU worker is itself waiting for the decoder's byte range.
++  std::vector<detail::PhysicalReadbackProviders::Range> reserved_ranges;
++  for (const auto& range : ranges) {
++    const uint32_t start = range.address & ~(system_page_size_ - 1);
++    const uint64_t end = (uint64_t(range.address) + range.bytes + system_page_size_ - 1) &
++                         ~uint64_t(system_page_size_ - 1);
++    if (end > 0x20000000ULL) return 0;
++    reserved_ranges.push_back({start, uint32_t(end - start)});
++  }
++  std::sort(reserved_ranges.begin(), reserved_ranges.end(),
++            [](const auto& a, const auto& b) { return a.address < b.address; });
++  std::vector<detail::PhysicalReadbackProviders::Range> merged_ranges;
++  for (const auto& range : reserved_ranges) {
++    if (!merged_ranges.empty() && uint64_t(range.address) <=
++        uint64_t(merged_ranges.back().address) + merged_ranges.back().bytes) {
++      auto& previous = merged_ranges.back();
++      previous.bytes = uint32_t(std::max(uint64_t(previous.address) + previous.bytes,
++                                        uint64_t(range.address) + range.bytes) - previous.address);
++    } else merged_ranges.push_back(range);
++  }
+   std::vector<std::pair<uint32_t, std::vector<uint64_t>>> snapshots;
+-  for (const auto& range : ranges) {
++  for (const auto& range : merged_ranges) {
+     const uint32_t first = range.address >> 12;
+     const uint32_t end = uint32_t((uint64_t(range.address) + range.bytes + 4095) >> 12);
+     snapshots.emplace_back(first, std::vector<uint64_t>(physical_mutation_generations_.begin() + first,
+                                                       physical_mutation_generations_.begin() + end));
+   }
+-  const uint64_t token = explicit_physical_readbacks_.BeginCpuAccess(lock, ranges);
++  const uint64_t token = explicit_physical_readbacks_.BeginCpuAccess(lock, merged_ranges);
+   if (token) {
+     for (const auto& snapshot : snapshots) {
+       if (!std::equal(snapshot.second.begin(), snapshot.second.end(),

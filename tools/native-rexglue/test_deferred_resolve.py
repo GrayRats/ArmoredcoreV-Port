@@ -50,7 +50,7 @@ int main(int argc,char** argv) {
 with tempfile.TemporaryDirectory(prefix="acv-deferred-") as temporary:
     tmp=Path(temporary)
     (tmp/"rex/graphics").mkdir(parents=True)
-    (tmp/"rex/graphics/command_processor.h").write_text("#pragma once\nnamespace rex::graphics {struct CommandProcessor {template<class F> void CallInThread(F f){f();}};}\n")
+    (tmp/"rex/graphics/command_processor.h").write_text("#pragma once\nnamespace rex::graphics {struct CommandProcessor {template<class F> void CallInThreadForReadback(F f){f();}};}\n")
     (tmp/"rex/thread.h").write_text("#pragma once\n#include <cassert>\nnamespace rex::thread {extern bool held; struct global_critical_region {struct Lock {Lock(){assert(!held);held=true;} ~Lock(){held=false;}}; Lock Acquire(){return {};}};}\n")
     source=tmp/"probe.cpp"
     source.write_text(harness.replace("@HEADER@",str(header)))

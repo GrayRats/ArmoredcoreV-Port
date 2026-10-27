@@ -1,0 +1,130 @@
+--- a/src/graphics/vulkan/acv_gpu_stage_profile.h
++++ b/src/graphics/vulkan/acv_gpu_stage_profile.h
+@@ -14,12 +14,12 @@
+ #endif
+ 
+ namespace acv::gpu_profile {
+-enum class Stage : size_t { kFence, kResolve, kUpload, kDraw, kSubmit, kSlotAllocate, kReusePending, kReuseReady, kWaitFull, kWaitMissing, kWaitIncomplete, kPreviousReady, kInvalidate, kPublishCopy, kWaitPrevious, kFastSubmit, kGeneralResolve, kGeneralWait, kGeneralPublish, kGeneralSubmit, kGeneralFallback, kGeneralCpuWait, kGeneralPoolWait, kCount };
++enum class Stage : size_t { kFence, kResolve, kUpload, kDraw, kSubmit, kSlotAllocate, kReusePending, kReuseReady, kWaitFull, kWaitMissing, kWaitIncomplete, kPreviousReady, kInvalidate, kPublishCopy, kWaitPrevious, kFastSubmit, kGeneralResolve, kGeneralWait, kGeneralPublish, kGeneralSubmit, kGeneralFallback, kGeneralCpuWait, kGeneralPoolWait, kGeneralAdmission, kGeneralFittingSlot, kGeneralPoolDrain, kCount };
+ inline constexpr const char* kNames[] = {
+     "submission_fence", "resolve_readback", "shared_upload", "draw", "end_submission",
+     "slot_allocate", "slot_reuse_pending", "slot_reuse_ready", "wait_full",
+     "wait_previous_missing", "wait_previous_incomplete", "previous_ready",
+-    "invalidate", "publish_copy", "wait_previous_generation", "fast_readback_submit", "general_resolve", "general_wait", "general_publish", "general_submit", "general_fallback", "general_cpu_wait", "general_pool_wait"};
++    "invalidate", "publish_copy", "wait_previous_generation", "fast_readback_submit", "general_resolve", "general_wait", "general_publish", "general_submit", "general_fallback", "general_cpu_wait", "general_pool_wait", "general_admission", "general_fitting_slot", "general_pool_drain"};
+ struct Config {
+   const char* path = std::getenv("ACV_GPU_STAGE_PROFILE");
+   double process_start = -1;
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include "acv_gpu_stage_profile.h"
+ #include "general_readback_bridge.h"
++#include "readback_pool_selection.h"
+ #include <cstdlib>
+ 
+ #include <algorithm>
+@@ -589,7 +590,7 @@
+     VkDeviceMemory memory = VK_NULL_HANDLE;
+     void* mapping = nullptr;
+     VkDeviceSize capacity = 0, allocation = 0;
+-    uint64_t id = 0;
++    uint64_t id = 0, submission = 0;
+     bool occupied = false;
+   };
+   explicit GeneralReadbackContext(VulkanCommandProcessor& cp)
+@@ -4621,7 +4622,10 @@
+   if (!general_readback_) general_readback_ = std::make_unique<GeneralReadbackContext>(*this);
+   auto& context = *general_readback_;
+   const uint32_t address = info.copy_dest_extent_start, length = info.copy_dest_extent_length;
+-  if (!context.bridge.Prepare(length)) return false;
++  {
++    acv::gpu_profile::Scope admission(acv::gpu_profile::Stage::kGeneralAdmission);
++    if (!context.bridge.Prepare(length)) return false;
++  }
+   const auto* vd = GetVulkanDevice();
+   const auto& dfn = vd->functions();
+   const VkDevice device = vd->device();
+@@ -4631,20 +4635,31 @@
+   }
+   constexpr VkDeviceSize budget = 64ULL << 20;
+   if (!slot && (context.slots.size() >= 64 || context.allocated + length > budget)) {
+-    if (!context.bridge.Drain()) return false;
+-    for (auto& candidate : context.slots) {
+-      if (!candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
+-    }
+-    // Reclaim completed allocations when differently sized ranges exhaust the pool.
++    {
++      acv::gpu_profile::Scope reuse(acv::gpu_profile::Stage::kGeneralFittingSlot);
++      if (!acv::RetireOldestFittingSlot(context.slots, length,
++              [&](uint64_t id) { return context.bridge.RetireSlot(id); }, slot)) return false;
++    }
+     if (!slot) {
+-      for (auto it = context.slots.begin(); it != context.slots.end();) {
+-        if ((*it)->occupied) { ++it; continue; }
+-        auto& old = **it;
+-        dfn.vkUnmapMemory(device, old.memory);
+-        dfn.vkDestroyBuffer(device, old.buffer, nullptr);
+-        dfn.vkFreeMemory(device, old.memory, nullptr);
+-        context.allocated -= old.allocation;
+-        it = context.slots.erase(it);
++      // No existing allocation can hold this range. Drain before reclaiming
++      // differently-sized buffers; ordinary fitting-slot pressure avoids this.
++      {
++        acv::gpu_profile::Scope drain(acv::gpu_profile::Stage::kGeneralPoolDrain);
++        if (!context.bridge.Drain()) return false;
++      }
++      for (auto& candidate : context.slots) {
++        if (!candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
++      }
++      if (!slot) {
++        for (auto it = context.slots.begin(); it != context.slots.end();) {
++          if ((*it)->occupied) { ++it; continue; }
++          auto& old = **it;
++          dfn.vkUnmapMemory(device, old.memory);
++          dfn.vkDestroyBuffer(device, old.buffer, nullptr);
++          dfn.vkFreeMemory(device, old.memory, nullptr);
++          context.allocated -= old.allocation;
++          it = context.slots.erase(it);
++        }
+       }
+     }
+   }
+@@ -4693,6 +4708,7 @@
+       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+       VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+   const uint64_t ticket = GetCurrentSubmission();
++  slot->submission = ticket;
+   // Never submit or await a GPU fence under the memory-system mutex.
+   scope.Unlock();
+   {
+--- /dev/null
++++ b/src/graphics/vulkan/readback_pool_selection.h
+@@ -0,0 +1,26 @@
++#pragma once
++// GPU-owner-only selection. Never reuse until the queue retires the slot and
++// the publication callback clears occupied. A missing job is not completion.
++// The retirement callback must not remove or destroy the pool slot.
++#include <cstdint>
++#include <memory>
++#include <vector>
++namespace acv {
++template<class Slot,class Retire>
++bool RetireOldestFittingSlot(const std::vector<std::unique_ptr<Slot>>& slots,
++                            uint64_t bytes,Retire&& retire,Slot*& selected) {
++  selected=nullptr;
++  if(!bytes) return false;
++  Slot* oldest=nullptr;
++  for(const auto& slot:slots) {
++    if(!slot->occupied || !slot->id || !slot->submission || slot->capacity<bytes) continue;
++    if(!oldest || slot->submission<oldest->submission) oldest=slot.get();
++  }
++  if(!oldest) return true; // Caller may need to grow/reclaim different-sized allocations.
++  try { if(!retire(oldest->id)) return false; }
++  catch(...) { return false; }
++  if(oldest->occupied) return false; // Failed/uncommitted copy still owns the allocation.
++  selected=oldest;
++  return true;
++}
++} // namespace acv

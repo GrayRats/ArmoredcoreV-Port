@@ -1,0 +1,158 @@
+--- a/include/rex/system/physical_readback_providers.h
++++ b/include/rex/system/physical_readback_providers.h
+@@ -54,8 +54,11 @@
+     if(still_owned) {
+       try { if(!still_owned()) return false; } catch(...) { return false; }
+     }
++    const Range registered = provider.range;
+     try { providers_.push_back(std::make_shared<Provider>(std::move(provider))); }
+     catch(...) { failed_=true; access_changed_.notify_all(); return false; }
++    provider_begin_ = std::min(provider_begin_, registered.address);
++    provider_end_ = std::max(provider_end_, registered.address + registered.bytes);
+     return true;
+   }
+   bool CollectPublished(std::unique_lock<std::recursive_mutex>& lock) {
+@@ -70,6 +73,7 @@
+       }
+     } catch(...) { failed_=true; }
+     publishing_=false;
++    RecomputeProviderBounds();
+     if(failed_) access_changed_.notify_all();
+     return !failed_;
+   }
+@@ -79,8 +83,7 @@
+   bool CanAccessWithoutWait(const std::unique_lock<std::recursive_mutex>& lock, Range range) const {
+     if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !range.valid() || publishing_ || failed_ ||
+        HasCpuAccess(range)) return false;
+-    for(const auto& provider:providers_) if(provider->range.overlaps(range)) return false;
+-    return true;
++    return !HasProvider(range);
+   }
+   // Wait for host IO/decoder ownership without forcing older GPU copies to
+   // publish. Used before a new GPU write; actual CPU reads still Synchronize.
+@@ -98,6 +101,7 @@
+       if(!allow_owned_cpu_access && HasOwnedCpuAccess(range)) return false;
+       while(!failed_ && HasCpuAccess(range, allow_owned_cpu_access)) access_changed_.wait(lock);
+       if(failed_) return false;
++      if(!MayHaveProvider(range)) return true;
+       auto end=providers_.begin();
+       for(auto it=providers_.begin();it!=providers_.end();++it)
+         if((*it)->range.overlaps(range)) end=std::next(it);
+@@ -122,6 +126,7 @@
+         providers_.erase(it);
+       }
+       publishing_=false;
++      RecomputeProviderBounds();
+       // Registration while unlocked may have added a new overlapping result.
+       // Recheck before reporting the CPU range ready.
+     }
+@@ -143,8 +148,7 @@
+       for(const auto& range:ranges) if(!Synchronize(lock,range)) return 0;
+       bool retry=false;
+       for(const auto& range:ranges) {
+-        if(HasCpuAccess(range) || std::any_of(providers_.begin(),providers_.end(),
+-             [range](const auto& provider){return provider->range.overlaps(range);})) {
++        if(HasCpuAccess(range) || HasProvider(range)) {
+           retry=true;break;
+         }
+       }
+@@ -175,12 +179,28 @@
+   bool CancelAfterDeviceStopped() {
+     std::lock_guard<std::recursive_mutex> lock(mutex_);
+     if(publishing_ || !cpu_accesses_.empty()) return false;
+-    failed_=true; providers_.clear();access_changed_.notify_all();return true;
++    failed_=true; providers_.clear();RecomputeProviderBounds();access_changed_.notify_all();return true;
+   }
+   size_t pending() const {
+     std::lock_guard<std::recursive_mutex> lock(mutex_); return providers_.size();
+   }
+  private:
++  // Conservative rejection only: a range inside the envelope still scans all
++  // providers. All mutations and readers own mutex_, including after GPU waits.
++  bool MayHaveProvider(Range range) const {
++    return range.address < provider_end_ && uint64_t(range.address) + range.bytes > provider_begin_;
++  }
++  bool HasProvider(Range range) const {
++    return MayHaveProvider(range) && std::any_of(providers_.begin(),providers_.end(),
++        [range](const auto& provider){return provider->range.overlaps(range);});
++  }
++  void RecomputeProviderBounds() {
++    provider_begin_ = 0x20000000; provider_end_ = 0;
++    for(const auto& provider:providers_) {
++      provider_begin_ = std::min(provider_begin_, provider->range.address);
++      provider_end_ = std::max(provider_end_, provider->range.address + provider->range.bytes);
++    }
++  }
+   struct CpuAccess { uint64_t token; std::vector<Range> ranges; std::thread::id owner; };
+   bool HasCpuAccess(Range range, bool ignore_owned=false) const {
+     return std::any_of(cpu_accesses_.begin(),cpu_accesses_.end(),
+@@ -203,5 +223,6 @@
+   std::recursive_mutex& mutex_;
+   std::list<std::shared_ptr<Provider>> providers_;
+   bool publishing_=false, failed_=false;
++  uint32_t provider_begin_=0x20000000, provider_end_=0;
+ };
+ } // namespace acv
+--- a/src/graphics/vulkan/acv_gpu_stage_profile.h
++++ b/src/graphics/vulkan/acv_gpu_stage_profile.h
+@@ -14,12 +14,12 @@
+ #endif
+ 
+ namespace acv::gpu_profile {
+-enum class Stage : size_t { kFence, kResolve, kUpload, kDraw, kSubmit, kSlotAllocate, kReusePending, kReuseReady, kWaitFull, kWaitMissing, kWaitIncomplete, kPreviousReady, kInvalidate, kPublishCopy, kWaitPrevious, kFastSubmit, kGeneralResolve, kGeneralWait, kGeneralPublish, kGeneralSubmit, kGeneralFallback, kCount };
++enum class Stage : size_t { kFence, kResolve, kUpload, kDraw, kSubmit, kSlotAllocate, kReusePending, kReuseReady, kWaitFull, kWaitMissing, kWaitIncomplete, kPreviousReady, kInvalidate, kPublishCopy, kWaitPrevious, kFastSubmit, kGeneralResolve, kGeneralWait, kGeneralPublish, kGeneralSubmit, kGeneralFallback, kGeneralCpuWait, kGeneralPoolWait, kCount };
+ inline constexpr const char* kNames[] = {
+     "submission_fence", "resolve_readback", "shared_upload", "draw", "end_submission",
+     "slot_allocate", "slot_reuse_pending", "slot_reuse_ready", "wait_full",
+     "wait_previous_missing", "wait_previous_incomplete", "previous_ready",
+-    "invalidate", "publish_copy", "wait_previous_generation", "fast_readback_submit", "general_resolve", "general_wait", "general_publish", "general_submit", "general_fallback"};
++    "invalidate", "publish_copy", "wait_previous_generation", "fast_readback_submit", "general_resolve", "general_wait", "general_publish", "general_submit", "general_fallback", "general_cpu_wait", "general_pool_wait"};
+ struct Config {
+   const char* path = std::getenv("ACV_GPU_STAGE_PROFILE");
+   double process_start = -1;
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -597,6 +597,10 @@
+                [&cp](std::function<void()> fn) { cp.CallInThreadForReadback(std::move(fn)); },
+                [&cp](uint64_t ticket) {
+                  acv::gpu_profile::Scope profile(acv::gpu_profile::Stage::kGeneralWait);
++                 acv::gpu_profile::Scope reason_profile(
++                     cp.general_readback_->bridge.servicing_cpu_access()
++                         ? acv::gpu_profile::Stage::kGeneralCpuWait
++                         : acv::gpu_profile::Stage::kGeneralPoolWait);
+                  return cp.AwaitReadbackSubmission(ticket);
+                }) {}
+   Bridge bridge;
+--- a/src/graphics/vulkan/general_readback_bridge.h
++++ b/src/graphics/vulkan/general_readback_bridge.h
+@@ -97,6 +97,8 @@
+     if(!IsOwner()) return false;
+     Close();return queue_.CancelAfterDeviceStopped();
+   }
++  // GPU-owner-only diagnostic classification; never changes queue policy.
++  bool servicing_cpu_access() const {return cpu_access_;}
+   size_t pending() const {return queue_.pending();}
+   uint64_t pending_bytes() const {return queue_.pending_bytes();}
+  private:
+@@ -114,7 +116,13 @@
+   };
+   bool IsOwner() const {return owner_==std::this_thread::get_id();}
+   bool ForCpu(Range range) {
+-    return IsOwner() && queue_.BeforeCpuAccess(range) && memory_.CollectPublishedPhysicalReadbacks();
++    if(!IsOwner()) return false;
++    struct Guard {
++      bool& flag;bool previous;
++      explicit Guard(bool& value):flag(value),previous(value){flag=true;}
++      ~Guard(){flag=previous;}
++    } guard(cpu_access_);
++    return queue_.BeforeCpuAccess(range) && memory_.CollectPublishedPhysicalReadbacks();
+   }
+   static bool Await(const std::shared_ptr<Control>& control,const StatePtr& state) {
+     if(state->ready()) return true;
+@@ -160,5 +168,6 @@
+   std::shared_ptr<Control> control_;
+   std::vector<std::weak_ptr<State>> states_;
+   bool closed_=false;
++  bool cpu_access_=false;
+ };
+ } // namespace acv

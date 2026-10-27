@@ -1,0 +1,112 @@
+--- a/include/rex/system/physical_readback_providers.h
++++ b/include/rex/system/physical_readback_providers.h
+@@ -72,6 +72,15 @@
+     publishing_=false;
+     if(failed_) access_changed_.notify_all();
+     return !failed_;
++  }
++  // A copy performed entirely under this lock needs no long-lived CPU pin.
++  // False means use Synchronize/BeginCpuAccess; never unlock after a true result
++  // until the copy completes. Pending adjacent bytes do not block private reads.
++  bool CanAccessWithoutWait(const std::unique_lock<std::recursive_mutex>& lock, Range range) const {
++    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !range.valid() || publishing_ || failed_ ||
++       HasCpuAccess(range)) return false;
++    for(const auto& provider:providers_) if(provider->range.overlaps(range)) return false;
++    return true;
+   }
+   // Wait for host IO/decoder ownership without forcing older GPU copies to
+   // publish. Used before a new GPU write; actual CPU reads still Synchronize.
+@@ -195,4 +204,4 @@
+   std::list<std::shared_ptr<Provider>> providers_;
+   bool publishing_=false, failed_=false;
+ };
+-} // namespace rex::memory::detail
++} // namespace acv
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -703,6 +703,7 @@
+   // Lazily allocated only once an explicit producer registers, one epoch per 4KB.
+   std::vector<uint64_t> physical_mutation_generations_;
+   std::atomic<bool> explicit_gpu_coherence_enabled_{false};
++  bool PreparePhysicalCpuMappingLocked(uint32_t address, uint32_t length);
+   bool WritePhysicalCpuImpl(uint32_t address, const void* source, uint32_t length, bool notify);
+   bool SynchronizePhysicalCpuLocked(std::unique_lock<std::recursive_mutex>& lock,
+                                     uint32_t address, uint32_t length);
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -186,36 +186,34 @@
+     }
+   }
+   if (token && physical_membase_) {
+-    // Host hardware accesses bypass guest permissions through the physical
+-    // mapping, but must still own committed allocation pages.
+-    bool valid = true;
+-    {
+-      std::lock_guard<std::recursive_mutex> heap_lock(heaps_.physical.heap_mutex_);
+-      for (const auto& range : ranges) {
+-        const uint32_t first = range.address >> 12;
+-        const uint32_t end = uint32_t((uint64_t(range.address) + range.bytes + 4095) >> 12);
+-        bool writable = true;
+-        for (uint32_t i = first; i < end; ++i) {
+-          const auto& page = heaps_.physical.page_table_[i];
+-          if (!(page.state & kMemoryAllocationCommit)) { valid = false; break; }
+-          if (!(page.current_protect & kMemoryProtectWrite)) writable = false;
+-        }
+-        if (!valid) break;
+-        if (!writable) {
+-          const uint32_t start = range.address & ~(system_page_size_ - 1);
+-          const uint64_t limit = (uint64_t(range.address) + range.bytes + system_page_size_ - 1) &
+-                                 ~uint64_t(system_page_size_ - 1);
+-          if (!rex::memory::Protect(TranslatePhysical(start), size_t(limit - start),
+-                                   rex::memory::PageAccess::kReadWrite)) { valid = false; break; }
+-        }
+-      }
+-    }
+-    if (!valid) {
+-      explicit_physical_readbacks_.EndCpuAccess(lock, token);
+-      return 0;
++    for (const auto& range : ranges) {
++      if (!PreparePhysicalCpuMappingLocked(range.address, range.bytes)) {
++        explicit_physical_readbacks_.EndCpuAccess(lock, token);
++        return 0;
++      }
+     }
+   }
+   return token;
++}
++
++// Caller owns the global memory lock. Host hardware bypasses guest alias
++// permissions, but it must still address committed physical allocation pages.
++bool Memory::PreparePhysicalCpuMappingLocked(uint32_t address, uint32_t length) {
++  std::lock_guard<std::recursive_mutex> heap_lock(heaps_.physical.heap_mutex_);
++  const uint32_t first = address >> 12;
++  const uint32_t end = uint32_t((uint64_t(address) + length + 4095) >> 12);
++  bool writable = true;
++  for (uint32_t i = first; i < end; ++i) {
++    const auto& page = heaps_.physical.page_table_[i];
++    if (!(page.state & kMemoryAllocationCommit)) return false;
++    if (!(page.current_protect & kMemoryProtectWrite)) writable = false;
++  }
++  if (writable) return true;
++  const uint32_t start = address & ~(system_page_size_ - 1);
++  const uint64_t limit = (uint64_t(address) + length + system_page_size_ - 1) &
++                         ~uint64_t(system_page_size_ - 1);
++  return rex::memory::Protect(TranslatePhysical(start), size_t(limit - start),
++                              rex::memory::PageAccess::kReadWrite);
+ }
+ 
+ bool Memory::EndPhysicalCpuAccess(std::unique_lock<std::recursive_mutex>& lock, uint64_t token) {
+@@ -321,6 +319,13 @@
+   }
+   auto* self = const_cast<Memory*>(this);
+   auto copy = [&](std::unique_lock<std::recursive_mutex>& lock) {
++    if (self->explicit_physical_readbacks_.CanAccessWithoutWait(lock, {address, length})) {
++      // No provider, host IO or allocation mutation can race this locked memcpy.
++      // Avoid token lists and generation snapshots on command-ring/constant reads.
++      if (!self->PreparePhysicalCpuMappingLocked(address, length)) return false;
++      std::memcpy(destination, TranslatePhysical(address), length);
++      return true;
++    }
+     const uint64_t pin = self->BeginPhysicalCpuAccess(lock, address, length);
+     if (!pin) return false;
+     std::memcpy(destination, TranslatePhysical(address), length);

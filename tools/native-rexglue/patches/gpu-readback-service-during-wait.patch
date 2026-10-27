@@ -1,0 +1,88 @@
+--- a/include/rex/graphics/command_processor.h
++++ b/include/rex/graphics/command_processor.h
+@@ -95,6 +95,11 @@
+   virtual void Shutdown();
+ 
+   void CallInThread(std::function<void()> fn);
++
++  // Only synchronization/publication of already recorded GPU readbacks. Unlike
++  // ordinary callbacks, these may run while a guest WAIT_REG_MEM is pending.
++  // Must not consume/modify the guest command stream or execute guest code.
++  void CallInThreadForReadback(std::function<void()> fn);
+ 
+   virtual void ClearCaches();
+   virtual void InvalidateGpuMemory();
+@@ -241,6 +246,7 @@
+ 
+   bool HasPendingFunctions();
+   void ExecutePendingFunctions();
++  void ExecuteReadbackFunctions();
+   std::queue<std::function<void()>> pending_fns_;
+ 
+   // MicroEngine binary from PM4_ME_INIT
+@@ -291,6 +297,7 @@
+ 
+   // Append synchronization state so existing inline getter member offsets stay stable.
+   std::mutex pending_fns_mutex_;
++  std::queue<std::function<void()>> readback_fns_;
+ };
+ 
+ }  // namespace rex::graphics
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -179,9 +179,34 @@
+   }
+ }
+ 
++void CommandProcessor::CallInThreadForReadback(std::function<void()> fn) {
++  if (system::XThread::IsInThread(worker_thread_.get())) {
++    fn();
++    return;
++  }
++  {
++    std::lock_guard<std::mutex> lock(pending_fns_mutex_);
++    readback_fns_.push(std::move(fn));
++  }
++  write_ptr_index_event_->Set();
++}
++
++void CommandProcessor::ExecuteReadbackFunctions() {
++  for (;;) {
++    std::function<void()> fn;
++    {
++      std::lock_guard<std::mutex> lock(pending_fns_mutex_);
++      if (readback_fns_.empty()) return;
++      fn = std::move(readback_fns_.front());
++      readback_fns_.pop();
++    }
++    fn();
++  }
++}
++
+ bool CommandProcessor::HasPendingFunctions() {
+   std::lock_guard<std::mutex> lock(pending_fns_mutex_);
+-  return !pending_fns_.empty();
++  return !pending_fns_.empty() || !readback_fns_.empty();
+ }
+ 
+ void CommandProcessor::ExecutePendingFunctions() {
+@@ -236,6 +261,7 @@
+   }
+ 
+   while (worker_running_) {
++    ExecuteReadbackFunctions();
+     ExecutePendingFunctions();
+ 
+     uint32_t write_ptr_index = write_ptr_index_.load();
+@@ -1085,6 +1111,11 @@
+         break;
+     }
+     if (!matched) {
++      // A CPU may need a readback before it can satisfy this guest wait.
++      // Only service already recorded readback synchronization here, never
++      // arbitrary host callbacks that could reorder guest commands.
++      ExecuteReadbackFunctions();
++      if (!worker_running_) return false;
+       // Wait.
+       if (wait >= 0x100) {
+         PrepareForWait();

@@ -1,0 +1,58 @@
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -335,6 +335,24 @@
+                         ? std::chrono::steady_clock::time_point::max()
+                         : start_time + timeout;
+ 
++    // Preserve the fractional millisecond. Alertable waits use 1ms slices:
++    // truncating the remainder to milliseconds turns every sleep into sleep(0),
++    // burning a core while repeatedly acquiring all audio-client mutexes.
++    auto wait_retry = [&]() {
++      const auto now = std::chrono::steady_clock::now();
++      if (now >= end_time) {
++        return false;
++      }
++      const auto poll_interval =
++          std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++              std::chrono::milliseconds(1));
++      std::this_thread::sleep_for(
++          end_time == std::chrono::steady_clock::time_point::max()
++              ? poll_interval
++              : std::min(end_time - now, poll_interval));
++      return true;
++    };
++
+     while (true) {
+       size_t first_signaled = std::numeric_limits<size_t>::max();
+       bool condition_met = false;
+@@ -367,7 +385,10 @@
+ 
+       if (!all_locked) {
+         locks.clear();
+-        std::this_thread::yield();
++        // Contention must obey the same deadline and backoff as no signal.
++        if (!wait_retry()) {
++          return std::make_pair<WaitResult, size_t>(WaitResult::kTimeout, 0);
++        }
+         continue;
+       }
+ 
+@@ -406,17 +427,8 @@
+ 
+       locks.clear();
+ 
+-      auto now = std::chrono::steady_clock::now();
+-      if (now >= end_time) {
++      if (!wait_retry()) {
+         return std::make_pair<WaitResult, size_t>(WaitResult::kTimeout, 0);
+-      }
+-
+-      if (timeout == std::chrono::milliseconds::max()) {
+-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+-      } else {
+-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - now);
+-        auto sleep_time = std::min(remaining, std::chrono::milliseconds(1));
+-        std::this_thread::sleep_for(sleep_time);
+       }
+     }
+   }

@@ -1,0 +1,553 @@
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -20,6 +20,7 @@
+ #include <rex/memory/utils.h>
+ #include <rex/ppc/func.h>  // PPCFunc type
+ #include <rex/system/mmio_handler.h>
++#include <rex/system/physical_readback_providers.h>
+ #include <rex/thread/mutex.h>
+ 
+ namespace rex::stream {
+@@ -270,6 +271,9 @@
+   rex::thread::global_critical_region global_critical_region_;
+   std::recursive_mutex heap_mutex_;
+   std::vector<PageEntry> page_table_;
++
++  // Appended virtual to preserve existing vtable slots.
++  virtual bool IsHostPageDataProviderWatched(uint32_t) const { return false; }
+ };
+ 
+ // Normal heap allowing allocations from guest virtual address ranges.
+@@ -323,7 +327,11 @@
+   uint32_t GetPhysicalAddress(uint32_t address) const;
+ 
+  protected:
++  bool TriggerCallbacksLocked(std::unique_lock<std::recursive_mutex>& global_lock_locked_once,
++                              uint32_t virtual_address, uint32_t length, bool is_write,
++                              bool unwatch_exact_range, bool unprotect = true);
+   bool IsHostPageWriteWatched(uint32_t host_page_number) const override;
++  bool IsHostPageDataProviderWatched(uint32_t host_page_number) const override;
+ 
+   // Allocation on these heaps delegates to parent_heap_, whose own reconcile
+   // pass takes the global critical region. Acquire whenever this heap or its
+@@ -339,7 +347,8 @@
+   struct SystemPageFlagsBlock {
+     // Whether writing to each page should result trigger invalidation
+     // callbacks.
+-    uint64_t notify_on_invalidation;
++    uint64_t notify_on_invalidation = 0;
++    uint64_t data_provider_pending = 0;
+   };
+   // Protected by global_critical_region. Flags for each 64 system pages,
+   // interleaved as blocks, so bit scan can be used to quickly extract ranges.
+@@ -482,6 +491,19 @@
+   // TODO(Triang3l): Implement data providers - more complicated because they
+   // will need to be able to release the global lock.
+ 
++  // Explicit host access bridge only. Registration does not protect guest aliases:
++  // producers must arrange all CPU accesses, allocator mutations and teardown
++  // through this boundary before using deferred results. Not enabled by default.
++  using PhysicalReadbackProvider = detail::PhysicalReadbackProviders::Provider;
++  bool RegisterExplicitPhysicalReadback(PhysicalReadbackProvider provider);
++  // Caller holds the global critical region exactly once, including after return.
++  // Completion is awaited without that lock; publication and the subsequent CPU
++  // access must stay under it. False forbids accessing stale guest bytes.
++  bool SynchronizeExplicitPhysicalReadback(std::unique_lock<std::recursive_mutex>& lock,
++                                           uint32_t physical_address, uint32_t length);
++  // Device and all access threads must be stopped before cancellation/destruction.
++  bool CancelExplicitPhysicalReadbacksAfterDeviceStopped();
++
+   // Returns start and length of the smallest physical memory region surrounding
+   // the watched region that can be safely unwatched, if it doesn't matter,
+   // return (0, UINT32_MAX).
+@@ -624,6 +646,15 @@
+   rex::thread::global_critical_region global_critical_region_;
+   std::vector<std::pair<PhysicalMemoryInvalidationCallback, void*>*>
+       physical_memory_invalidation_callbacks_;
++
++  // Append to preserve offsets used by existing inline memory accessors.
++  detail::PhysicalReadbackProviders explicit_physical_readbacks_;
++  // Lazily allocated only once an explicit producer registers, one epoch per 4KB.
++  std::vector<uint64_t> physical_mutation_generations_;
++  bool BeginPhysicalReadbackMutation(std::unique_lock<std::recursive_mutex>& lock,
++                                     uint32_t physical_address, uint32_t length);
++  void RecordPhysicalReadbackMutation(uint32_t physical_address, uint32_t length);
++
+ };
+ 
+ }  // namespace rex::memory
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -92,16 +92,81 @@
+   --in_crash_dump;
+ }
+ 
+-Memory::Memory() {
++Memory::Memory()
++    : explicit_physical_readbacks_(rex::thread::global_critical_region::mutex()) {
+   system_page_size_ = uint32_t(rex::memory::page_size());
+   system_allocation_granularity_ = uint32_t(rex::memory::allocation_granularity());
+   assert_zero(active_memory_);
+   active_memory_ = this;
+ }
+ 
++bool Memory::RegisterExplicitPhysicalReadback(PhysicalReadbackProvider provider) {
++  auto lock = global_critical_region_.Acquire();
++  if (!provider.range.valid()) return false;
++  if (physical_membase_) {
++    // GPU publication bypasses guest protection through the private physical
++    // mapping. A guest read-only Protect also affects that parent mapping;
++    // restore its writable bypass before queuing a provider. Guest aliases
++    // retain their own protections. Unallocated/inaccessible ranges are rejected.
++    const auto& range = provider.range;
++    if (heaps_.physical.QueryRangeAccess(range.address, range.address + range.bytes - 1) ==
++        rex::memory::PageAccess::kNoAccess) return false;
++    const uint32_t start = range.address & ~(system_page_size_ - 1);
++    const uint64_t end = (uint64_t(range.address) + range.bytes + system_page_size_ - 1) &
++                         ~uint64_t(system_page_size_ - 1);
++    if (!rex::memory::Protect(TranslatePhysical(start), size_t(end - start),
++                             rex::memory::PageAccess::kReadWrite)) return false;
++  }
++  if (physical_mutation_generations_.empty()) physical_mutation_generations_.resize(0x20000);
++  return explicit_physical_readbacks_.Register(std::move(provider));
++}
++
++bool Memory::BeginPhysicalReadbackMutation(std::unique_lock<std::recursive_mutex>& lock,
++                                          uint32_t physical_address, uint32_t length) {
++  if (physical_mutation_generations_.empty()) return true;
++  if (!detail::PhysicalReadbackProviders::Range{physical_address, length}.valid()) return false;
++  const uint32_t first = physical_address >> 12;
++  const uint32_t end = uint32_t((uint64_t(physical_address) + length + 4095) >> 12);
++  const auto begin = physical_mutation_generations_.begin() + first;
++  const std::vector<uint64_t> snapshot(begin, physical_mutation_generations_.begin() + end);
++  if (!SynchronizeExplicitPhysicalReadback(lock, physical_address, length)) return false;
++  // Another allocator may have released/reused this exact address while the
++  // completion wait released the global lock. Never mutate its new owner.
++  if (!std::equal(snapshot.begin(), snapshot.end(), begin)) return false;
++  RecordPhysicalReadbackMutation(physical_address, length);
++  return true;
++}
++
++void Memory::RecordPhysicalReadbackMutation(uint32_t physical_address, uint32_t length) {
++  if (physical_mutation_generations_.empty()) return;
++  if (!detail::PhysicalReadbackProviders::Range{physical_address, length}.valid()) {
++    rex::FatalError("Invalid physical allocator mutation range");
++  }
++  const uint32_t first = physical_address >> 12;
++  const uint32_t end = uint32_t((uint64_t(physical_address) + length + 4095) >> 12);
++  for (uint32_t i = first; i < end; ++i) {
++    if (physical_mutation_generations_[i] == UINT64_MAX) {
++      rex::FatalError("Physical allocation generation exhausted");
++    }
++    ++physical_mutation_generations_[i];
++  }
++}
++
++bool Memory::SynchronizeExplicitPhysicalReadback(
++    std::unique_lock<std::recursive_mutex>& lock, uint32_t physical_address, uint32_t length) {
++  return explicit_physical_readbacks_.Synchronize(lock, {physical_address, length});
++}
++
++bool Memory::CancelExplicitPhysicalReadbacksAfterDeviceStopped() {
++  return explicit_physical_readbacks_.CancelAfterDeviceStopped();
++}
++
+ Memory::~Memory() {
+   assert_true(active_memory_ == this);
+   active_memory_ = nullptr;
++
++  // Runtime teardown must stop GPU/access threads before destroying memory.
++  explicit_physical_readbacks_.CancelAfterDeviceStopped();
+ 
+   // Uninstall the MMIO handler, as we won't be able to service more requests.
+   mmio_handler_.reset();
+@@ -983,6 +1048,9 @@
+     // operation on a neighbour reaches this code constantly - clamp instead.
+     // Leaving the page read-only can only cause a spurious invalidation, which
+     // is safe; restoring write access loses invalidations, which is not.
++    if (IsHostPageDataProviderWatched(host_page_number)) {
++      return rex::memory::PageAccess::kNoAccess;
++    }
+     if (access == rex::memory::PageAccess::kReadWrite && IsHostPageWriteWatched(host_page_number)) {
+       access = rex::memory::PageAccess::kReadOnly;
+     }
+@@ -1903,7 +1971,7 @@
+ 
+   // Global critical region before heap_mutex_ - see
+   // AcquireHostPageReconcileLock for why the order matters.
+-  auto global_lock = AcquireHostPageReconcileLock();
++  auto global_lock = global_critical_region_.Acquire();
+   std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
+ 
+   // Allocate from parent heap (gets our physical address in 0-512mb).
+@@ -1924,6 +1992,7 @@
+     // TODO(benvanik): don't leak parent memory.
+     return false;
+   }
++  memory_->RecordPhysicalReadbackMutation(parent_address, size);
+   *out_address = address;
+   return true;
+ }
+@@ -1936,7 +2005,13 @@
+ 
+   // Global critical region before heap_mutex_ - see
+   // AcquireHostPageReconcileLock for why the order matters.
+-  auto global_lock = AcquireHostPageReconcileLock();
++  auto global_lock = global_critical_region_.Acquire();
++  if (!memory_->BeginPhysicalReadbackMutation(global_lock, GetPhysicalAddress(base_address), size)) {
++    return false;
++  }
++  // Fixed commit can replace host protection. Retire this alias's old watch
++  // first, otherwise a subsequent provider would see its bit and skip arming.
++  TriggerCallbacksLocked(global_lock, base_address, size, true, true);
+   std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
+ 
+   // Allocate from parent heap (gets our physical address in 0-512mb).
+@@ -1972,7 +2047,7 @@
+ 
+   // Global critical region before heap_mutex_ - see
+   // AcquireHostPageReconcileLock for why the order matters.
+-  auto global_lock = AcquireHostPageReconcileLock();
++  auto global_lock = global_critical_region_.Acquire();
+   std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
+ 
+   // Allocate from parent heap (gets our physical address in 0-512mb).
+@@ -1995,6 +2070,7 @@
+     // TODO(benvanik): don't leak parent memory.
+     return false;
+   }
++  memory_->RecordPhysicalReadbackMutation(parent_address, size);
+   *out_address = address;
+   return true;
+ }
+@@ -2008,39 +2084,37 @@
+   auto global_lock = global_critical_region_.Acquire();
+ 
+   uint32_t parent_address = GetPhysicalAddress(address);
++  // Include partially overlapping guest pages, just as BaseHeap::Decommit does.
++  const uint32_t aligned_address = address & ~(page_size_ - 1);
++  const uint64_t aligned_end = (uint64_t(address) + size + page_size_ - 1) & ~uint64_t(page_size_ - 1);
++  if (aligned_end > uint64_t(heap_base_) + heap_size_ || aligned_end <= aligned_address ||
++      !memory_->BeginPhysicalReadbackMutation(global_lock, GetPhysicalAddress(aligned_address),
++                                              uint32_t(aligned_end - aligned_address))) return false;
++  TriggerCallbacksLocked(global_lock, aligned_address, uint32_t(aligned_end - aligned_address), true, true);
+   if (!parent_heap_->Decommit(parent_address, size)) {
+     REXSYS_ERROR("PhysicalHeap::Decommit failed due to parent heap failure");
+     return false;
+   }
+ 
+-  // Not caring about the contents anymore.
+-  TriggerCallbacks(std::move(global_lock), address, size, true, true);
+-
+   return BaseHeap::Decommit(address, size);
+ }
+ 
+ bool PhysicalHeap::Release(uint32_t base_address, uint32_t* out_region_size) {
+   auto global_lock = global_critical_region_.Acquire();
+ 
++  uint32_t region_size = 0;
++  if (!QuerySize(base_address, &region_size) || !region_size ||
++      !memory_->BeginPhysicalReadbackMutation(global_lock, GetPhysicalAddress(base_address), region_size)) {
++    return false;
++  }
++  // Providers and invalidations run while the old allocation is still mapped.
++  TriggerCallbacksLocked(global_lock, base_address, region_size, true, true);
+   uint32_t parent_base_address = GetPhysicalAddress(base_address);
+   if (!parent_heap_->Release(parent_base_address, out_region_size)) {
+     REXSYS_ERROR("PhysicalHeap::Release failed due to parent heap failure");
+     return false;
+   }
+ 
+-  // Must invalidate here because the range being released may be reused in
+-  // another mapping of physical memory - but callback flags are set in each
+-  // heap separately (https://github.com/xenia-project/xenia/issues/1559 -
+-  // dynamic vertices in 4D5307F2 start screen and menu allocated in 0xA0000000
+-  // at addresses that overlap intro video textures in 0xE0000000, with the
+-  // state of the allocator as of February 24th, 2020). If memory is invalidated
+-  // in Alloc instead, Alloc won't be aware of callbacks enabled in other heaps,
+-  // thus callback handlers will keep considering this range valid forever.
+-  uint32_t region_size;
+-  if (QuerySize(base_address, &region_size)) {
+-    TriggerCallbacks(std::move(global_lock), base_address, region_size, true, true);
+-  }
+-
+   return BaseHeap::Release(base_address, out_region_size);
+ }
+ 
+@@ -2048,10 +2122,20 @@
+                            uint32_t* old_protect) {
+   auto global_lock = global_critical_region_.Acquire();
+ 
++  const uint32_t aligned_address = address & ~(page_size_ - 1);
++  const uint64_t aligned_end = (uint64_t(address) + size + page_size_ - 1) & ~uint64_t(page_size_ - 1);
++  if (aligned_end > uint64_t(heap_base_) + heap_size_ || aligned_end <= aligned_address ||
++      !memory_->BeginPhysicalReadbackMutation(global_lock, GetPhysicalAddress(aligned_address),
++                                              uint32_t(aligned_end - aligned_address))) return false;
++
++  // Even a read-only protection change replaces no-access host protection.
++  TriggerCallbacksLocked(global_lock, aligned_address, uint32_t(aligned_end - aligned_address),
++                         false, true);
++
+   // Only invalidate if making writable again, for simplicity - not when simply
+   // marking some range as immutable, for instance.
+   if (protect & memory::kMemoryProtectWrite) {
+-    TriggerCallbacks(std::move(global_lock), address, size, true, true, false);
++    TriggerCallbacksLocked(global_lock, address, size, true, true, false);
+   }
+ 
+   if (!parent_heap_->Protect(GetPhysicalAddress(address), size, protect, old_protect)) {
+@@ -2065,8 +2149,7 @@
+ void PhysicalHeap::EnableAccessCallbacks(uint32_t physical_address, uint32_t length,
+                                          bool enable_invalidation_notifications,
+                                          bool enable_data_providers) {
+-  // TODO(Triang3l): Implement data providers.
+-  assert_false(enable_data_providers);
++  // Providers are registered explicitly before arming read protection.
+   if (!enable_invalidation_notifications && !enable_data_providers) {
+     return;
+   }
+@@ -2141,14 +2224,17 @@
+     // enable invalidation notifications for read-only pages for the same
+     // reason.
+     if (current_page_access != rex::memory::PageAccess::kNoAccess) {
+-      // TODO(Triang3l): Enable data providers.
++      if (enable_data_providers && !(page_flags_block.data_provider_pending & page_flags_bit)) {
++        page_flags_block.data_provider_pending |= page_flags_bit;
++        protect_system_page = true;
++      }
+       if (enable_invalidation_notifications) {
+         if (current_page_access != rex::memory::PageAccess::kReadOnly &&
+             (page_flags_block.notify_on_invalidation & page_flags_bit) == 0) {
+-          // TODO(Triang3l): Check if data providers are already enabled.
+-          // If data providers are already enabled for the page, it has even
+-          // stricter protection.
+-          protect_system_page = true;
++          // Never weaken a read provider's existing no-access protection.
++          if (!(page_flags_block.data_provider_pending & page_flags_bit)) {
++            protect_system_page = true;
++          }
+           page_flags_block.notify_on_invalidation |= page_flags_bit;
+         }
+       }
+@@ -2159,28 +2245,33 @@
+       }
+     } else {
+       if (protect_system_page_first != UINT32_MAX) {
+-        rex::memory::Protect(protect_base + protect_system_page_first * system_page_size_,
+-                             (i - protect_system_page_first) * system_page_size_, protect_access);
++        if (!rex::memory::Protect(protect_base + protect_system_page_first * system_page_size_,
++                                 (i - protect_system_page_first) * system_page_size_, protect_access)) {
++          rex::FatalError("Unable to protect a physical memory callback range");
++        }
+         protect_system_page_first = UINT32_MAX;
+       }
+     }
+   }
+   if (protect_system_page_first != UINT32_MAX) {
+-    rex::memory::Protect(protect_base + protect_system_page_first * system_page_size_,
+-                         (system_page_last + 1 - protect_system_page_first) * system_page_size_,
+-                         protect_access);
++    if (!rex::memory::Protect(protect_base + protect_system_page_first * system_page_size_,
++                             (system_page_last + 1 - protect_system_page_first) * system_page_size_,
++                             protect_access)) {
++      rex::FatalError("Unable to protect a physical memory callback range");
++    }
+   }
+ }
+ 
+ bool PhysicalHeap::TriggerCallbacks(std::unique_lock<std::recursive_mutex> global_lock_locked_once,
+                                     uint32_t virtual_address, uint32_t length, bool is_write,
+                                     bool unwatch_exact_range, bool unprotect) {
+-  // TODO(Triang3l): Support read watches.
+-  assert_true(is_write);
+-  if (!is_write) {
+-    return false;
+-  }
+-
++  return TriggerCallbacksLocked(global_lock_locked_once, virtual_address, length, is_write,
++                                unwatch_exact_range, unprotect);
++}
++
++bool PhysicalHeap::TriggerCallbacksLocked(std::unique_lock<std::recursive_mutex>& global_lock_locked_once,
++                                          uint32_t virtual_address, uint32_t length, bool is_write,
++                                          bool unwatch_exact_range, bool unprotect) {
+   if (virtual_address < heap_base_) {
+     if (heap_base_ - virtual_address >= length) {
+       return false;
+@@ -2205,6 +2296,43 @@
+   uint32_t block_index_first = system_page_first >> 6;
+   uint32_t block_index_last = system_page_last >> 6;
+ 
++  // Read providers precede invalidation and release the global lock only while
++  // awaiting completion. Each alias retains its own watch until restored here.
++  bool provided = false;
++  for (uint32_t i = system_page_first; i <= system_page_last; ++i) {
++    if (IsHostPageDataProviderWatched(i)) { provided = true; break; }
++  }
++  if (provided) {
++    const uint32_t relative_first =
++        rex::sat_sub(system_page_first * system_page_size_, host_address_offset());
++    const uint32_t relative_end = std::min(
++        rex::sat_sub((system_page_last + 1) * system_page_size_, host_address_offset()), heap_size_);
++    if (!memory_->SynchronizeExplicitPhysicalReadback(global_lock_locked_once,
++            GetPhysicalAddress(heap_base_) + relative_first, relative_end - relative_first)) {
++      // Do not enter AccessViolationCallback's stale-protection recovery path.
++      rex::FatalError("Physical readback completion/publication failed");
++    }
++    for (uint32_t i = system_page_first; i <= system_page_last; ++i) {
++      if (!IsHostPageDataProviderWatched(i)) continue;
++      const uint32_t relative_low = rex::sat_sub(i * system_page_size_, host_address_offset());
++      const uint32_t relative_high = std::min(
++          rex::sat_sub((i + 1) * system_page_size_, host_address_offset()), heap_size_) - 1;
++      auto access = QueryRangeAccess(heap_base_ + relative_low, heap_base_ + relative_high);
++      if (access == rex::memory::PageAccess::kNoAccess) {
++        rex::FatalError("Physical readback allocation changed during completion");
++      }
++      if (access == rex::memory::PageAccess::kReadWrite && IsHostPageWriteWatched(i)) {
++        access = rex::memory::PageAccess::kReadOnly;
++      }
++      if (!rex::memory::Protect(membase_ + heap_base_ + i * system_page_size_,
++                               system_page_size_, access)) {
++        rex::FatalError("Unable to restore physical readback page access");
++      }
++      system_page_flags_[i >> 6].data_provider_pending &= ~(uint64_t(1) << (i & 63));
++    }
++  }
++  if (!is_write) return provided;
++
+   // Check if watching any page, whether need to call the callback at all.
+   bool any_watched = false;
+   for (uint32_t i = block_index_first; i <= block_index_last; ++i) {
+@@ -2221,7 +2349,7 @@
+     }
+   }
+   if (!any_watched) {
+-    return false;
++    return provided;
+   }
+ 
+   // Trigger callbacks.
+@@ -2286,6 +2414,9 @@
+       // Check if need to allow writing to this page.
+       bool unprotect_page =
+           (system_page_flags_[i >> 6].notify_on_invalidation & (uint64_t(1) << (i & 63))) != 0;
++      if (unprotect_page && IsHostPageDataProviderWatched(i)) {
++        unprotect_page = false;
++      }
+       if (unprotect_page) {
+         uint32_t guest_page_number =
+             rex::sat_sub(i * system_page_size_, host_address_offset()) >> page_size_shift_;
+@@ -2323,7 +2454,8 @@
+     if (i == block_index_last && (system_page_last & 63) != 63) {
+       mask |= ~((uint64_t(1) << ((system_page_last & 63) + 1)) - 1);
+     }
+-    system_page_flags_[i].notify_on_invalidation &= mask;
++    system_page_flags_[i].notify_on_invalidation &=
++        mask | system_page_flags_[i].data_provider_pending;
+   }
+ 
+   return true;
+@@ -2345,6 +2477,12 @@
+   }
+   return (system_page_flags_[host_page_number >> 6].notify_on_invalidation &
+           (uint64_t(1) << (host_page_number & 63))) != 0;
++}
++
++bool PhysicalHeap::IsHostPageDataProviderWatched(uint32_t host_page_number) const {
++  return host_page_number < system_page_count_ &&
++      (system_page_flags_[host_page_number >> 6].data_provider_pending &
++       (uint64_t(1) << (host_page_number & 63))) != 0;
+ }
+ 
+ uint32_t PhysicalHeap::GetPhysicalAddress(uint32_t address) const {
+--- /dev/null
++++ b/include/rex/system/physical_readback_providers.h
+@@ -0,0 +1,88 @@
++#pragma once
++// Two-phase physical-memory provider registry. All operations use the same
++// memory-system lock; Synchronize requires that lock held exactly once.
++// Explicit access boundary only: does not install page-fault interception.
++#include <algorithm>
++#include <cstdint>
++#include <functional>
++#include <list>
++#include <iterator>
++#include <memory>
++#include <mutex>
++#include <utility>
++#include <vector>
++namespace rex::memory::detail {
++class PhysicalReadbackProviders {
++ public:
++  struct Range {
++    uint32_t address, bytes;
++    bool valid() const { return bytes && uint64_t(address)+bytes<=0x20000000ULL; }
++    bool overlaps(Range r) const {
++      return uint64_t(address)<uint64_t(r.address)+r.bytes &&
++             uint64_t(r.address)<uint64_t(address)+bytes;
++    }
++  };
++  struct Provider {
++    Range range;
++    // Await may run concurrently for the same retained provider; use an
++    // idempotent completion future. Publish runs once under the memory lock.
++    std::function<bool()> await;
++    std::function<bool()> publish;
++  };
++  explicit PhysicalReadbackProviders(std::recursive_mutex& mutex) : mutex_(mutex) {}
++  PhysicalReadbackProviders(const PhysicalReadbackProviders&) = delete;
++  PhysicalReadbackProviders& operator=(const PhysicalReadbackProviders&) = delete;
++  bool Register(Provider provider) {
++    std::lock_guard<std::recursive_mutex> lock(mutex_);
++    if(failed_ || publishing_ || !provider.range.valid() || !provider.await || !provider.publish ||
++       providers_.size()>=64) return false;
++    try { providers_.push_back(std::make_shared<Provider>(std::move(provider))); }
++    catch(...) { failed_=true; return false; }
++    return true;
++  }
++  bool Synchronize(std::unique_lock<std::recursive_mutex>& lock, Range range) {
++    if(!lock.owns_lock() || lock.mutex()!=&mutex_ || !range.valid()) return false;
++    if(publishing_ || failed_) return false;
++    for (;;) {
++      auto end=providers_.begin();
++      for(auto it=providers_.begin();it!=providers_.end();++it)
++        if((*it)->range.overlaps(range)) end=std::next(it);
++      if(end==providers_.begin()) return true;
++      std::vector<std::shared_ptr<Provider>> pending(providers_.begin(),end);
++      bool ready=true;
++      lock.unlock();
++      try { for(const auto& p:pending) if(!p->await()) { ready=false; break; } }
++      catch(...) { ready=false; }
++      lock.lock();
++      if(!ready) { failed_=true; return false; }
++      if(failed_) return false;
++      // Another CPU may have completed and removed these providers while this
++      // thread was waiting. Retained snapshots must never publish them twice.
++      publishing_=true;
++      for(const auto& p:pending) {
++        auto it=std::find(providers_.begin(),providers_.end(),p);
++        if(it==providers_.end()) continue;
++        bool ok=false;
++        try { ok=p->publish(); } catch(...) {}
++        if(!ok) { failed_=true; publishing_=false; return false; }
++        providers_.erase(it);
++      }
++      publishing_=false;
++      // Registration while unlocked may have added a new overlapping result.
++      // Recheck before reporting the CPU range ready.
++    }
++  }
++  bool CancelAfterDeviceStopped() {
++    std::lock_guard<std::recursive_mutex> lock(mutex_);
++    if(publishing_) return false;
++    failed_=true; providers_.clear(); return true;
++  }
++  size_t pending() const {
++    std::lock_guard<std::recursive_mutex> lock(mutex_); return providers_.size();
++  }
++ private:
++  std::recursive_mutex& mutex_;
++  std::list<std::shared_ptr<Provider>> providers_;
++  bool publishing_=false, failed_=false;
++};
++} // namespace rex::memory::detail

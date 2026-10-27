@@ -4,6 +4,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -15,6 +16,26 @@ inline size_t Utf8BufferBytesForUtf16Units(size_t units) {
   if(units>(std::numeric_limits<size_t>::max()-1)/3)
     throw std::length_error("UTF-16 input capacity overflows UTF-8 buffer size");
   return units*3+1;
+}
+
+// Both pointers refer to guest UTF-16BE bytes, including when they alias.
+// A guest-to-guest copy must not apply the host-to-guest byte swap again.
+inline size_t CopyGuestUtf16Be(void* destination, const void* source, size_t capacity) {
+  if (!destination || !capacity) return 0;
+  auto* dest = static_cast<uint8_t*>(destination);
+  const auto* src = static_cast<const uint8_t*>(source);
+  size_t count = 0;
+  if (src) {
+    while (count < capacity - 1 && (src[count * 2] || src[count * 2 + 1])) ++count;
+    if (count) {
+      const uint16_t last = (uint16_t(src[(count - 1) * 2]) << 8) | src[(count - 1) * 2 + 1];
+      if (last >= 0xd800 && last <= 0xdbff) --count;
+    }
+    std::memmove(dest, src, count * 2);
+  }
+  dest[count * 2] = 0;
+  dest[count * 2 + 1] = 0;
+  return count;
 }
 
 inline std::u16string DecodeUtf8(std::string_view text, size_t max_units) {
