@@ -15,7 +15,7 @@ This is a native Linux build through ReXGlue, not fully recovered game source.
 - Profiles, backups/import/restore, settings and launcher workflows implemented.
   Preview is read-only; refresh retains edits; graphics reset keeps launcher edits unsaved.
 - Texture-cache budgets, retention and bounded archive read-ahead integrated.
-- Russian window title fixed; FPS limits 30/60/120 and more wide-view presets available.
+- Russian window title fixed; FPS limits 30/60/120 and 36 resolution presets with group filters available.
 - CAS/FSR1 integrated without effect tests; FSR2/3 removed from the interface.
 - Current package, launcher workflows and startup checks pass; original config,
   saves and personal settings are preserved.

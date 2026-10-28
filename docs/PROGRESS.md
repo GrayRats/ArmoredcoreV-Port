@@ -1,5 +1,11 @@
 # ACV — verified milestones and limits
 
+2026-10-28: launcher guidance refined: executable instructions/full bundled path
+are always visible,36 resolution presets plus Auto have aspect-group filters,
+and10-bit selection instructions/actual-format refresh are visible on Colour.
+Effect choices remain bilinear/CAS/FSR1; no effect tests or other-resolution game runs.
+[Details](LAUNCHER_PACKAGE.md#visible-guidance-and-resolution-groups--2026-10-28).
+
 2026-10-28: game window renamed to `ARMORE CORE V [Rexglue]`; internal
 app/storage identity retained. Host build and actual X11 title/startup35s PASS;
 release1.0 updated, runtime/GPU/FFX and protected data preserved.

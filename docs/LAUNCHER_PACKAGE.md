@@ -510,3 +510,30 @@ profile-lock lifecycle retained. This is title/startup verification, not gamepla
 The same tested ELF is installed in release1.0; runtime/GPU/FFX and protected
 config/save/settings hashes are preserved. Previous ELF/metadata have verified
 backups. [Checkpoint](../logs/acv-game-window-title-20261028/checkpoint.json).
+
+## Visible guidance and resolution groups — 2026-10-28
+
+Repeated user requests are addressed with always-visible help rather than only
+row hover text. The launch page explains acv_linux_probe, the bundled-game button
+and file picker, and displays the complete bundled executable path.
+
+The shared list now has36 explicit presets plus Auto:8 for16:9,11 for16:10,
+13 UltraWide and4 for32:9. Added examples include1920×810,2880×1200,
+3200×1350,3840×1620,6880×2880,7680×3240 and2560×720. Aspect-group filtering
+keeps Auto and the current preset visible; filtering does not change settings.
+Custom resolution remains available. Existing hooks support explicit aspect1.2–4.0;
+monitor fullscreen support is separate. Other game resolutions were not launched.
+
+The Colour page now always explains how to enable the experimental10-bit request,
+its SDR nature and explicit8-bit fallback. The existing selection disables
+incompatible8-bit dithering. A button refreshes the actual last-session format.
+True10-bit hardware output remains unverified. Effects offered by the shared
+schema remain exactly bilinear/CAS/FSR1; CAS/FSR effects were not tested.
+FPS remains30/60/120, default60. Accepted game ELF/runtime/GPU/FFX are preserved.
+
+Build, three focused backend checks and actual App regression pass, alongside
+exact-package six-page rendering with Cyrillic and nonempty draw data. Package
+hash/dependency verification and compact-document link checks pass.
+[Checkpoint](../logs/acv-launcher-guidance-20261028/checkpoint.json),
+[publication/rollback hashes](../logs/acv-launcher-guidance-20261028/publication.json).
+No game session or CAS/FSR effect test was needed for these interface changes.

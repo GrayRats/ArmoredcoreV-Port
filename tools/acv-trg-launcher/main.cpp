@@ -237,7 +237,9 @@ struct App {
         ui.Help("В журнале нет новых записей более минуты. Возможна долгая загрузка или зависание.");
       if(ui.ButtonRow("Остановить игру","Штатное завершение процесса с сохранением профиля","Остановить"))game.Stop();
     }
-    ui.InputText("Исполняемый файл","Выберите acv_linux_probe из папки bin/game этого пакета. Это Linux-программа игры, не default.xex, ISO или start.sh. Для обычного запуска нажмите «Игра из этого пакета».","launcher.build");
+    ui.InputText("Исполняемый файл","Путь к выбранной Linux-сборке","launcher.build");
+    ui.Help("Исполняемый файл — программа acv_linux_probe из папки bin/game. Нажмите «Игра из этого пакета», чтобы выбрать комплектную сборку, или «Обзор…» для другой Linux-сборки.");
+    ui.Help(("Файл комплектной игры: "+snapshot.at("bundled_build").get<std::string>()).c_str());
     if(ui.ButtonRow("Выбор игры","Исполняемый файл Linux","Обзор…")){auto path=trg::BrowseForFile("Выберите исполняемый файл игры");if(!path.empty())settings["launcher"]["build"]=path;}
     if(ui.ButtonRow("Игра из этого пакета","Вернуть путь к комплектной сборке","Выбрать"))settings["launcher"]["build"]=snapshot.at("bundled_build");
     ui.Choice("Оконная система","X11 проверен; Wayland зависит от сборки","launcher.video_driver","x11",{{"x11","X11"},{"wayland","Wayland"},{"auto","Авто"}});
@@ -318,9 +320,16 @@ struct App {
   }
   void ScreenPage(trg::Ui& ui){
     Choice(ui,"window_mode","Режим экрана");Choice(ui,"monitor","Монитор","Индекс дисплея игрового backend");
+    ui.Combo("Группа разрешений","Фильтр списка; текущее разрешение сохраняется","ui.resolution_group","all",{{"all","Все"},{"16:9","16:9"},{"16:10","16:10"},{"UltraWide","UltraWide"},{"32:9","32:9"}});
     std::vector<trg::Option> resolutions;
-    for(const auto& mode:snapshot.at("resolution_presets"))resolutions.push_back({mode.at(0),mode.at(1)});
+    auto group=store.Get("ui.resolution_group","all");
+    auto selected=store.Get("graphics.resolution","auto");
+    for(const auto& mode:snapshot.at("resolution_presets")){
+      std::string value=mode.at(0),label=mode.at(1);
+      if(group=="all" || value=="auto" || value==selected || label.find("("+group+")")!=std::string::npos)resolutions.push_back({value,label});
+    }
     ui.Combo("Разрешение","Размер вывода; в полном экране выбирайте режим вашего монитора. Расширенный обзор вычисляется по отношению ширины к высоте.","graphics.resolution","auto",resolutions);
+    ui.Help("Для расширенного обзора выберите 16:10, UltraWide или 32:9 и включите «Расширенный обзор». Своё разрешение тоже поддерживается при отношении сторон от 1.2 до 4.0; полноэкранный режим должен поддерживаться монитором.");
     ui.InputText("Своё разрешение","Формат: 2560x1080; Авто задаётся значением auto","graphics.resolution");
     Choice(ui,"render_scale","Масштаб рендера");Choice(ui,"vsync","VSync");Choice(ui,"fps_limit","Лимит FPS","30/60/120 — потолок подачи кадров, а не гарантированная частота. Для 120 может потребоваться выключить VSync; темп игры выше 60 пока не проверен.");
     Choice(ui,"wide_view","Расширенный обзор (эксперимент)","Поддерживает 16:10, UltraWide и 32:9; также своё отношение сторон от 1.2 до 4.0. Нужны явное разрешение и экспериментальные настройки. 16:9 сохраняет исходный обзор.");
@@ -343,9 +352,11 @@ struct App {
     }
   }
   void ColorPage(trg::Ui& ui){
+    ui.Help("10 бит — запрос SDR-формата. Для выбора включите «Экспериментальные настройки» на странице «Запуск». При отсутствии поддержки игра применит 8 бит и покажет фактический результат ниже.");
     Choice(ui,"color_encoding","Кодирование цвета");
     Choice(ui,"color_depth","Глубина цвета","10 бит — экспериментальный запрос SDR, не HDR. Нужна поддержка поверхности и экрана; иначе игра явно вернётся к 8 бит. Выбор 10 бит отключает 8-битный дизеринг.");
     ImGui::BeginDisabled(settings["graphics"].value("color_depth",8)==10);Choice(ui,"dither","Дизеринг");ImGui::EndDisabled();
+    if(ui.ButtonRow("Фактический формат","Прочитать результат последней игровой сессии","Обновить"))Submit(Job::Last,Cli({"last-run"}));
     const auto& display=last.is_object() && last.contains("applied")?last:snapshot.at("display_info");
     if(display.is_object() && display.contains("applied")){
       const auto& applied=display.at("applied");
