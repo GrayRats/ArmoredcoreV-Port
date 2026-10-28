@@ -537,3 +537,28 @@ hash/dependency verification and compact-document link checks pass.
 [Checkpoint](../logs/acv-launcher-guidance-20261028/checkpoint.json),
 [publication/rollback hashes](../logs/acv-launcher-guidance-20261028/publication.json).
 No game session or CAS/FSR effect test was needed for these interface changes.
+
+## Resolution picker ID conflict — 2026-10-28
+
+The preset and last-session display-mode combos both bind `graphics.resolution`.
+TRG hashes the binding key plus `##combo`. With all screen options selectable,
+no unavailable-options section ends the table, and Ui::Help also leaves it open:
+the two combos had the same table/key/widget ID. Default/nonexperimental smoke
+runs masked this by creating extra table boundaries.
+
+Reported modes now have an explicit ID scope; tables end before scope push/pop.
+Both controls still edit the same resolution setting. Full-width launch/screen
+help also explicitly ends the preceding table. The warning stays enabled.
+
+Actual ScreenPage regression uses accepted-runtime capabilities, all advanced
+screen options selectable, explicit2560×1080 and reported display modes. It
+queries ImGui's actual HoveredIdPreviousFrameItemCount: the old source reproduces
+2 (`0a8c13fd-ff4d-4ac1-b366-68231a1906dc`), while the fixed test requires1.
+This is headless UI rendering, not a game-resolution or effect test.
+
+Fixed actual-page regression passes with1 matching item per ID
+(`2b597497-8fb0-4f53-8691-4c8eebbf7b70`), including a check that the conflict
+warning remains enabled. Updated release1.0 launcher only; game artifacts unchanged.
+User's live launcher/game processes were not stopped. Existing launcher instances
+need a restart to use the replacement binary.
+[Checkpoint and rollback hashes](../logs/acv-launcher-id-conflict-20261028/checkpoint.json).

@@ -238,6 +238,7 @@ struct App {
       if(ui.ButtonRow("Остановить игру","Штатное завершение процесса с сохранением профиля","Остановить"))game.Stop();
     }
     ui.InputText("Исполняемый файл","Путь к выбранной Linux-сборке","launcher.build");
+    ui.EndRows();
     ui.Help("Исполняемый файл — программа acv_linux_probe из папки bin/game. Нажмите «Игра из этого пакета», чтобы выбрать комплектную сборку, или «Обзор…» для другой Linux-сборки.");
     ui.Help(("Файл комплектной игры: "+snapshot.at("bundled_build").get<std::string>()).c_str());
     if(ui.ButtonRow("Выбор игры","Исполняемый файл Linux","Обзор…")){auto path=trg::BrowseForFile("Выберите исполняемый файл игры");if(!path.empty())settings["launcher"]["build"]=path;}
@@ -329,10 +330,12 @@ struct App {
       if(group=="all" || value=="auto" || value==selected || label.find("("+group+")")!=std::string::npos)resolutions.push_back({value,label});
     }
     ui.Combo("Разрешение","Размер вывода; в полном экране выбирайте режим вашего монитора. Расширенный обзор вычисляется по отношению ширины к высоте.","graphics.resolution","auto",resolutions);
+    ui.EndRows();
     ui.Help("Для расширенного обзора выберите 16:10, UltraWide или 32:9 и включите «Расширенный обзор». Своё разрешение тоже поддерживается при отношении сторон от 1.2 до 4.0; полноэкранный режим должен поддерживаться монитором.");
     ui.InputText("Своё разрешение","Формат: 2560x1080; Авто задаётся значением auto","graphics.resolution");
     Choice(ui,"render_scale","Масштаб рендера");Choice(ui,"vsync","VSync");Choice(ui,"fps_limit","Лимит FPS","30/60/120 — потолок подачи кадров, а не гарантированная частота. Для 120 может потребоваться выключить VSync; темп игры выше 60 пока не проверен.");
     Choice(ui,"wide_view","Расширенный обзор (эксперимент)","Поддерживает 16:10, UltraWide и 32:9; также своё отношение сторон от 1.2 до 4.0. Нужны явное разрешение и экспериментальные настройки. 16:9 сохраняет исходный обзор.");
+    ui.EndRows();
     ui.Help("Расширенный обзор согласует перспективу и отсечение по краям; HUD сохраняет центральную область. Выберите явное разрешение, например 2560x1080.");
     const Json display=last.is_object() && last.contains("monitors")?last:snapshot.value("display_info",Json::object());
     if(display.is_object() && display.contains("display_modes") && display["display_modes"].is_array()){
@@ -343,7 +346,13 @@ struct App {
       }
       std::vector<trg::Option> modes;
       for(const auto& [value,label]:seen)modes.push_back({value,label});
-      if(!modes.empty())ui.Combo("Режимы из последнего запуска","Данные игрового backend; можно также ввести размер вручную","graphics.resolution","auto",modes);
+      if(!modes.empty()){
+        // Both pickers bind graphics.resolution; give the reported modes their own ID scope.
+        // Tables push IDs too, so finish each table before pushing/popping our scope.
+        ui.EndRows();ImGui::PushID("screen.reported_display_modes");
+        ui.Combo("Режимы из последнего запуска","Данные игрового backend; можно также ввести размер вручную","graphics.resolution","auto",modes);
+        ui.EndRows();ImGui::PopID();
+      }
     }
     if(display.is_object() && display.contains("monitors"))for(const auto& m:display["monitors"]){
       std::string label="Монитор "+std::to_string(m.value("index",0));

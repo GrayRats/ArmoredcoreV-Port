@@ -1,5 +1,10 @@
 # ACV — verified milestones and limits
 
+2026-10-28: isolated the two resolution selectors' ImGui IDs on Screen;
+Ui::Help did not end their shared table. Actual ScreenPage baseline reproduces
+2 items per ID with all advanced controls available; fixed regression passes with1.
+[Details](LAUNCHER_PACKAGE.md#resolution-picker-id-conflict--2026-10-28).
+
 2026-10-28: launcher guidance refined: executable instructions/full bundled path
 are always visible,36 resolution presets plus Auto have aspect-group filters,
 and10-bit selection instructions/actual-format refresh are visible on Colour.
