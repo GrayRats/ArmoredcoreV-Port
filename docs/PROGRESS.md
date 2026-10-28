@@ -1,5 +1,10 @@
 # ACV — verified milestones and limits
 
+2026-10-28: game window renamed to `ARMORE CORE V [Rexglue]`; internal
+app/storage identity retained. Host build and actual X11 title/startup35s PASS;
+release1.0 updated, runtime/GPU/FFX and protected data preserved.
+[Checkpoint](../logs/acv-game-window-title-20261028/checkpoint.json).
+
 2026-10-28: launcher options updated in release1.0: Cyrillic X11 window title,
 executable guidance, frame caps30/60/120, shared resolution presets including32:9,
 10-bit request with dithering coordination and actual-session depth display;

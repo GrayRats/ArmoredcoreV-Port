@@ -5,7 +5,7 @@ The game session has no probe timeout; this test terminates only its own supervi
 import argparse,ctypes,hashlib,json,os,signal,subprocess,sys,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-ap=argparse.ArgumentParser();ap.add_argument('--root',type=Path,default=ROOT);ap.add_argument('--launcher',type=Path,required=True);ap.add_argument('--runtime',type=Path);ap.add_argument('--evidence',type=Path,required=True);ap.add_argument('--seconds',type=int,default=75);ap.add_argument('--fps-limit',type=int,choices=[30,60,120],default=60);a=ap.parse_args()
+ap=argparse.ArgumentParser();ap.add_argument('--root',type=Path,default=ROOT);ap.add_argument('--launcher',type=Path,required=True);ap.add_argument('--runtime',type=Path);ap.add_argument('--evidence',type=Path,required=True);ap.add_argument('--seconds',type=int,default=75);ap.add_argument('--fps-limit',type=int,choices=[30,60,120],default=60);ap.add_argument('--game-window-title');a=ap.parse_args()
 root=a.root.resolve();out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
 profiles=out/'profiles';state=out/'state'
 env=dict(os.environ,ACV_ROOT=str(root),ACV_PROFILES_ROOT=str(profiles),XDG_STATE_HOME=str(state),SDL_VIDEODRIVER='x11',TRG_LAUNCHER_AUTOPLAY='240')
@@ -58,6 +58,18 @@ with logpath.open('w') as log:
    if not missing:break
    assert time.monotonic()<map_deadline,('selected runtime mappings missing',missing)
    time.sleep(.05)
+  if a.game_window_title:
+   title_deadline=time.monotonic()+15
+   while True:
+    windows=subprocess.run(['xdotool','search','--onlyvisible','--pid',str(gamepid)],capture_output=True,text=True)
+    actual_title=None
+    if windows.returncode==0:
+     game_window=windows.stdout.splitlines()[0]
+     title=subprocess.run(['xdotool','getwindowname',game_window],capture_output=True,text=True)
+     if title.returncode==0:actual_title=title.stdout.strip()
+    if actual_title==a.game_window_title:break
+    assert time.monotonic()<title_deadline,(actual_title,a.game_window_title)
+    time.sleep(.05)
   maps=Path(f'/proc/{frontend.pid}/maps').read_text()
   assert 'libQt' not in maps and 'libicu' not in maps,'Qt/ICU mapped in TRG'
   window=subprocess.check_output(['xdotool','search','--onlyvisible','--pid',str(frontend.pid)],text=True).splitlines()[0]
@@ -113,7 +125,7 @@ with logpath.open('w') as log:
    latest=call(['last-run'])
    if latest.get('completed'):break
    time.sleep(.1)
-  result={'launch_environment':expected_env,'launcher_exit':frontend.returncode,'supervisor':supervisor,'game_pid':gamepid,'window':window,'session_unbounded':True,'second_writer_rejected':True,'game_survived_launcher':True,'lock_survived_launcher':True,'lock_released_after_game':True,'no_qt_icu':True,'last_run':latest,'scope':'frontend integration/startup only; no gameplay or visual acceptance'}
+  result={'game_window_title':a.game_window_title,'launch_environment':expected_env,'launcher_exit':frontend.returncode,'supervisor':supervisor,'game_pid':gamepid,'window':window,'session_unbounded':True,'second_writer_rejected':True,'game_survived_launcher':True,'lock_survived_launcher':True,'lock_released_after_game':True,'no_qt_icu':True,'last_run':latest,'scope':'frontend integration/startup only; no gameplay or visual acceptance'}
   (out/'verification.json').write_text(json.dumps(result,indent=2)+'\n')
   print(json.dumps(result,indent=2))
  finally:

@@ -498,3 +498,15 @@ Observed startup presentation was about29/60FPS respectively;120 is a configured
 ceiling, not evidence of120FPS gameplay. Tests requested2560×1080, desktop work
 area clamped the window to2560×1044. Bilinear only; no gameplay profiling or CAS/FSR.
 All186 manifest entries/dependencies verify (`0aeac84f-dd8e-41c2-85c2-bc8520c8078e`).
+
+## Game window title — 2026-10-28
+
+The game window now displays `ARMORE CORE V [Rexglue]` exactly as requested.
+Canonical host OnCreateDialogs/OnPostSetup hooks update the visible title while
+retaining internal app/config/storage name `acv_linux_probe`. Incremental host
+build passes; codegen writes0files. Actual X11 title assertion and35s frontend
+startup pass (`dca190cb-4ae8-4031-9b0f-1eb952b7901d`, child0/fatal0), with existing
+profile-lock lifecycle retained. This is title/startup verification, not gameplay.
+The same tested ELF is installed in release1.0; runtime/GPU/FFX and protected
+config/save/settings hashes are preserved. Previous ELF/metadata have verified
+backups. [Checkpoint](../logs/acv-game-window-title-20261028/checkpoint.json).

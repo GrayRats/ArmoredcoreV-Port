@@ -75,8 +75,8 @@
   },
   "runtime_artifacts": {
     "acv_linux_probe": {
-      "source": "tmp/acv-engine-offscreen-fix-r2/acv_linux_probe",
-      "sha256": "efa4756cf41e2dfd5d396e08caec02736be15ae5599d9c4d5f92069fc154f321"
+      "source": "tmp/acv-game-window-title-20261028/acv_linux_probe",
+      "sha256": "2fc173a9e81a60c5130da0501e47a7d4ce3df722780e348ee55f85d36788652b"
     },
     "librexruntime.so": {
       "source": "tmp/acv-engine-offscreen-fix-r2/librexruntime.so",
@@ -225,9 +225,31 @@
       },
       "reason": "Before user-confirmed native local frustum synchronization, 2026-10-28",
       "full_previous_record": "logs/acv-engine-offscreen-20261028/baseline-before.json"
+    },
+    {
+      "recorded_utc": "2026-10-28T18:16:37.679546+00:00",
+      "reason": "Game window display title only; previous accepted artifacts retained",
+      "runtime_artifacts": {
+        "acv_linux_probe": {
+          "source": "tmp/acv-engine-offscreen-fix-r2/acv_linux_probe",
+          "sha256": "efa4756cf41e2dfd5d396e08caec02736be15ae5599d9c4d5f92069fc154f321"
+        },
+        "librexruntime.so": {
+          "source": "tmp/acv-engine-offscreen-fix-r2/librexruntime.so",
+          "sha256": "544bdaae0e54c52fc10a60cacdf4a4973841a2ba02e2c9579a54f062fc6ad084"
+        },
+        "librexgpu-xenos.so": {
+          "source": "tmp/acv-engine-offscreen-fix-r2/librexgpu-xenos.so",
+          "sha256": "fe4550d59b4f1522e0794e19c659cc5dc016477e0fec8967b4caadfd17b248b6"
+        },
+        "libamd_fidelityfx_vk.so": {
+          "source": "tmp/acv-engine-offscreen-fix-r2/libamd_fidelityfx_vk.so",
+          "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
+        }
+      }
     }
   ],
-  "recorded_utc_host_update": "2026-10-28",
+  "recorded_utc_host_update": "2026-10-28T18:16:37.679546+00:00",
   "launch_environment": {
     "ACV_GENERAL_DEFERRED_READBACK": "1",
     "ACV_PARALLEL_READBACK_COPY": "2",
@@ -236,12 +258,18 @@
   "host_sources": {
     "scene_aspect_experiment.cpp": "60d3bdb793d6ec59d9396670bb5a507a779da14d606fde4f42f779827752b348",
     "gpu_poll_backoff.cpp": "7a8f706bdd6b1f144f3491568fccc6014d92ea20648d57545891cfc671d7946b",
-    "CMakeLists.linux-probe.txt": "708f0b6b6a837eac71f7144032273052680d29e44af259bc255924bb6a5eb51a"
+    "CMakeLists.linux-probe.txt": "708f0b6b6a837eac71f7144032273052680d29e44af259bc255924bb6a5eb51a",
+    "acv_linux_probe_app.h": "7c7b61ec81b4940fe9877b80ca40c5f547733328f472c40649a73482612f764e"
   },
   "acceptance": {
     "user_confirmation": "Да, помогло",
     "scope": "UltraWide native local-frustum synchronization; no new global FPS or all-mission acceptance",
     "checkpoint": "logs/acv-engine-offscreen-20261028/checkpoint.json"
   },
-  "artifact_source_checkpoint": "logs/acv-resource-streaming-20261027/checkpoint.json"
+  "artifact_source_checkpoint": "logs/acv-resource-streaming-20261027/checkpoint.json",
+  "game_window_title": {
+    "text": "ARMORE CORE V [Rexglue]",
+    "validation": "dca190cb-4ae8-4031-9b0f-1eb952b7901d",
+    "scope": "actual X11 game title and startup35s, no new gameplay acceptance"
+  }
 }

@@ -1,7 +1,7 @@
 # ACV — актуальная точка продолжения
 
 2026-10-28: интерфейс TRG обновлён в существующем ACV-Linux-release-1.0,
-patch `2026-10-28-launcher-options`. Русский заголовок X11 исправлен; добавлены
+patch `2026-10-28-game-title`. Окно игры: `ARMORE CORE V [Rexglue]`. Русский заголовок X11 исправлен; добавлены
 лимиты 30/60/120, дополнительные разрешения и фактический статус 10/8 бит; FSR2/3 убраны. Убраны пользовательские ссылки на PLAN;
 исправлены черновик настроек/preview, сброс графики и формы/копии профиля.
 [Изменения и проверки](LAUNCHER_PACKAGE.md#interface-polish--2026-10-28),
@@ -19,7 +19,7 @@ Actual retail sphere/SDK ASan/UBSan, FOV/HUD regression и build PASS.
 Финальный160с20261028T012252054423Z child0/fatal0; на обоих потоках все eligible
 patched (49467/18449 в последнем отчёте). Диагностика после90с.
 
-ELFefa4756c включён в существующий ACV-Linux-release-1.0; manifest186files и
+ELF2fc173a9 (изменён только заголовок окна; прежний efa4756c сохранён) включён в существующий ACV-Linux-release-1.0; manifest186files и
 baseline обновлены. Прежний ELF/metadata с SHA в logs/acv-engine-offscreen-20261028/release-before.
 Runtime544bdaae/GPUfe4550d5/FFX0933159a, general1/parallel-copy2/backoff0.
 Release frontend35с PASS: local libraries/environment, child0/fatal0, lock lifecycle.

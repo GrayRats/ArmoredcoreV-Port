@@ -43,7 +43,13 @@ class AcvLinuxProbeApp : public rex::ReXApp {
     AcvRegisterRetailLeaves(*runtime()->function_dispatcher());
   }
 
+  void OnCreateDialogs(rex::ui::ImGuiDrawer*) override {
+    if (window()) window()->SetTitle("ARMORE CORE V [Rexglue]");
+  }
+
   void OnPostSetup() override {
+    // Preserve the internal app/config name; only the visible title changes.
+    if (window()) window()->SetTitle("ARMORE CORE V [Rexglue]");
     // dlc_sound: serves the game's own sound banks, stored in dvdbnd under path hashes. The directory is
     // built by tools/build_dlc_sound_dir.py and passed by the probe (ACV_DLC_SOUND_ROOT). Read-only mount.
     if (const char* sound_root = std::getenv("ACV_DLC_SOUND_ROOT"); sound_root && *sound_root) {
