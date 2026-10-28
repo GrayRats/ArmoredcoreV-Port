@@ -12,6 +12,9 @@ docs не является разрешением возобновить ост�
 | Где остановились | [STATE](X360_PROJECT_STATE.md) | В начале сессии; это не вторая очередь |
 | Что реально проверено | [PROGRESS](PROGRESS.md) | Перед повтором этапа/заявлением результата |
 | Все текущие изменения FPS/readback и остаток | [FPS_READBACK_PROGRESS_20261027](FPS_READBACK_PROGRESS_20261027.md) | Проверенные результаты, кандидаты, подготовленное сравнение и следующий шаг |
+| Распределение CPU и параллельная копия текстур | [CPU_PARALLEL_READBACK_20261027](CPU_PARALLEL_READBACK_20261027.md) | Пулы потоков, блокировки, тесты и игровое сравнение |
+| Исчезновение моделей у края UltraWide | [ENGINE_OFFSCREEN_20261028](ENGINE_OFFSCREEN_20261028.md) | Local frustum, сферы видимости и отдельная выгрузка ресурсов |
+| Настройки памяти и подгрузка ресурсов | [RESOURCE_STREAMING_20261027](RESOURCE_STREAMING_20261027.md) | Последний запрос, новый кандидат, проверки и невоспроизведённая выгрузка |
 | Timing, buffers, DrawThread, lookup | [ACV_TIMING](ACV_TIMING.md) | Для соответствующих guest VA/полей |
 | Runtime boundaries, слои | [ARCHITECTURE](ARCHITECTURE.md) | Перед архитектурным изменением; исторические даты учитывать |
 | Отдельная папка игры/лаунчера | [LAUNCHER_PACKAGE](LAUNCHER_PACKAGE.md) | Сборка, пути и проверка standalone-пакета |

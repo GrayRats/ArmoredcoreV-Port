@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,19 @@ def dependencies(path, env):
             re.findall(r'^\s*(\S+) => (/\S+)', result.stdout, re.M)}
 
 
+def candidate_environment(items):
+    permitted = {"ACV_GENERAL_DEFERRED_READBACK": {"0", "1"},
+                 "ACV_PARALLEL_READBACK_COPY": {"0", "2", "4"},
+                 "ACV_GPU_POLL_BACKOFF": {"0", "1"}}
+    result = {}
+    for item in items:
+        key, separator, value = item.partition("=")
+        if not separator or key not in permitted or value not in permitted[key] or key in result:
+            raise ValueError("Invalid or duplicate candidate launch environment: " + item)
+        result[key] = value
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out', type=Path, required=True)
@@ -41,6 +55,8 @@ def main():
     ap.add_argument('--include-game-data', action='store_true')
     ap.add_argument('--frontend', choices=('qt', 'trg'), default='qt')
     ap.add_argument('--launcher', type=Path)
+    ap.add_argument('--skip-settings-tests', action='store_true', help='Package without the settings suite, including effect checks; record the omission')
+    ap.add_argument('--candidate-env', action='append', default=[], metavar='KEY=VALUE', help='Explicit bounded readback settings for an unaccepted candidate; repeatable')
     ap.add_argument('--qt-plugins', type=Path, default=Path('/usr/lib/qt6/plugins'))
     args = ap.parse_args()
     out = args.out.resolve()
@@ -54,8 +70,18 @@ def main():
     hashes = {name: digest(path) for name, path in artifacts.items()}
     accepted = all(hashes.get(name) == record['sha256']
                    for name, record in baseline['runtime_artifacts'].items())
+    launch_environment = baseline.get('launch_environment', {}) if accepted else {}
+    permitted = {'ACV_GENERAL_DEFERRED_READBACK': {'0', '1'}, 'ACV_PARALLEL_READBACK_COPY': {'0', '2', '4'}, 'ACV_GPU_POLL_BACKOFF': {'0', '1'}}
+    if any(key not in permitted or value not in permitted[key] for key, value in launch_environment.items()):
+        raise RuntimeError('Invalid baseline launch environment')
+    if args.candidate_env:
+        launch_environment = candidate_environment(args.candidate_env)
+        accepted = False
     tests = {}
     for name in ['test_acv_settings.py', 'test_acv_profiles.py', 'test_acv_shm.py', 'test_acv_display.py', 'test_acv_sessions.py', 'test_probe_runtime_errors.py', 'test_acv_install.py']:
+        if args.skip_settings_tests and name == 'test_acv_settings.py':
+            tests[name] = {'skipped': True, 'reason': 'User requested CAS/FSR integration without effect tests'}
+            continue
         result = subprocess.run([sys.executable, '-I', str(NATIVE / name)],
                                 text=True, capture_output=True)
         tests[name] = {'returncode': result.returncode, 'output': result.stdout + result.stderr}
@@ -112,7 +138,7 @@ def main():
                         put(source, 'lib/' + name)
             write('bin/qt.conf', '[Paths]\nPrefix=..\nPlugins=plugins\nLibraries=lib\n')
         write('acv-package.json', json.dumps({'schema_version': 1, 'layout': 'standalone', 'frontend': args.frontend,
-              'runtime_status': 'accepted baseline' if accepted else 'candidate: gameplay acceptance pending'}, indent=2)+'\n')
+              'launch_environment': launch_environment, 'runtime_status': 'accepted baseline' if accepted else 'candidate: gameplay acceptance pending'}, indent=2)+'\n')
         startup = '''#!/bin/sh
 set -eu
 ACV_PACKAGE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -125,6 +151,8 @@ exec "$ACV_PACKAGE_DIR/bin/acv-launcher" "$@"
         if args.frontend == 'trg':
             startup = startup.replace('export QT_PLUGIN_PATH="$ACV_PACKAGE_DIR/plugins"\n', '').replace('export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"\n', '')
             startup = startup.replace('exec "$ACV_PACKAGE_DIR/bin/acv-launcher"', 'export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"\nexec "$ACV_PACKAGE_DIR/bin/acv-launcher"')
+        exports = ''.join('export ' + key + '=' + shlex.quote(value) + '\n' for key, value in launch_environment.items())
+        startup = startup.replace('exec "$ACV_PACKAGE_DIR/bin/acv-launcher"', exports + 'exec "$ACV_PACKAGE_DIR/bin/acv-launcher"')
         write('start.sh', startup, True)
         if args.include_game_data:
             for source, relative in [(ROOT / 'tmp/iso_root', 'data/game'),
@@ -151,7 +179,10 @@ ACV_PROFILES_ROOT позволяет явно выбрать другое хра
 Qt/ICU и плагины платформ включены; системные библиотеки перечислены в manifest.json.
 Это локальная сборка со статически перекомпилированной игрой, не полный восстановленный исходный код.
 CAS/FSR экспериментальны. Игровой save/load и темп требуют отдельной приёмки.
-Высокие FPS и адаптивные FOV/HUD пока не реализованы.
+Расширенный обзор UltraWide/16:10 и центрирование HUD доступны как экспериментальная настройка.
+CAS/FSR 1 интегрированы; для них и расширенного обзора включите экспериментальные настройки.
+Качество CAS/FSR не проверялось по указанию пользователя.
+Физический вывод Y′CbCr в текущем backend недоступен.
 10-битный SDR экспериментален: при отсутствии формата поверхности используется 8 бит.
 Фактические режим, геометрия и интервалы подачи кадров отображаются в лаунчере.
 '''
@@ -184,7 +215,7 @@ CAS/FSR экспериментальны. Игровой save/load и темп �
                 if actual != item['commit']:
                     raise RuntimeError(f'Frontend dependency drift: {item["directory"]}')
         manifest = {'frontend_dependencies': frontend_dependencies, 'created_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    'files': files, 'runtime_hashes': hashes, 'accepted_baseline': accepted,
+                    'files': files, 'runtime_hashes': hashes, 'accepted_baseline': accepted, 'launch_environment': launch_environment,
                     'tests': tests, 'system_dependencies': system_dependencies,
                     'game_data_included': args.include_game_data, 'frontend': args.frontend,
                     'not_verified': ['in-game save/load', 'CAS/FSR image', 'gameplay speed', 'other Linux distributions']}

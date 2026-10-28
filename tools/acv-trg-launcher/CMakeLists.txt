@@ -43,3 +43,8 @@ add_test(NAME iso COMMAND acv-iso-test)
 
 add_executable(acv-install-probe install_probe.cpp)
 target_link_libraries(acv-install-probe PRIVATE trg::launcher Threads::Threads)
+
+add_executable(acv-interface-test interface_test.cpp)
+target_include_directories(acv-interface-test PRIVATE ../rexglue-sdk/thirdparty/inja/third_party/include)
+target_link_libraries(acv-interface-test PRIVATE trg::launcher_standalone OpenGL::GL Threads::Threads)
+add_test(NAME interface COMMAND acv-interface-test "${CMAKE_CURRENT_SOURCE_DIR}/../..")

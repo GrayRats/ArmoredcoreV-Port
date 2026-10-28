@@ -11,7 +11,9 @@ def thread_sample(pid):
             stat=(entry/"stat").read_text()
             name,tail=stat[stat.index("(")+1:stat.rindex(")")],stat[stat.rindex(")")+2:].split()
             result[entry.name]={"name":name,"state":tail[0],"ticks":int(tail[11])+int(tail[12]),
-                                "wchan":(entry/"wchan").read_text().strip()}
+                                "wchan":(entry/"wchan").read_text().strip(),
+                                "last_cpu":int(tail[36]),
+                                "allowed_cpus":next((line.split(":",1)[1].strip() for line in (entry/"status").read_text().splitlines() if line.startswith("Cpus_allowed_list:")),"")}
         except (OSError,ValueError):continue
     return result
 
@@ -48,6 +50,10 @@ def main():
                         if tid in previous:
                             data["cpu_percent"]=100*(data["ticks"]-previous[tid]["ticks"])/clock/(now-previous_time)
                 row["status"]=[s for s in (process/"status").read_text().splitlines() if s.startswith(("VmRSS:","VmSize:","Threads:"))]
+                try:
+                    row["io"]={key:int(value) for key,value in (line.split(":",1) for line in (process/"io").read_text().splitlines())}
+                except OSError:
+                    row["io"]=None
                 try:
                     gpu=subprocess.run(["nvidia-smi","--query-gpu=index,uuid,utilization.gpu,utilization.memory,memory.used,clocks.current.graphics,power.draw,pstate",
                                         "--format=csv,noheader,nounits"],capture_output=True,text=True,timeout=3)

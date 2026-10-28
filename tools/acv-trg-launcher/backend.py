@@ -4,11 +4,12 @@ import argparse, dataclasses, json, os, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/native-rexglue"))
-import acv_paths, acv_settings as S, acv_profiles as P, acv_shm, acv_install
+import acv_paths, acv_settings as S, acv_profiles as P, acv_shm, acv_install, acv_sessions
 
-def snapshot(root):
+def snapshot(root, draft=None):
     path=root/"settings.json"
     saved=S.load_json(path,"settings") if path.exists() else {"schema_version":1,"graphics":{},"launcher":{}}
+    if draft is not None: saved=normalize(root,draft)
     saved["graphics"]=S.resolve_graphics(saved.get("graphics",{}))
     saved.setdefault("launcher",{})
     saved["launcher"].setdefault("build",str(acv_paths.EXECUTABLE))
@@ -21,8 +22,20 @@ def snapshot(root):
     caps=S.capabilities()
     for key, cap in caps.items():
         for option in cap["options"] or []:
-            candidate=dict(saved["graphics"])
+            # An unrelated invalid selection must not disable every recovery control.
+            candidate=S.resolve_graphics()
+            dependencies={"wide_view": ("resolution",),
+                          "color_depth": ("dither",), "dither": ("color_depth",)}
+            for dependency in dependencies.get(key,()):
+                candidate[dependency]=saved["graphics"][dependency]
+            # Budget controls must be editable together before Save. Capability
+            # checks use a compatible counterpart; Save validates the actual pair.
+            if key == "texture_cache_soft_mb":
+                candidate["texture_cache_hard_mb"]=max(S.GRAPHICS_SCHEMA["texture_cache_hard_mb"][1])
+            elif key == "texture_cache_hard_mb":
+                candidate["texture_cache_soft_mb"]=min(S.GRAPHICS_SCHEMA["texture_cache_soft_mb"][1])
             candidate[key]=option["value"]
+            if key=="color_depth" and option["value"]==10: candidate["dither"]=False
             try:
                 S.graphics_to_cvars(candidate, saved["launcher"]["allow_experimental"], features)
                 option["selectable"]=True
@@ -34,11 +47,12 @@ def snapshot(root):
     except (ValueError,OSError) as error:
         install={"ok":False,"reason":str(error)}
     return {"settings":saved,"profiles":profiles,"capabilities":caps,
-            "presets":S.GRAPHICS_PRESETS,"features":sorted(S.runtime_features(exe.parent)),"build_exists":exe.is_file(),
+            "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.GRAPHICS_PRESETS,"features":sorted(S.runtime_features(exe.parent)),"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
+            "display_info":acv_sessions.latest(acv_paths.LOGS),
             "profiles_root":str(root),"settings_path":str(path),"logs_root":str(acv_paths.LOGS),"shm":acv_shm.status()}
 
-def save(root,doc):
+def normalize(root,doc):
     if not isinstance(doc,dict):raise ValueError("settings must be an object")
     if type(doc.get("schema_version",1)) is not int or doc.get("schema_version",1)!=S.SCHEMA_VERSION:raise ValueError("Unsupported settings version")
     if not isinstance(doc.get("graphics",{}),dict):raise ValueError("graphics must be an object")
@@ -55,7 +69,11 @@ def save(root,doc):
     profile=launcher.get("profile")
     if profile is not None and not isinstance(profile,str):raise ValueError("profile must be a UUID string")
     if profile:P.ProfileStore(root).get(profile)
-    S.graphics_to_cvars(graphics,allow,S.runtime_features(exe.parent))
+    return dict(doc,schema_version=S.SCHEMA_VERSION,graphics=graphics,launcher=launcher)
+
+def save(root,doc):
+    doc=normalize(root,doc); graphics=doc["graphics"]; launcher=doc["launcher"]
+    S.graphics_to_cvars(graphics,launcher.get("allow_experimental",False),S.runtime_features(Path(launcher["build"]).parent))
     old=S.load_json(root/"settings.json","settings") if (root/"settings.json").exists() else {}
     old.update(schema_version=S.SCHEMA_VERSION,graphics=graphics)
     old["launcher"]={**old.get("launcher",{}),**launcher}
@@ -64,9 +82,10 @@ def save(root,doc):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--profiles-root",type=Path,default=acv_paths.PROFILES)
-    ap.add_argument("command",choices=["snapshot","save","reset-graphics","verify-install","publish-install"]);ap.add_argument("--staging",type=Path);a=ap.parse_args();root=a.profiles_root.resolve()
+    ap.add_argument("command",choices=["snapshot","preview","save","reset-graphics","verify-install","publish-install"]);ap.add_argument("--staging",type=Path);a=ap.parse_args();root=a.profiles_root.resolve()
     try:
         if a.command=="snapshot":out=snapshot(root)
+        elif a.command=="preview":out=snapshot(root,json.load(sys.stdin))
         elif a.command=="save":out=save(root,json.load(sys.stdin))
         elif a.command in ("verify-install","publish-install"):
             if a.staging is None:raise ValueError("staging is required")

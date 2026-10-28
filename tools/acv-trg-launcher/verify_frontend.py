@@ -5,7 +5,7 @@ The game session has no probe timeout; this test terminates only its own supervi
 import argparse,ctypes,hashlib,json,os,signal,subprocess,sys,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-ap=argparse.ArgumentParser();ap.add_argument('--root',type=Path,default=ROOT);ap.add_argument('--launcher',type=Path,required=True);ap.add_argument('--runtime',type=Path);ap.add_argument('--evidence',type=Path,required=True);ap.add_argument('--seconds',type=int,default=75);a=ap.parse_args()
+ap=argparse.ArgumentParser();ap.add_argument('--root',type=Path,default=ROOT);ap.add_argument('--launcher',type=Path,required=True);ap.add_argument('--runtime',type=Path);ap.add_argument('--evidence',type=Path,required=True);ap.add_argument('--seconds',type=int,default=75);ap.add_argument('--fps-limit',type=int,choices=[30,60,120],default=60);a=ap.parse_args()
 root=a.root.resolve();out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
 profiles=out/'profiles';state=out/'state'
 env=dict(os.environ,ACV_ROOT=str(root),ACV_PROFILES_ROOT=str(profiles),XDG_STATE_HOME=str(state),SDL_VIDEODRIVER='x11',TRG_LAUNCHER_AUTOPLAY='240')
@@ -14,7 +14,7 @@ cli=root/'tools/native-rexglue/acv_profile_cli.py'
 def call(args):return json.loads(subprocess.check_output([sys.executable,'-I',str(cli),'--profiles-root',str(profiles),*args],env=env,cwd='/',text=True))
 profile=call(['create','TRG integration','--gamertag','ARTEM','--pilot','ARTEM'])
 exe=(a.runtime.resolve() if a.runtime else root/'bin/game')/'acv_linux_probe'
-settings={'schema_version':1,'graphics':{'resolution':'2560x1080','vsync':False,'dither':False},'launcher':{'build':str(exe),'profile':profile['uuid'],'video_driver':'x11','allow_experimental':False}}
+settings={'schema_version':1,'graphics':{'resolution':'2560x1080','fps_limit':a.fps_limit,'vsync':False,'dither':False},'launcher':{'build':str(exe),'profile':profile['uuid'],'video_driver':'x11','allow_experimental':False}}
 (profiles/'settings.json').write_text(json.dumps(settings))
 logpath=out/'frontend.log';supervisor=None;gamepid=None
 start=time.monotonic()
@@ -35,6 +35,10 @@ with logpath.open('w') as log:
    time.sleep(.1)
   assert gamepid,'probe did not start game'
   assert Path(f'/proc/{gamepid}/exe').resolve()==exe.resolve()
+  package_info=root/'acv-package.json'
+  expected_env=json.loads(package_info.read_text()).get('launch_environment',{}) if package_info.exists() else {}
+  actual_env=dict(item.split('=',1) for item in Path(f'/proc/{gamepid}/environ').read_bytes().decode().split(chr(0)) if '=' in item)
+  assert all(actual_env.get(key)==value for key,value in expected_env.items()),expected_env
   args=Path(f'/proc/{supervisor}/cmdline').read_bytes().split(b'\0')
   assert b'--session' in args and b'--seconds' not in args,args
   # Try to acquire the exact writer lock while the first game holds it.
@@ -76,7 +80,11 @@ with logpath.open('w') as log:
   finally:x.XCloseDisplay(display)
   frontend.wait(timeout=10)
   assert frontend.returncode==0,logpath.read_text()
-  assert Path(f'/proc/{gamepid}/exe').resolve()==exe.resolve(),'game ended with launcher'
+  assert Path(f'/proc/{gamepid}/exe').resolve()==exe.resolve()
+  package_info=root/'acv-package.json'
+  expected_env=json.loads(package_info.read_text()).get('launch_environment',{}) if package_info.exists() else {}
+  actual_env=dict(item.split('=',1) for item in Path(f'/proc/{gamepid}/environ').read_bytes().decode().split(chr(0)) if '=' in item)
+  assert all(actual_env.get(key)==value for key,value in expected_env.items()),expected_env
   try:
    with store.lock(profile['uuid']):raise AssertionError('launcher exit released live game lock')
   except acv_profiles.ProfileBusy:pass
@@ -105,7 +113,7 @@ with logpath.open('w') as log:
    latest=call(['last-run'])
    if latest.get('completed'):break
    time.sleep(.1)
-  result={'launcher_exit':frontend.returncode,'supervisor':supervisor,'game_pid':gamepid,'window':window,'session_unbounded':True,'second_writer_rejected':True,'game_survived_launcher':True,'lock_survived_launcher':True,'lock_released_after_game':True,'no_qt_icu':True,'last_run':latest,'scope':'frontend integration/startup only; no gameplay or visual acceptance'}
+  result={'launch_environment':expected_env,'launcher_exit':frontend.returncode,'supervisor':supervisor,'game_pid':gamepid,'window':window,'session_unbounded':True,'second_writer_rejected':True,'game_survived_launcher':True,'lock_survived_launcher':True,'lock_released_after_game':True,'no_qt_icu':True,'last_run':latest,'scope':'frontend integration/startup only; no gameplay or visual acceptance'}
   (out/'verification.json').write_text(json.dumps(result,indent=2)+'\n')
   print(json.dumps(result,indent=2))
  finally:

@@ -21,4 +21,4 @@ for name in ["bin/acv-launcher",*['bin/game/'+n for n in m['runtime_hashes']]]:
   assert not lib.startswith(("libQt","libicu")),lib
  resolution[name]=r.stdout
 assert "QT_" not in (p/"start.sh").read_text()
-print(json.dumps({"package":str(p),"files_checked":len(m["files"]),"frontend":"trg","no_qt_icu":True,"runtime_status":"candidate","libraries_resolve":True},indent=2))
+print(json.dumps({"package":str(p),"files_checked":len(m["files"]),"frontend":"trg","no_qt_icu":True,"runtime_status":json.loads((p/"acv-package.json").read_text())["runtime_status"],"libraries_resolve":True},indent=2))

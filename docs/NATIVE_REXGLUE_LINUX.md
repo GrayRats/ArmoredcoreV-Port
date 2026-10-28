@@ -2692,3 +2692,87 @@ unstarted; sampling is planned after120s. No live-copy or protected-save/config
 modification was performed. The separate accepted WideView package is preserved.
 [Hashes, tests, benchmark](../logs/acv-readback-fitting-slot-20261027/checkpoint.json),
 [complete Russian progress and remaining work](FPS_READBACK_PROGRESS_20261027.md).
+
+
+## Focused readback runtime comparison, 2026-10-27
+
+Runtime-сравнение завершено: кандидат20261027T052317764850Z и контроль с фокусом20261027T052659721550Z, по210с child0/fatal0. Ожидание пула976.869→33.794мс за поздние35с; cadence≈60 в обоих, прирост FPS миссии не доказан. Main XThread44.79→95.29% ядра; polling82BAF218/82BAE308 требует проверки. Фактический fullscreen1920×1080; миссия/темп/картинка не подтверждены. Все процессы завершены; пакет не заменён.
+
+[Detailed results and remaining work](FPS_READBACK_PROGRESS_20261027.md).
+
+
+- 2026-10-27: Параллельная копия принята пользователем; host/GPU/ASan и два210с запуска child0/fatal0. Worker16.79% ядра. Gameplay-окна различались: прирост FPS не доказан. Перенос в отдельный пакет открыт. [Детали](CPU_PARALLEL_READBACK_20261027.md).
+
+
+## Selected integration and FOV/HUD refinement — 2026-10-27
+
+Current separate package: ACV-Linux-TRG-FOVHUD-20261027 (`../../ACV-Linux-TRG-FOVHUD-20261027/start.sh`, исторический пакет; каталог сейчас отсутствует),
+185 manifest files, TRG without Qt/ICU. Prior WideView and Integrated packages
+are preserved. Exact hashes and evidence:
+[checkpoint](../logs/acv-fov-hud-refine-20261027/checkpoint.json).
+ELF6c02660d/runtimeebf338a1/GPU8fb12565/FFX0933159a.
+
+The user accepted parallel readback copying. start.sh now reproducibly exports
+ACV_GENERAL_DEFERRED_READBACK=1 and ACV_PARALLEL_READBACK_COPY=2; the separate
+GPU-poll backoff remains disabled. RUNTIME_BASELINE records these artifact
+requirements and preserves previous records.
+
+CAS and FSR1 are integrated with their sharpness controls and FidelityFX library.
+**No CAS/FSR effect sessions/tests were run in this iteration, at the user's
+request.** The settings suite was skipped and the omission is recorded in the
+package manifest; ordinary package/profile/process checks remain recorded.
+Visual quality is unverified; FSR2/3 remain unavailable.
+
+FOV/HUD: raw retail822B52D8 proves HUD bounds are derived from the viewport.
+The hook now derives padding from those bounds instead of requiring1280x720.
+Only the measured HUD site and native16:9 rectangles qualify. Symmetric padding
+keeps the centre and HUD proportions. Original helper inputs restore on both
+normal return and C++ exceptions. Perspective logs now identify each actual LR;
+previous hardcoded822B450C diagnostics were incorrect for82300978. Active HUD
+calls are also included in the optional read-only census.
+
+Actual-source host ASan/UBSan tests cover only target2560x1080: both camera sites,
+unchanged vertical FOV with wider horizontal coverage, equal physical x/y scale,
+HUD centre1280x540 and centred1920x1080 safe area, foreign passes, invalid bounds,
+return values and exceptions. Other resolutions were not tested per user.
+World-projected target markers and complete visual/HUD/culling parity are not
+established by those mathematical checks.
+
+Final package35s X11 session20261027T150014447328Z: child0/fatal0/runtime_errors0.
+Surface/output2560x1080, x0/y0, bilinear; wide aspect64/27 and HUD hook active.
+No gameplay FPS conclusion. Package manifest/dependencies PASS185files.
+Earlier same-pipeline Integrated package frontend check confirms launch from cwd/,
+correct library mappings and inherited accepted environment, game survival and
+profile lock after GUI exit, release after shutdown; child0/fatal0.
+[Frontend evidence](../logs/acv-selected-package-20261027/frontend/verification.json).
+
+Colour integration remains RGB application output with actual surface reporting.
+The separate2560x1080 RGB10-bit request20261027T145115528083Z offered only
+BGRA8 UNORM/SRGB and explicitly fell back to8bits. Physical DP/HDMI encoding is
+system controlled and was not inferred from VkFormat. YCbCr output has no
+verified backend and remains unavailable. No additional colour/mode work after
+the user's instruction to focus on FOV/HUD.
+
+Current user scope: package + FOV/HUD, integrated CAS/FSR without tests, existing
+colour capability limits. FPS benchmarking, save/mission regression,
+controller/HiDPI work and other-resolution tests are skipped by user instruction.
+Protected config/save hashes unchanged; all owned game/build/test runs ended.
+
+
+### Launcher memory policy and archive preloading — 2026-10-27
+
+Bounded Linux archive read-ahead and configurable texture retention are built,
+actual-source ASan/UBSan tested and published as a separate candidate. Both210s
+scripted runs exit child0/fatal0; no cache evictions under either policy. This does
+not establish a fix for model/location unloads. Read-only retail82586050 confirms
+conditional cleanup calls; ownership semantics unchanged.
+[Technical result, hashes, limits and next step](RESOURCE_STREAMING_20261027.md).
+
+
+### Local frustum and UltraWide sphere rejection — 2026-10-28
+
+Retail82302520 builds local side planes before the hooked projection;82300CE0
+consumes them. The camera-build override now follows the actual widened
+projection through a scoped thread-local marker and updates only4normal fields.
+Actual translated sphere tests/SDK context pass ASan/UBSan; build passes.
+[Evidence, runtime verification and limits](ENGINE_OFFSCREEN_20261028.md).

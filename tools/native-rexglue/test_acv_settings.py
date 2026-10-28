@@ -8,17 +8,17 @@ import acv_settings as s
 
 class GraphicsTests(unittest.TestCase):
     def test_precedence(self):
-        r = s.resolve_graphics({"fps_limit": 120, "vsync": False}, {"fps_limit": 144}, {"vsync": True})
-        self.assertEqual((r["fps_limit"], r["vsync"], r["render_scale"]), (144, True, 1))
+        r = s.resolve_graphics({"fps_limit": 120, "vsync": False}, {"fps_limit": 30}, {"vsync": True})
+        self.assertEqual((r["fps_limit"], r["vsync"], r["render_scale"]), (30, True, 1))
 
     def test_rejects_unsupported(self):
-        for bad in ({"fps_limit": 90}, {"vsync": 1}, {"render_scale": True}, {"resolution": "big"},
+        for bad in ({"fps_limit": 90}, {"fps_limit":144}, {"fps_limit":165}, {"vsync": 1}, {"render_scale": True}, {"resolution": "big"},
                     {"nope": 1}, {"window_mode": "x"}):
             with self.assertRaises(s.SettingsError, msg=bad):
                 s.resolve_graphics(bad)
 
     def test_accepts_values(self):
-        s.validate_graphics({"resolution": "2560x1080", "anisotropy": 16, "fps_limit": 165})
+        s.validate_graphics({"resolution": "2560x1080", "anisotropy": 16, "fps_limit": 120})
 
 
 class CvarTests(unittest.TestCase):
@@ -125,7 +125,7 @@ class CvarTests(unittest.TestCase):
         caps = s.capabilities()
         self.assertEqual(set(caps), set(s.GRAPHICS_SCHEMA))
         statuses = {o["status"] for o in caps["fps_limit"]["options"]}
-        self.assertEqual(statuses, {"available", "unavailable"})
+        self.assertEqual(statuses, {"available"})
 
 
 class ProfileTests(unittest.TestCase):

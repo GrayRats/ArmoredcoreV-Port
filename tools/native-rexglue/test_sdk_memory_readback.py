@@ -10,6 +10,8 @@ BUILD = ROOT / "tmp/acv-sdk-ffx-build"
 SDK = ROOT / "tools/rexglue-sdk"
 BENCHMARK = "--read-benchmark" in sys.argv
 VULKAN = "--vulkan" in sys.argv
+PARALLEL_COPY = "--parallel-copy" in sys.argv
+if PARALLEL_COPY and not VULKAN: raise ValueError("--parallel-copy requires --vulkan")
 GRAPHICS = "--graphics-cpu" in sys.argv
 XMA = "--xma" in sys.argv
 FILE_IO = "--file-io" in sys.argv
@@ -53,5 +55,5 @@ compile_args = [args[0], *flags, "-UNDEBUG", "-O1", "-g", "-pthread",
                 str(source), *(["-lvulkan"] if VULKAN else []), "-L" + str(libraries), "-lrexruntime",
                 "-Wl,-rpath," + str(libraries), "-o", str(OUT)]
 subprocess.run(compile_args, cwd=BUILD, check=True)
-subprocess.run(["timeout", "20s", str(OUT), *(["--expect-no-allocations"] if BENCHMARK and "--expect-no-allocations" in sys.argv else []), *(["--pending-providers"] if BENCHMARK and "--pending-providers" in sys.argv else [])], cwd=ROOT, check=True)
+subprocess.run(["timeout", "20s", str(OUT), *(["--expect-no-allocations"] if BENCHMARK and "--expect-no-allocations" in sys.argv else []), *(["--pending-providers"] if BENCHMARK and "--pending-providers" in sys.argv else []), *(["--parallel-copy"] if PARALLEL_COPY else [])], cwd=ROOT, check=True)
 print("Compiled SDK bridge integration verified")

@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include "../rexglue-sdk/src/graphics/vulkan/general_readback_bridge.h"
 #include "../rexglue-sdk/src/graphics/vulkan/readback_pool_selection.h"
+#include "../rexglue-sdk/src/graphics/vulkan/parallel_readback_copy.h"
 #include <cassert>
 #include <condition_variable>
 #include <cstring>
@@ -27,18 +28,32 @@ struct Dispatcher {
     callback();
   }
 };
-int main() {
+int main(int argc,char** argv) {
+  const bool parallel=argc==2 && std::strcmp(argv[1],"--parallel-copy")==0;
+  assert(argc==1 || parallel);
+  std::unique_ptr<acv::ParallelReadbackCopy> copy_pool;
+  if(parallel)copy_pool=std::make_unique<acv::ParallelReadbackCopy>(2);
   rex::InitLogging();Memory memory;assert(memory.Initialize());
-  constexpr uint32_t address=0x02000000,guest=0xE1FFF000,bytes=4096;
+  constexpr uint32_t address=0x02000000,guest=0xE1FFF000;
+  const uint32_t bytes=parallel?2*1024*1024:4096;
+  const uint32_t allocation=std::max(uint32_t(0x20000),3*bytes);
   auto* heap=memory.LookupHeap(guest);
-  assert(heap->AllocFixed(guest,0x20000,0x1000,kMemoryAllocationReserve|kMemoryAllocationCommit,
+  assert(heap->AllocFixed(guest,allocation,0x1000,kMemoryAllocationReserve|kMemoryAllocationCommit,
                          kMemoryProtectRead|kMemoryProtectWrite));
-  std::memset(memory.TranslatePhysical(address),0,0x20000);
+  std::memset(memory.TranslatePhysical(address),0,allocation);
   VkInstance instance=VK_NULL_HANDLE;VkInstanceCreateInfo ici={};ici.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   assert(vkCreateInstance(&ici,nullptr,&instance)==VK_SUCCESS);
   uint32_t count=0;assert(vkEnumeratePhysicalDevices(instance,&count,nullptr)==VK_SUCCESS && count);
   std::vector<VkPhysicalDevice> devices(count);assert(vkEnumeratePhysicalDevices(instance,&count,devices.data())==VK_SUCCESS);
-  VkPhysicalDevice physical=devices[0];VkPhysicalDeviceProperties props;vkGetPhysicalDeviceProperties(physical,&props);
+  VkPhysicalDevice physical=VK_NULL_HANDLE;VkPhysicalDeviceProperties props{};
+  for(auto candidate:devices) {
+    VkPhysicalDeviceProperties candidate_props{};vkGetPhysicalDeviceProperties(candidate,&candidate_props);
+    if(candidate_props.deviceType==VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ||
+       candidate_props.deviceType==VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+      physical=candidate;props=candidate_props;break;
+    }
+  }
+  assert(physical!=VK_NULL_HANDLE);
   vkGetPhysicalDeviceQueueFamilyProperties(physical,&count,nullptr);
   std::vector<VkQueueFamilyProperties> families(count);vkGetPhysicalDeviceQueueFamilyProperties(physical,&count,families.data());
   uint32_t family=0;while(family<count && !(families[family].queueFlags&(VK_QUEUE_GRAPHICS_BIT|VK_QUEUE_COMPUTE_BIT|VK_QUEUE_TRANSFER_BIT)))++family;
@@ -107,7 +122,9 @@ int main() {
       assert(bridge.Commit(state,fences.size(),[&,slot,start,length]{
         VkMappedMemoryRange range={};range.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;range.memory=staging[slot].memory;range.size=VK_WHOLE_SIZE;
         if(vkInvalidateMappedMemoryRanges(device,1,&range)!=VK_SUCCESS)return false;
-        std::memcpy(memory.TranslatePhysical(start),staging[slot].mapping,length);++copies;
+        if(copy_pool)copy_pool->Copy(memory.TranslatePhysical(start),staging[slot].mapping,length);
+        else std::memcpy(memory.TranslatePhysical(start),staging[slot].mapping,length);
+        ++copies;
         leases[slot]->occupied=false;return true;
       }));
       return state;
@@ -115,7 +132,7 @@ int main() {
     auto first=submit(0,address,bytes,0x11223344);
     auto second=submit(1,address+128,128,0xAABBCCDD);
     assert(!first->ready() && !second->ready() && waits==0 && copies==0);
-    // The third copy exceeds the byte cap by128 bytes. Only the oldest4096-byte
+    // The third copy exceeds the byte cap by128 bytes. Only the oldest full-size
     // copy must publish; the second and third remain staged and protected.
     auto third=submit(2,address+bytes,bytes,0x778899AA);
     assert(first->ready() && !second->ready() && !third->ready() && waits==1 && copies==1);
@@ -154,5 +171,5 @@ int main() {
   vkDestroyBuffer(device,source.buffer,nullptr);vkFreeMemory(device,source.memory,nullptr);
   vkDestroyCommandPool(device,pool,nullptr);vkDestroyDevice(device,nullptr);vkDestroyInstance(instance,nullptr);
   assert(heap->Release(guest));assert(memory.CancelExplicitPhysicalReadbacksAfterDeviceStopped());
-  std::cout<<"PASS real Vulkan/SDK bridge on "<<props.deviceName<<": 12 submitted copies, minimal capacity prefix/oldest fitting slot, overlapping current generations, 8 guest faults, staging reuse, partial CPU writes, normal drain; waits="<<waits<<" copies="<<copies<<"\n";
+  std::cout<<"PASS real Vulkan/SDK bridge on "<<props.deviceName<<" parallel_copy="<<parallel<<" bytes="<<bytes<<": 12 submitted copies, minimal capacity prefix/oldest fitting slot, overlapping current generations, 8 guest faults, staging reuse, partial CPU writes, normal drain; waits="<<waits<<" copies="<<copies<<"\n";
 }

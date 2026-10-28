@@ -18,51 +18,77 @@ GRAPHICS_SCHEMA = {
     "resolution": ("auto", _RESOLUTION),
     "render_scale": (1, (1, 2, 3, 4)),
     "vsync": (True, (True, False)),
-    "fps_limit": (60, (60, 120, 144, 165)),
+    "fps_limit": (60, (30, 60, 120)),
     "anisotropy": ("game", ("game", "off", 2, 4, 8, 16)),
     "antialiasing": ("off", ("off", "fxaa", "fxaa_extreme")),
     "dither": (False, (True, False)),
     "fsr_sharpness": ("default", ("default", 0.0, 0.5, 1.0, 1.5, 2.0)),
     "sharpness": ("default", ("default", 0.0, 0.25, 0.5, 0.75, 1.0)),
-    "output_effect": ("bilinear", ("bilinear", "cas", "fsr", "fsr2", "fsr3")),
+    "output_effect": ("bilinear", ("bilinear", "cas", "fsr")),
     "color_encoding": ("rgb_full", ("rgb_full", "ycbcr444", "ycbcr422", "ycbcr420")),
     "color_depth": (8, (8, 10)),
     "wide_view": ("off", ("off", "auto")),
+    "texture_cache_soft_mb": (1024, (384, 768, 1024, 1536, 2048)),
+    "texture_cache_hard_mb": (1536, (768, 1024, 1536, 2048, 3072, 4096)),
+    "texture_cache_retention_s": (180, (30, 60, 120, 180, 300, 600)),
+    "asset_read_ahead_mb": ("auto", ("auto", 0, 8, 16, 32, 64)),
 }
+
+RESOLUTION_PRESETS = [("auto", "Авто")] + [
+    ('1280x720', '1280×720 (16:9)'),
+    ('1600x900', '1600×900 (16:9)'),
+    ('1920x1080', '1920×1080 (16:9)'),
+    ('2560x1440', '2560×1440 (16:9)'),
+    ('3840x2160', '3840×2160 (16:9)'),
+    ('1280x800', '1280×800 (16:10)'),
+    ('1440x900', '1440×900 (16:10)'),
+    ('1680x1050', '1680×1050 (16:10)'),
+    ('1920x1200', '1920×1200 (16:10)'),
+    ('2560x1600', '2560×1600 (16:10)'),
+    ('3840x2400', '3840×2400 (16:10)'),
+    ('2560x1080', '2560×1080 (UltraWide)'),
+    ('3440x1440', '3440×1440 (UltraWide)'),
+    ('3840x1600', '3840×1600 (UltraWide)'),
+    ('5120x2160', '5120×2160 (UltraWide)'),
+    ('3840x1080', '3840×1080 (32:9)'),
+    ('5120x1440', '5120×1440 (32:9)'),
+    ('7680x2160', '7680×2160 (32:9)'),
+]
 
 # SDK cvar values for anisotropic_override (cache.cpp:52): -1 game, 0 off, 1..5 = 1x,2x,4x,8x,16x.
 _ANISO_CVAR = {"game": -1, "off": 0, 2: 2, 4: 3, 8: 4, 16: 5}
 
 # Values the pinned runtime cannot honour yet, with the reason shown by the launcher.
 _UNAVAILABLE = {
-    ("fps_limit", 120): "guest timestep, animation and audio have not been validated above 60 FPS (PLAN_GUI.MD D3)",
-    ("fps_limit", 144): "guest timestep, animation and audio have not been validated above 60 FPS (PLAN_GUI.MD D3)",
-    ("fps_limit", 165): "guest timestep, animation and audio have not been validated above 60 FPS (PLAN_GUI.MD D3)",
-    ("color_encoding", "ycbcr444"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
-    ("color_encoding", "ycbcr422"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
-    ("color_encoding", "ycbcr420"): "no verified output backend for Y'CbCr on the Vulkan desktop path",
-    ("output_effect", "fsr2"): "temporal FSR needs verified motion vectors, depth and frame history",
-    ("output_effect", "fsr3"): "temporal FSR needs verified motion vectors, depth and frame history",
+    ("color_encoding", "ycbcr444"): "Вывод Y’CbCr пока не поддерживается; используйте RGB",
+    ("color_encoding", "ycbcr422"): "Вывод Y’CbCr пока не поддерживается; используйте RGB",
+    ("color_encoding", "ycbcr420"): "Вывод Y’CbCr пока не поддерживается; используйте RGB",
 }
 _EXPERIMENTAL = {
-    ("color_depth", 10): "requires a 10-bit SDR surface format; runtime reports fallback; image precision not verified",
-    ("render_scale", 2): "SDK scale support depends on device limits; not verified for ACV",
-    ("render_scale", 3): "SDK scale support depends on device limits; not verified for ACV",
-    ("render_scale", 4): "SDK scale support depends on device limits; not verified for ACV",
-    ("output_effect", "cas"): "needs a runtime built with REXGLUE_ENABLE_FIDELITYFX; visual result not verified",
-    ("output_effect", "fsr"): "needs a runtime built with REXGLUE_ENABLE_FIDELITYFX; visual result not verified",
-    ("wide_view", "auto"): "scene aspect and HUD centring from the chosen resolution; edge culling, reticle and cut-scenes not verified",
-    ("antialiasing", "fxaa"): "final-pass FXAA is not verified against the ACV HUD",
-    ("antialiasing", "fxaa_extreme"): "final-pass FXAA is not verified against the ACV HUD",
+    ("color_depth", 10): "Нужен экран с поддержкой 10 бит; иначе будет использован формат 8 бит",
+    ("render_scale", 2): "Повышенный масштаб зависит от возможностей видеокарты и увеличивает расход VRAM",
+    ("render_scale", 3): "Повышенный масштаб зависит от возможностей видеокарты и увеличивает расход VRAM",
+    ("render_scale", 4): "Повышенный масштаб зависит от возможностей видеокарты и увеличивает расход VRAM",
+    ("output_effect", "cas"): "Нужна сборка с FidelityFX; качество изображения пока не проверено",
+    ("output_effect", "fsr"): "Нужна сборка с FidelityFX; качество изображения пока не проверено",
+    ("wide_view", "auto"): "Обзор и центрирование HUD по выбранному разрешению; для роликов и прицела возможны особенности",
+    ("antialiasing", "fxaa"): "Сглаживание применяется ко всему изображению, включая HUD",
+    ("antialiasing", "fxaa_extreme"): "Сглаживание применяется ко всему изображению, включая HUD",
 }
 
 
 # Shared preset payloads: frontend widgets do not own a second policy table.
 GRAPHICS_PRESETS = {
     "compatibility": {"render_scale": 1, "anisotropy": "game", "antialiasing": "off",
-                      "dither": False, "output_effect": "bilinear", "vsync": True},
+                      "dither": False, "output_effect": "bilinear", "vsync": True,
+                      "texture_cache_soft_mb": 384, "texture_cache_hard_mb": 768,
+                      "texture_cache_retention_s": 30, "asset_read_ahead_mb": 0},
     "quality": {"render_scale": 1, "anisotropy": 16, "antialiasing": "off",
-                "dither": True, "output_effect": "bilinear", "vsync": True},
+                "dither": True, "output_effect": "bilinear", "vsync": True,
+                "texture_cache_soft_mb": 1024, "texture_cache_hard_mb": 1536,
+                "texture_cache_retention_s": 180, "asset_read_ahead_mb": "auto"},
+    "streaming": {"texture_cache_soft_mb": 1536, "texture_cache_hard_mb": 2048,
+                  "texture_cache_retention_s": 300, "asset_read_ahead_mb": 32},
 }
 
 
@@ -102,6 +128,8 @@ def validate_graphics(values):
             raise SettingsError(f"unknown graphics setting '{key}'")
         if not _accepts(GRAPHICS_SCHEMA[key][1], value):
             raise SettingsError(f"unsupported value {value!r} for graphics setting '{key}'")
+    if "texture_cache_soft_mb" in values and "texture_cache_hard_mb" in values and values["texture_cache_soft_mb"] > values["texture_cache_hard_mb"]:
+        raise SettingsError("Soft texture cache limit must not exceed the hard limit")
     return values
 
 
@@ -111,6 +139,7 @@ def resolve_graphics(saved=None, launcher=None, launch=None):
     for layer in (saved, launcher, launch):
         if layer:
             result.update(validate_graphics(dict(layer)))
+    validate_graphics(result)
     return result
 
 
@@ -258,7 +287,7 @@ def dedupe_options(options):
 
 def runtime_features(directory):
     """Features of the libraries staged in `directory`, found by their cvar/env names."""
-    wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits"),
+    wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits", "asset_read_ahead_mb"),
               "librexgpu-xenos.so": ("frame_limit_fps",)}
     found = set()
     for library, names in wanted.items():
@@ -278,7 +307,7 @@ def runtime_features(directory):
 
 
 def _wide_aspect(values, features):
-    """Aspect to apply for wide_view=auto, or None when it is off or the output is not wider than 16:9."""
+    """Aspect for wide_view=auto, or None when disabled or equal to the native 16:9."""
     if values["wide_view"] != "auto":
         return None
     if "wide_view" not in features:
@@ -340,13 +369,26 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         if values["output_effect"] == "fsr" and values["fsr_sharpness"] != "default":
             args.append(f"--present_fsr_sharpness_reduction={values['fsr_sharpness']}")
     if "frame_limit_fps" in features:
-        # Only 60 can be selected (see _UNAVAILABLE); pacing keeps VSync-off from running the game fast.
+        # This limits presented swaps; it does not change the guest timestep.
         args.append(f"--frame_limit_fps={values['fps_limit']}")
+    elif values["fps_limit"] != 60:
+        raise SettingsError("Лимиты 30/120 FPS требуют сборку с frame_limit_fps")
     if values["resolution"] != "auto":
         width, height = values["resolution"].split("x")
         args += [f"--window_width={width}", f"--window_height={height}"]
     else:
         args += ["--window_width=0", "--window_height=0"]
+    # Known SDK cache policy: soft retention, completed-submission hard eviction.
+    args += [f"--texture_cache_memory_limit_soft={values['texture_cache_soft_mb']}",
+             f"--texture_cache_memory_limit_hard={values['texture_cache_hard_mb']}",
+             f"--texture_cache_memory_limit_soft_lifetime={values['texture_cache_retention_s']}"]
+    read_ahead = values["asset_read_ahead_mb"]
+    if read_ahead == "auto":
+        read_ahead = 16 if "asset_read_ahead_mb" in features else 0
+    if "asset_read_ahead_mb" in features:
+        args.append(f"--asset_read_ahead_mb={read_ahead}")
+    elif read_ahead:
+        raise SettingsError("Background archive preloading requires an updated runtime")
     if _wide_aspect(values, features) is not None:
         args.append("--present_letterbox=false")  # the render target is stretched; the hooks make the picture fit
     return args

@@ -1,0 +1,44 @@
+--- a/src/graphics/pipeline/texture/cache.cpp
++++ b/src/graphics/pipeline/texture/cache.cpp
+@@ -269,6 +269,14 @@
+       REXCVAR_GET(texture_cache_memory_limit_hard) + limit_scaled_resolve_add_mb;
+   uint32_t limit_soft_lifetime = REXCVAR_GET(texture_cache_memory_limit_soft_lifetime) * 1000;
+   bool destroyed_any = false;
++  // Late diagnostics only: no gameplay counters are collected before90seconds
++  // from the first completion callback. This never changes eviction ownership.
++  struct RetentionStats {
++    uint64_t start=0,next=0,evicted=0,bytes=0,hard=0;
++  };
++  static thread_local RetentionStats stats;
++  if (!stats.start) {stats.start=current_time;stats.next=current_time+90000;}
++  const bool collect=current_time>=stats.start+90000;
+   while (texture_used_first_ != nullptr) {
+     uint64_t total_host_memory_usage_mb =
+         (textures_total_host_memory_usage_ + ((UINT32_C(1) << 20) - 1)) >> 20;
+@@ -297,12 +305,26 @@
+     assert_true(found_texture_it != textures_.end());
+     if (found_texture_it != textures_.end()) {
+       assert_true(found_texture_it->second.get() == texture);
++      const uint64_t before_destroy=textures_total_host_memory_usage_;
+       textures_.erase(found_texture_it);
++      if (collect) {
++        ++stats.evicted;
++        stats.bytes+=before_destroy-textures_total_host_memory_usage_;
++        if (limit_hard_exceeded)++stats.hard;
++      }
+       // `texture` is invalid now.
+     }
+   }
+   if (destroyed_any) {
+     COUNT_profile_set("gpu/texture_cache/textures", textures_.size());
++  }
++  if (collect && current_time>=stats.next) {
++    REXLOG_INFO("[acv-texture-retention] age_ms={} cached_bytes={} textures={} soft_mb={} hard_mb={} retention_s={} evicted={} evicted_bytes={} hard_evictions={}",
++                current_time-stats.start,textures_total_host_memory_usage_,textures_.size(),
++                limit_soft_mb,limit_hard_mb,limit_soft_lifetime/1000,
++                stats.evicted,stats.bytes,stats.hard);
++    stats.next=current_time+10000;
++    stats.evicted=stats.bytes=stats.hard=0;
+   }
+ }
+ 

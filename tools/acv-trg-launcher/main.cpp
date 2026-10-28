@@ -11,6 +11,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <clocale>
+#include <langinfo.h>
 namespace fs=std::filesystem;
 using Json=nlohmann::json;
 using Args=std::vector<std::string>;
@@ -32,9 +34,11 @@ static fs::path FindRoot(){
 struct App {
   fs::path root;std::string profiles;
   trg::CallbackSettings store;
-  Json snapshot,settings,ephemeral=Json::object(),last;
+  Json snapshot,settings,saved_settings,observed,preview_input,ephemeral=Json::object(),last,backups;
+  std::string edited_profile;
+  std::chrono::steady_clock::time_point changed_at;
   std::future<Json> work;
-  enum class Job {None,Snapshot,Save,Play,Reset,Profile,Last};
+  enum class Job {None,Snapshot,Save,Play,Reset,Profile,Last,Preview,Backups};
   Job job=Job::None;
   acv::Game game;trg::Task install;
   std::string message="Чтение настроек…",session_log;
@@ -53,7 +57,7 @@ struct App {
       if(section=="graphics"){
         const auto& cap=snapshot.at("capabilities").at(name);
         if(cap["options"].is_array()){
-          for(const auto& opt:cap["options"])if(Text(opt["value"])==value){settings[section][name]=opt["value"];return;}
+          for(const auto& opt:cap["options"])if(Text(opt["value"])==value){settings[section][name]=opt["value"];if(name=="color_depth" && opt["value"]==10)settings[section]["dither"]=false;return;}
           throw std::runtime_error("Некорректное значение настройки");
         }
       }
@@ -62,7 +66,7 @@ struct App {
       }else settings[section][name]=value;
     };
     store.save=[this](){return Save(false);};
-    store.reset=[this](){if(!Busy())Submit(Job::Reset,Bridge("reset-graphics"));};
+    store.reset=[this](){if(!Busy()){for(auto i=snapshot.at("capabilities").begin();i!=snapshot.at("capabilities").end();++i)settings["graphics"][i.key()]=i.value().at("default");message="Графика сброшена; изменения не сохранены";}};
     Submit(Job::Snapshot,Bridge("snapshot"));
   }
   static std::pair<std::string,std::string> Split(std::string_view key){
@@ -92,14 +96,15 @@ struct App {
   static Json Execute(const Args& args,const std::string& input){
     auto result=acv::Run(args,input,120000);
     Json parsed;
-    try{parsed=Json::parse(result.out);}catch(...){throw std::runtime_error("Некорректный ответ backend: "+result.err+result.out);}
+    try{parsed=Json::parse(result.out);}catch(...){throw std::runtime_error("Не удалось прочитать ответ службы настроек: "+result.err+result.out);}
     if(result.code || parsed.contains("error"))throw std::runtime_error(parsed.is_object()?parsed.value("error",result.err):result.err);
     return parsed;
   }
   void Submit(Job kind,Args args,std::string input=""){
     if(Busy())return;
     if(kind==Job::Save || kind==Job::Play)Log("settings_requested "+input);
-    job=kind;if(kind!=Job::Last)message="Выполняется…";
+    job=kind;if(kind==Job::Preview)preview_input=settings;
+    if(kind!=Job::Last && kind!=Job::Preview)message="Выполняется…";
     Args refresh=Bridge("snapshot");
     work=std::async(std::launch::async,[kind,args=std::move(args),input=std::move(input),refresh](){
       Json result=Execute(args,input);
@@ -115,6 +120,8 @@ struct App {
   std::string Selected()const{return ready?settings.at("launcher").value("profile",""):"";}
   void StartGame(){
     if(game.pid)throw std::runtime_error("Игра уже запущена");
+    if(!snapshot.value("build_exists",false))throw std::runtime_error("Выбранный исполняемый файл игры не найден");
+    if(!snapshot.value("game_data_exists",false))throw std::runtime_error("Игровые данные не готовы");
     if(snapshot.at("shm").at("free").get<uint64_t>()<6ULL*1024*1024*1024)
       throw std::runtime_error("Для запуска требуется не менее 6 ГБ свободного /dev/shm");
     Args args={"python3","-I",(root/"tools/native-rexglue/probe_linux.py").string(),"--session","--profile",Selected(),"--profiles-root",snapshot.at("profiles_root"),"--settings",snapshot.at("settings_path"),"--executable",settings.at("launcher").at("build")};
@@ -129,6 +136,15 @@ struct App {
     Log("game_started profile="+Selected()+" pid="+std::to_string(game.pid)+" log="+session_log);
     std::cout<<"game_started pid="<<game.pid<<" log="<<session_log<<std::endl;
   }
+  bool Dirty()const{return ready && settings!=saved_settings;}
+  void SyncProfile(){
+    auto selected=Selected();if(selected==edited_profile)return;
+    edited_profile=selected;backups=nullptr;ephemeral["backup"]="";
+    ephemeral["name"]="";ephemeral["gamertag"]="";ephemeral["pilot"]="";
+    for(const auto& p:snapshot.at("profiles"))if(p.at("uuid")==selected){
+      ephemeral["name"]=p.at("display_name");ephemeral["gamertag"]=p.at("gamertag");ephemeral["pilot"]=p.at("pilot_name");
+    }
+  }
   void Tick(){
     std::string install_error;auto installed=install.Finish(&install_error);
     if(installed==trg::Task::State::kDone){if(!Busy())Submit(Job::Snapshot,Bridge("snapshot"));}
@@ -138,17 +154,29 @@ struct App {
       try{
         Json result=work.get();
         if(finished==Job::Last){last=std::move(result);}
+        else if(finished==Job::Backups){backups=std::move(result);message=backups.empty()?"Резервных копий пока нет":"Список копий обновлён";}
+        else if(finished==Job::Preview){
+          if(settings==preview_input){snapshot=std::move(result);message="Возможности сборки обновлены; изменения не сохранены";}
+        }
         else{
-          Json previous=settings;snapshot=std::move(result);settings=snapshot.at("settings");
+          bool preserve=ready && (finished==Job::Snapshot || finished==Job::Profile);
+          Json previous=settings;snapshot=std::move(result);settings=snapshot.at("settings");saved_settings=settings;
+          if(preserve)settings=previous;
           if(finished==Job::Profile){
             settings=std::move(previous);
             const auto& action=snapshot.at("action_result");
-            if(action.is_object() && action.contains("uuid"))settings["launcher"]["profile"]=action["uuid"];
+            if(action.is_object() && action.contains("uuid")){settings["launcher"]["profile"]=action["uuid"];edited_profile.clear();}
+            if(action.is_object() && action.contains("backup"))ephemeral["backup"]=action["backup"];
           }
-          ready=true;message="Готово";
+          ready=true;preview_input=nullptr;message=(finished==Job::Save)?"Настройки сохранены":"Готово";SyncProfile();
         }
         if(finished==Job::Play)StartGame();
       }catch(const std::exception& e){message=e.what();Log("backend_error "+message);std::cerr<<"backend: "<<message<<std::endl;}
+    }
+    if(ready && observed!=settings){observed=settings;changed_at=std::chrono::steady_clock::now();}
+    if(ready && !Busy() && !Installing() && snapshot.at("settings")!=settings && observed==settings &&
+       std::chrono::steady_clock::now()-changed_at>std::chrono::milliseconds(400) && preview_input!=settings){
+      Submit(Job::Preview,Bridge("preview"),settings.dump());
     }
     if(game.pid){
       try{if(!game.Poll()){
@@ -185,7 +213,7 @@ struct App {
     if(!reasons.empty() && ui.Section((std::string("Недоступные варианты##")+key).c_str()))ui.Help(reasons.c_str());
   }
   static std::string Label(const std::string& s){
-    static const std::map<std::string,std::string> labels={{"true","Вкл."},{"false","Выкл."},{"windowed","Окно"},{"fullscreen","Полный экран"},{"off","Выкл."},{"game","Как в игре"},{"default","По умолчанию"},{"bilinear","Билинейная"},{"cas","CAS"},{"fsr","FSR 1"},{"fsr2","FSR 2"},{"fsr3","FSR 3"},{"rgb_full","RGB Full Range"}};
+    static const std::map<std::string,std::string> labels={{"true","Вкл."},{"false","Выкл."},{"windowed","Окно"},{"fullscreen","Полный экран"},{"off","Выкл."},{"game","Как в игре"},{"default","По умолчанию"},{"bilinear","Билинейная"},{"cas","CAS"},{"fsr","FSR 1"},{"rgb_full","RGB Full Range"},{"auto","Авто"},{"fxaa","FXAA"},{"fxaa_extreme","FXAA усиленное"}};
     auto i=labels.find(s);return i==labels.end()?s:i->second;
   }
   void LaunchPage(trg::Ui& ui){
@@ -194,6 +222,7 @@ struct App {
     if(!snapshot.value("game_data_exists",false)){
       ui.Paragraph(snapshot.at("installation").value("reason","").c_str());
       ui.InputText("Образ собственного диска","Поддерживается проверенная версия ACV; исходный ISO не меняется","ui.iso");
+      if(ui.ButtonRow("Выбор образа","Можно также перетащить ISO в окно","Обзор…")){auto path=trg::BrowseForFile("Выберите образ диска",{{"Образы дисков","*.iso"}});if(!path.empty())ephemeral["iso"]=path;}
       if(!Installing() && ui.ButtonRow("Установка игры","Файлы будут проверены перед публикацией","Установить из ISO",true)){
         auto iso=store.Get("ui.iso");fs::path destination=snapshot.at("game_root").get<std::string>();auto command=Bridge("publish-install");
         install.Start("Извлечение игровых файлов…",[iso,destination,command](trg::Task& t){return acv::InstallDisc(t,iso,destination,command);});
@@ -208,13 +237,14 @@ struct App {
         ui.Help("В журнале нет новых записей более минуты. Возможна долгая загрузка или зависание.");
       if(ui.ButtonRow("Остановить игру","Штатное завершение процесса с сохранением профиля","Остановить"))game.Stop();
     }
-    ui.InputText("Исполняемый файл","Путь к выбранной Linux-сборке","launcher.build");
+    ui.InputText("Исполняемый файл","Выберите acv_linux_probe из папки bin/game этого пакета. Это Linux-программа игры, не default.xex, ISO или start.sh. Для обычного запуска нажмите «Игра из этого пакета».","launcher.build");
+    if(ui.ButtonRow("Выбор игры","Исполняемый файл Linux","Обзор…")){auto path=trg::BrowseForFile("Выберите исполняемый файл игры");if(!path.empty())settings["launcher"]["build"]=path;}
+    if(ui.ButtonRow("Игра из этого пакета","Вернуть путь к комплектной сборке","Выбрать"))settings["launcher"]["build"]=snapshot.at("bundled_build");
     ui.Choice("Оконная система","X11 проверен; Wayland зависит от сборки","launcher.video_driver","x11",{{"x11","X11"},{"wayland","Wayland"},{"auto","Авто"}});
-    if(ui.Toggle("Экспериментальные настройки","Применять только доступные выбранной сборке варианты","launcher.allow_experimental",false,"Выкл.","Вкл.")){
-      // Re-evaluate choices on an explicit action; no backend calls while drawing.
-      Save(false);
-    }
-    if(ui.ButtonRow("Обновить состояние","Повторно прочитать настройки и возможности сборки","Обновить"))Submit(Job::Snapshot,Bridge("snapshot"));
+    ui.Toggle("Экспериментальные настройки","Применять только доступные выбранной сборке варианты","launcher.allow_experimental",false,"Выкл.","Вкл.");
+    if(ui.ButtonRow("Обновить состояние","Обновить сведения об игре, сохранив текущие правки","Обновить"))Submit(Job::Snapshot,Bridge("snapshot"));
+    if(ui.ConfirmRow("Отменить правки","Вернуть последние сохранённые настройки","Вернуть","Отменить несохранённые изменения?","Вернуть","Отмена")){settings=saved_settings;preview_input=nullptr;}
+    ui.FolderRow("Журналы игры","Открыть каталог журналов","Открыть",snapshot.at("logs_root"));
     if(ui.ButtonRow("Последняя сессия","Запрошенные и фактические параметры, причины fallback","Показать"))Submit(Job::Last,Cli({"last-run"}));
     if(last.is_object()){
       if(last.contains("applied") && last["applied"].is_object()){
@@ -242,7 +272,7 @@ struct App {
     std::vector<trg::Option> options;
     for(const auto& p:snapshot.at("profiles"))options.push_back({p.at("uuid"),p.at("display_name")});
     ui.Combo("Профиль","UUID и XUID сохраняются при переименовании","launcher.profile","",options);
-    std::string selected=Selected();
+    SyncProfile();std::string selected=Selected();
     for(const auto& p:snapshot.at("profiles"))if(p.at("uuid")==selected){
       ui.Info("XUID",p.at("xuid").get_ref<const std::string&>().c_str());
       ui.Info("Позывной",p.at("gamertag").get_ref<const std::string&>().c_str());
@@ -252,50 +282,91 @@ struct App {
     ui.InputText("Позывной","Не более 15 символов","ui.gamertag");
     ui.InputText("Пилот","Не более 32 символов","ui.pilot");
     auto name=store.Get("ui.name"),tag=store.Get("ui.gamertag"),pilot=store.Get("ui.pilot");
+    ImGui::BeginDisabled(name.find_first_not_of(" \t\r\n")==std::string::npos);
     if(ui.ButtonRow("Новый профиль","Создать отдельные сохранения","Создать")){
       Args a={"create",name};if(!tag.empty()){a.push_back("--gamertag");a.push_back(tag);}if(!pilot.empty()){a.push_back("--pilot");a.push_back(pilot);}Profile(a);
     }
+    ImGui::EndDisabled();
     ImGui::BeginDisabled(selected.empty()||game.pid);
+    ImGui::BeginDisabled(name.find_first_not_of(" \t\r\n")==std::string::npos);
     if(ui.ButtonRow("Переименовать","Идентичность и сохранения не меняются","Применить имя"))Profile({"rename",selected,name});
+    ImGui::EndDisabled();
     if(ui.ButtonRow("Имена в игре","Изменения применяются при следующем вводе имени в игре","Применить")){
       Args a={"set-names",selected};if(!tag.empty()){a.push_back("--gamertag");a.push_back(tag);}if(!pilot.empty()){a.push_back("--pilot");a.push_back(pilot);}Profile(a);
     }
     if(ui.ButtonRow("Резервная копия","Проверка целостности всех файлов сохранений","Создать копию"))Profile({"backup",selected});
-    if(ui.ButtonRow("Список резервных копий","Проверить копии выбранного профиля","Показать копии"))Submit(Job::Last,Cli({"backups",selected}));
-    if(last.is_array() && ui.Section("Резервные копии",true)){
-      for(const auto& backup:last){
+    if(ui.ButtonRow("Список резервных копий","Проверить копии выбранного профиля","Показать копии"))Submit(Job::Backups,Cli({"backups",selected}));
+    if(backups.is_array() && ui.Section("Резервные копии",true)){
+      for(const auto& backup:backups){
         std::string path=backup.at("path");
         ui.Info(backup.value("valid",false)?"Проверена":"Повреждена",path.c_str());
         if(backup.value("valid",false) && ui.ButtonRow(path.c_str(),"Выбрать для восстановления","Выбрать"))ephemeral["backup"]=path;
       }
     }
     ui.InputText("Каталог резервной копии","Для восстановления выбранного профиля","ui.backup");
-    if(ui.ConfirmRow("Восстановление","Текущее состояние будет сохранено backend перед восстановлением","Восстановить","Восстановить выбранную резервную копию?","Восстановить","Отмена"))Profile({"restore",selected,store.Get("ui.backup")});
+    if(ui.ButtonRow("Выбрать копию","Каталог проверенной резервной копии","Обзор…")){auto path=trg::BrowseForFolder("Выберите резервную копию");if(!path.empty())ephemeral["backup"]=path;}
+    ImGui::BeginDisabled(store.Get("ui.backup").empty());
+    if(ui.ConfirmRow("Восстановление","Перед восстановлением будет создана копия текущих сохранений","Восстановить","Восстановить выбранную резервную копию?","Восстановить","Отмена"))Profile({"restore",selected,store.Get("ui.backup")});
+    ImGui::EndDisabled();
     ui.InputText("Импорт сохранений","Каталог данных для выбранного профиля","ui.import");
-    if(ui.ButtonRow("Импорт","Копирование через проверяемый backend","Импортировать"))Profile({"import",selected,store.Get("ui.import")});
+    if(ui.ButtonRow("Выбрать данные","Каталог сохранений для импорта","Обзор…")){auto path=trg::BrowseForFolder("Выберите сохранения");if(!path.empty())ephemeral["import"]=path;}
+    ImGui::BeginDisabled(store.Get("ui.import").empty());
+    if(ui.ButtonRow("Импорт","Копирование с проверкой целостности","Импортировать"))Profile({"import",selected,store.Get("ui.import")});
+    ImGui::EndDisabled();
     ImGui::EndDisabled();
     ui.FolderRow("Данные профилей","Резервные копии и сохранения","Открыть",snapshot.at("profiles_root"));
   }
   void ScreenPage(trg::Ui& ui){
     Choice(ui,"window_mode","Режим экрана");Choice(ui,"monitor","Монитор","Индекс дисплея игрового backend");
-    ui.Combo("Разрешение","UltraWide вписывает исходное изображение с сохранением пропорций","graphics.resolution","auto",{{"auto","Авто"},{"1280x720","1280×720"},{"1920x1080","1920×1080"},{"1920x1200","1920×1200"},{"2560x1080","2560×1080 (UltraWide)"},{"2560x1440","2560×1440"},{"2560x1600","2560×1600"},{"3440x1440","3440×1440 (UltraWide)"},{"3840x2160","3840×2160"}});
-    Choice(ui,"render_scale","Масштаб рендера");Choice(ui,"vsync","VSync");Choice(ui,"fps_limit","Лимит FPS","Высокие частоты требуют проверки темпа игры");
-    Choice(ui,"wide_view","Расширенный обзор (эксперимент)","Для вывода шире 16:9: расширяет обзор и центрирует HUD по выбранному разрешению. Нужны разрешение 2560×1080 или шире и разрешение экспериментальных настроек");
-    ui.Help("Расширенный обзор UltraWide экспериментальный: отсечение по краям, прицел и ролики не проверены. «Авто» без явного разрешения недоступно.");
-    if(last.is_object() && last.contains("monitors"))for(const auto& m:last["monitors"]){
+    std::vector<trg::Option> resolutions;
+    for(const auto& mode:snapshot.at("resolution_presets"))resolutions.push_back({mode.at(0),mode.at(1)});
+    ui.Combo("Разрешение","Размер вывода; в полном экране выбирайте режим вашего монитора. Расширенный обзор вычисляется по отношению ширины к высоте.","graphics.resolution","auto",resolutions);
+    ui.InputText("Своё разрешение","Формат: 2560x1080; Авто задаётся значением auto","graphics.resolution");
+    Choice(ui,"render_scale","Масштаб рендера");Choice(ui,"vsync","VSync");Choice(ui,"fps_limit","Лимит FPS","30/60/120 — потолок подачи кадров, а не гарантированная частота. Для 120 может потребоваться выключить VSync; темп игры выше 60 пока не проверен.");
+    Choice(ui,"wide_view","Расширенный обзор (эксперимент)","Поддерживает 16:10, UltraWide и 32:9; также своё отношение сторон от 1.2 до 4.0. Нужны явное разрешение и экспериментальные настройки. 16:9 сохраняет исходный обзор.");
+    ui.Help("Расширенный обзор согласует перспективу и отсечение по краям; HUD сохраняет центральную область. Выберите явное разрешение, например 2560x1080.");
+    const Json display=last.is_object() && last.contains("monitors")?last:snapshot.value("display_info",Json::object());
+    if(display.is_object() && display.contains("display_modes") && display["display_modes"].is_array()){
+      std::map<std::string,std::string> seen;
+      for(const auto& mode:display["display_modes"]){
+        std::string value=std::to_string(mode.value("width",0))+"x"+std::to_string(mode.value("height",0));
+        if(mode.value("width",0)>0 && mode.value("height",0)>0)seen[value]=value;
+      }
+      std::vector<trg::Option> modes;
+      for(const auto& [value,label]:seen)modes.push_back({value,label});
+      if(!modes.empty())ui.Combo("Режимы из последнего запуска","Данные игрового backend; можно также ввести размер вручную","graphics.resolution","auto",modes);
+    }
+    if(display.is_object() && display.contains("monitors"))for(const auto& m:display["monitors"]){
       std::string label="Монитор "+std::to_string(m.value("index",0));
       std::string text=std::to_string(m.value("width",0))+"×"+std::to_string(m.value("height",0))+", "+Text(m.value("refresh_hz",Json()))+" Гц";
       ui.Info(label.c_str(),text.c_str());
     }
   }
-  void ColorPage(trg::Ui& ui){Choice(ui,"color_encoding","Кодирование цвета");Choice(ui,"color_depth","Глубина цвета","10 бит — запрос, фактический формат зависит от surface игры");Choice(ui,"dither","Дизеринг");}
+  void ColorPage(trg::Ui& ui){
+    Choice(ui,"color_encoding","Кодирование цвета");
+    Choice(ui,"color_depth","Глубина цвета","10 бит — экспериментальный запрос SDR, не HDR. Нужна поддержка поверхности и экрана; иначе игра явно вернётся к 8 бит. Выбор 10 бит отключает 8-битный дизеринг.");
+    ImGui::BeginDisabled(settings["graphics"].value("color_depth",8)==10);Choice(ui,"dither","Дизеринг");ImGui::EndDisabled();
+    const auto& display=last.is_object() && last.contains("applied")?last:snapshot.at("display_info");
+    if(display.is_object() && display.contains("applied")){
+      const auto& applied=display.at("applied");
+      ui.Info("Фактический формат последней сессии",(Text(applied.value("bits",Json()))+" бит · "+applied.value("format_name","")).c_str());
+      if(applied.value("depth_fallback",false))ui.Help("Запрос 10 бит не поддержан поверхностью: применено 8 бит.");
+    }else ui.Help("Фактическая глубина цвета появится после запуска. Наличие пункта 10 бит не подтверждает 10-битный вывод.");
+  }
   void GraphicsPage(trg::Ui& ui){
-    ui.Choice("Набор настроек","Применение меняет графику; Save сохраняет изменения","ui.preset","compatibility",{{"compatibility","Совместимость"},{"quality","Качество"}});
+    ui.Choice("Набор настроек","Применение меняет графику; кнопка «Сохранить» записывает изменения","ui.preset","compatibility",{{"compatibility","Совместимость"},{"quality","Качество"},{"streaming","Плавная загрузка"}});
     if(ui.ButtonRow("Применить набор","Профиль и сохранения сохраняются","Применить")){
       auto name=store.Get("ui.preset","compatibility");
       for(auto i=snapshot.at("presets").at(name).begin();i!=snapshot.at("presets").at(name).end();++i)settings["graphics"][i.key()]=i.value();
     }
-    Choice(ui,"anisotropy","Анизотропная фильтрация");Choice(ui,"antialiasing","Сглаживание");Choice(ui,"output_effect","Масштабирование","CAS / FSR 1 требуют FidelityFX в выбранном runtime");Choice(ui,"sharpness","Резкость CAS");Choice(ui,"fsr_sharpness","Резкость FSR");
+    Choice(ui,"anisotropy","Анизотропная фильтрация");Choice(ui,"antialiasing","Сглаживание");Choice(ui,"output_effect","Масштабирование","CAS и FSR 1 интегрированы в эту сборку. Качество картинки не проверено; нужны экспериментальные настройки");ImGui::BeginDisabled(settings["graphics"].value("output_effect","")!="cas");Choice(ui,"sharpness","Резкость CAS");ImGui::EndDisabled();
+    ImGui::BeginDisabled(settings["graphics"].value("output_effect","")!="fsr");Choice(ui,"fsr_sharpness","Резкость FSR");ImGui::EndDisabled();
+    ui.Spacer();
+    ui.Info("Память и подгрузка","Изменения применяются при следующем запуске игры");
+    Choice(ui,"texture_cache_soft_mb","Целевой кэш текстур (МиБ)","Неиспользуемые текстуры сохраняются до срока удержания, пока не достигнут жёсткий предел");
+    Choice(ui,"texture_cache_hard_mb","Предел кэша текстур (МиБ)","Оставляйте запас VRAM для экрана, буферов и других приложений");
+    Choice(ui,"texture_cache_retention_s","Удержание текстур (сек.)","Уменьшает повторную загрузку недавно использованных текстур; жёсткий предел памяти сохраняется");
+    Choice(ui,"asset_read_ahead_mb","Фоновая подгрузка (МиБ)","Авто: 16 МиБ в поддерживаемом runtime. Подготавливает следующие части игровых архивов в RAM; сохранения не затрагиваются");
     if(ui.ConfirmRow("Сброс графики","Профили и сохранения сохраняются","Сбросить","Сбросить настройки графики?","Сбросить","Отмена"))store.ResetToDefaults();
   }
   trg::LauncherConfig Config(){
@@ -306,7 +377,7 @@ struct App {
     auto page=[this](const char* name,const char* blurb,auto draw){return trg::Page{name,blurb,[this,draw](trg::Ui& ui){
       if(!ready){ui.Paragraph(message.c_str());return;}
       ImGui::BeginDisabled(Busy());(this->*draw)(ui);ImGui::EndDisabled();
-      ui.Spacer();ui.Help(message.c_str());
+      ui.Spacer();if(Dirty())ui.Help("Есть несохранённые изменения. Сохраните их или запустите игру, чтобы применить.");ui.Help(message.c_str());
     },{}};};
     c.pages.push_back(page("Запуск","Профиль, сборка и состояние игры",&App::LaunchPage));
     c.pages.push_back(page("Профиль и сохранения","Отдельные данные и резервные копии",&App::ProfilesPage));
@@ -318,6 +389,9 @@ struct App {
   }
 };
 int main(int argc,char** argv){
+  // SDL X11 uses XmbTextListToTextProperty for WM_NAME: the C locale corrupts UTF-8.
+  std::setlocale(LC_CTYPE, "");
+  if(std::string(nl_langinfo(CODESET))!="UTF-8")std::setlocale(LC_CTYPE,"C.UTF-8");
   signal(SIGPIPE,SIG_IGN);
   try{
     fs::path root=FindRoot();std::string profiles;int smoke_frames=0;

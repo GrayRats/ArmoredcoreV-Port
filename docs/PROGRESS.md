@@ -1,5 +1,20 @@
 # ACV — verified milestones and limits
 
+2026-10-28: launcher options updated in release1.0: Cyrillic X11 window title,
+executable guidance, frame caps30/60/120, shared resolution presets including32:9,
+10-bit request with dithering coordination and actual-session depth display;
+FSR2/3 removed from choices. Real X11 title-property oracle, backend and App
+regression and six-page smoke pass; CAS/FSR effects remain untested.
+[Details](LAUNCHER_PACKAGE.md#launcher-options--2026-10-28).
+
+2026-10-28: TRG interface workflows fixed and published in existing release1.0:
+read-only debounced draft preview, dirty refresh/revert, unsaved graphics-only
+reset, profile form population, separate backups/session state, file/folder pickers,
+bundled-game selection, empty-operation guards and effect-dependent sharpness controls.
+User-visible PLAN references removed. Two isolated Python checks, real App regression
+and six-page render smoke pass. Accepted game binaries preserved; CAS/FSR not tested.
+[Evidence and limits](LAUNCHER_PACKAGE.md#interface-polish--2026-10-28).
+
 This is a summary of evidence, not a task queue.
 Priorities are in [PLAN](PLAN.md); the quick entry point is the [state](X360_PROJECT_STATE.md).
 The full earlier journal, unchanged: [originals.tar.gz](../logs/docs-context-20261022/originals.tar.gz),
@@ -772,3 +787,25 @@ WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, 
   Identical offline profile clones prepared under source lock/verified backup;
   scripted comparison not started. No gameplay60FPS or promotion claim.
   [Consolidated progress](FPS_READBACK_PROGRESS_20261027.md).
+
+
+## Focused readback runtime comparison, 2026-10-27
+
+Runtime comparison completed: candidate20261027T052317764850Z and focused control20261027T052659721550Z,210s each, child0/fatal0. Pool wait976.869→33.794ms in late35s; cadence≈60 in both, no mission FPS gain proven. Main XThread44.79→95.29% core; polling82BAF218/82BAE308 needs investigation. Actual fullscreen1920x1080; mission identity/pacing/image unconfirmed. All runs ended; no promotion.
+
+[Detailed results and remaining work](FPS_READBACK_PROGRESS_20261027.md).
+
+
+- 2026-10-27: Parallel copy accepted by user; host/GPU/ASan checks and two210s game runs pass. Actual copy worker16.79% core. Gameplay windows differed, so no FPS gain claim. Separate package promotion remains pending. [Details](CPU_PARALLEL_READBACK_20261027.md).
+
+
+- 2026-10-27: Published separate FOVHUD package185files; accepted two-thread readback launch mode, CAS/FSR1 integrated without effect tests per user. Viewport-derived HUD/RAII and camera LR diagnostics fixed. Actual-source ASan/UBSan and35s2560x1080 startup pass; world-marker/visual parity unverified. [Package](LAUNCHER_PACKAGE.md), [checkpoint](../logs/acv-fov-hud-refine-20261027/checkpoint.json).
+
+- 2026-10-27: Launcher memory/retention/readahead and recovery settings complete in separate Streaming candidate185files. Bounded archive worker and actual eviction/IO ASan/UBSan pass; two210s runs child0/fatal0, package/frontend/UI checks pass. Cache evictions0 under both policies; model/location unloading and loading-time gain unconfirmed, representative reproduction needed. CAS/FSR effects untested, accepted baseline retained. [Evidence and remaining work](RESOURCE_STREAMING_20261027.md).
+
+- 2026-10-27: User-requested ACV-Linux-release-1.0 assembled with current TRG launcher, recompiled game and copied data/libraries.186 manifest files (~3.88GiB), version metadata/release notes, dependency/hash checks pass. Previous packages and saves retained; CAS/FSR tests omitted. Startup result and exact hashes: [release checkpoint](../logs/acv-release-1.0-20261027/checkpoint.json). Existing gameplay/loading-time limits remain.
+
+  Release1.0 exact-folder45s frontend check: child0/fatal0, local runtime/environment,
+  profile lock and shutdown lifecycle PASS; startup scope only.
+
+- 2026-10-28: User confirmed «Да, помогло» for the native UltraWide local-frustum fix. Actual translated retail sphere tests/SDK context and FOV/HUD ASan/UBSan pass;160s2560×1080 run child0/fatal0, both camera paths patched. Release1.0 updated to ELFefa4756c with verified backup,186hashes/dependencies pass. Resource ownership unchanged; no new FPS or blanket streaming-unload claim. [Details](ENGINE_OFFSCREEN_20261028.md).

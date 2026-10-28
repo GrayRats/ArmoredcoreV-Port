@@ -1,6 +1,6 @@
 {
-  "recorded_utc": "20261024T135636Z",
-  "note": "re-recorded deliberately after the mission-2 freeze investigation: accepted set = ELF with system: mount + FidelityFX-enabled runtime with RenderDoc opt-in, bounded paint waits, shm unlink, frame limiter",
+  "recorded_utc": "2026-10-27T14:59:20.169986+00:00",
+  "note": "Accepted parallel copy retained; viewport-derived main HUD bounds and FOV hook restoration refined. Host2560x1080 math/ABI regression passes. CAS/FSR1 integrated without new effect tests, per user. Other resolutions/FPS/save/controller work skipped.",
   "project": {
     "branch": "acv-profiles-launcher",
     "head": "043b34d750294f33165517f0c2fffc3685fff997",
@@ -10,7 +10,7 @@
   "rexglue_sdk": {
     "head": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
     "describe": "Release v0.10.0",
-    "working_diff_sha256": "2370061f53291c4cfe5cd55b3c5fb22b48030b59d1a9804a29782b8f11e54a51",
+    "working_diff_sha256": "b5e540023a3888234cec1ba203210702c625249d41f7ee9a295944daaff2ef4b",
     "working_diff_files": [
       "include/rex/graphics/command_processor.h",
       "include/rex/graphics/vulkan/command_processor.h",
@@ -18,6 +18,7 @@
       "include/rex/system/xmemory.h",
       "include/rex/ui/vulkan/submission_tracker.h",
       "src/audio/xma_context.cpp",
+      "src/core/filesystem_posix.cpp",
       "src/core/memory_posix.cpp",
       "src/core/threading_posix.cpp",
       "src/core/timer_queue.cpp",
@@ -64,25 +65,30 @@
       "timer-queue-blocking-wait.patch": "019629c5c090fe8e94102cbfa7d9c3615ebed3a777aaafd1b0fe3b2302378d4b",
       "vulkan-delayed-stage-profile.patch": "c5fdd7cc1fcb51e5eb757be0690c19c22eaad0906fd595afb32cd18c0c00db65",
       "vulkan-fast-previous-generation-wait.patch": "8ea7248b366d1eba872caa462444ec8a071d1baf8d5ded3567988067300524ca",
-      "vulkan-fast-readback-submit-experiment.patch": "88d0372bd073beb33932168afbcc23c208d8ce4835d4eb1f45e39b7de3fe3781"
+      "vulkan-fast-readback-submit-experiment.patch": "88d0372bd073beb33932168afbcc23c208d8ce4835d4eb1f45e39b7de3fe3781",
+      "gpu-readback-minimal-admission.patch": "7068ec21d2ddd7fb5adbb688b36c4ad2f9f0b83097f854c5878bca0367ffd083",
+      "gpu-readback-oldest-fitting-slot.patch": "3fcdd6fdece701dfaff37224e73c2deda7c8ee1fa42fa66bbaa1256ba2533c68",
+      "parallel-readback-copy.patch": "fdda4ec4c2ec78f481337bbee5040cb55a8a08e415c8b95ee4a24d100ed07eee",
+      "bounded-archive-read-ahead.patch": "6c45d08812097474b2a55b85b859282cd5dd4e7c06f283220f7bbad39ed91a01",
+      "texture-retention-telemetry.patch": "9652321f06374706acad707395074c91eada5de385ee05585530d5badc3b709f"
     }
   },
   "runtime_artifacts": {
     "acv_linux_probe": {
-      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
-      "sha256": "6cd54abf0b011e5f93cd209b51bbe39c8aa4020095df6e10b3943c3b552d0715"
+      "source": "tmp/acv-engine-offscreen-fix-r2/acv_linux_probe",
+      "sha256": "efa4756cf41e2dfd5d396e08caec02736be15ae5599d9c4d5f92069fc154f321"
     },
     "librexruntime.so": {
-      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexruntime.so",
-      "sha256": "ebf338a181f341f395db534122639d83844dd35368ba56c8d7201f12c6f8e3d8"
+      "source": "tmp/acv-engine-offscreen-fix-r2/librexruntime.so",
+      "sha256": "544bdaae0e54c52fc10a60cacdf4a4973841a2ba02e2c9579a54f062fc6ad084"
     },
     "librexgpu-xenos.so": {
-      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexgpu-xenos.so",
-      "sha256": "141540635406a8d90abbb20feb17e1fac6399ba6676d72c765344495c659d434"
+      "source": "tmp/acv-engine-offscreen-fix-r2/librexgpu-xenos.so",
+      "sha256": "fe4550d59b4f1522e0794e19c659cc5dc016477e0fec8967b4caadfd17b248b6"
     },
     "libamd_fidelityfx_vk.so": {
-      "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/libamd_fidelityfx_vk.so",
-      "sha256": "eaafe390586c3cb80bbd9f2155264db9d9054483664b7cdaaf22f6a9d748ece0"
+      "source": "tmp/acv-engine-offscreen-fix-r2/libamd_fidelityfx_vk.so",
+      "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
     }
   },
   "build_notes": [
@@ -153,7 +159,89 @@
         "sha256": "141540635406a8d90abbb20feb17e1fac6399ba6676d72c765344495c659d434"
       },
       "reason": "runtime rebuilt from the current SDK tree: includes the thread-join, TimerQueue and WaitMultiple fixes made after 2026-10-24"
+    },
+    {
+      "recorded_utc": "20261024T135636Z",
+      "runtime_artifacts": {
+        "acv_linux_probe": {
+          "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe",
+          "sha256": "6cd54abf0b011e5f93cd209b51bbe39c8aa4020095df6e10b3943c3b552d0715"
+        },
+        "librexruntime.so": {
+          "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexruntime.so",
+          "sha256": "ebf338a181f341f395db534122639d83844dd35368ba56c8d7201f12c6f8e3d8"
+        },
+        "librexgpu-xenos.so": {
+          "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/librexgpu-xenos.so",
+          "sha256": "141540635406a8d90abbb20feb17e1fac6399ba6676d72c765344495c659d434"
+        },
+        "libamd_fidelityfx_vk.so": {
+          "source": "tmp/acv-rexglue-linux-indexed/out/build/linux-release/libamd_fidelityfx_vk.so",
+          "sha256": "eaafe390586c3cb80bbd9f2155264db9d9054483664b7cdaaf22f6a9d748ece0"
+        }
+      },
+      "reason": "Preserved before user-accepted parallel copy promotion, 2026-10-27",
+      "full_previous_record": "logs/acv-selected-package-20261027/before/tools/native-rexglue/RUNTIME_BASELINE.json"
+    },
+    {
+      "runtime_artifacts": {
+        "acv_linux_probe": {
+          "source": "tmp/acv-fov-hud-refine-fix/acv_linux_probe",
+          "sha256": "6c02660dcf1753d555968e94e4e1528591da448a6586cbb54fabc484fa6704af"
+        },
+        "librexruntime.so": {
+          "source": "tmp/acv-fov-hud-refine-fix/librexruntime.so",
+          "sha256": "ebf338a181f341f395db534122639d83844dd35368ba56c8d7201f12c6f8e3d8"
+        },
+        "librexgpu-xenos.so": {
+          "source": "tmp/acv-fov-hud-refine-fix/librexgpu-xenos.so",
+          "sha256": "8fb1256564fafebf526c9665d31753924d63f0c5493bc4753ee2b376df3fc0a5"
+        },
+        "libamd_fidelityfx_vk.so": {
+          "source": "tmp/acv-fov-hud-refine-fix/libamd_fidelityfx_vk.so",
+          "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
+        }
+      },
+      "reason": "Before viewport-derived FOV/HUD refinement; prior Integrated package retained"
+    },
+    {
+      "runtime_artifacts": {
+        "acv_linux_probe": {
+          "source": "tmp/acv-fov-hud-refine-fix/acv_linux_probe",
+          "sha256": "6c02660dcf1753d555968e94e4e1528591da448a6586cbb54fabc484fa6704af"
+        },
+        "librexruntime.so": {
+          "source": "tmp/acv-fov-hud-refine-fix/librexruntime.so",
+          "sha256": "ebf338a181f341f395db534122639d83844dd35368ba56c8d7201f12c6f8e3d8"
+        },
+        "librexgpu-xenos.so": {
+          "source": "tmp/acv-fov-hud-refine-fix/librexgpu-xenos.so",
+          "sha256": "8fb1256564fafebf526c9665d31753924d63f0c5493bc4753ee2b376df3fc0a5"
+        },
+        "libamd_fidelityfx_vk.so": {
+          "source": "tmp/acv-fov-hud-refine-fix/libamd_fidelityfx_vk.so",
+          "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
+        }
+      },
+      "reason": "Before user-confirmed native local frustum synchronization, 2026-10-28",
+      "full_previous_record": "logs/acv-engine-offscreen-20261028/baseline-before.json"
     }
   ],
-  "recorded_utc_host_update": "2026-10-27"
+  "recorded_utc_host_update": "2026-10-28",
+  "launch_environment": {
+    "ACV_GENERAL_DEFERRED_READBACK": "1",
+    "ACV_PARALLEL_READBACK_COPY": "2",
+    "ACV_GPU_POLL_BACKOFF": "0"
+  },
+  "host_sources": {
+    "scene_aspect_experiment.cpp": "60d3bdb793d6ec59d9396670bb5a507a779da14d606fde4f42f779827752b348",
+    "gpu_poll_backoff.cpp": "7a8f706bdd6b1f144f3491568fccc6014d92ea20648d57545891cfc671d7946b",
+    "CMakeLists.linux-probe.txt": "708f0b6b6a837eac71f7144032273052680d29e44af259bc255924bb6a5eb51a"
+  },
+  "acceptance": {
+    "user_confirmation": "Да, помогло",
+    "scope": "UltraWide native local-frustum synchronization; no new global FPS or all-mission acceptance",
+    "checkpoint": "logs/acv-engine-offscreen-20261028/checkpoint.json"
+  },
+  "artifact_source_checkpoint": "logs/acv-resource-streaming-20261027/checkpoint.json"
 }

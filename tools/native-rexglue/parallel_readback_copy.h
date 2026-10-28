@@ -1,0 +1,106 @@
+#pragma once
+#include <algorithm>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+namespace acv {
+// Synchronous fork/join of a single non-overlapping copy. Callers retain every
+// source/destination allocation and any external memory lock until Copy returns.
+// Workers only touch raw disjoint bytes; they never call Memory or Vulkan APIs.
+// At most three persistent workers, no queued jobs, small copies stay serial.
+class ParallelReadbackCopy {
+ public:
+  explicit ParallelReadbackCopy(size_t total_threads)
+      : threads_(std::clamp(total_threads, size_t(1), size_t(4))) {
+    try {
+      for (size_t i = 0; i + 1 < threads_; ++i) {
+        workers_.emplace_back([this, i] { Worker(i); });
+      }
+    } catch (...) {
+      Stop();
+      throw;
+    }
+  }
+  ~ParallelReadbackCopy() { Stop(); }
+  ParallelReadbackCopy(const ParallelReadbackCopy&) = delete;
+  ParallelReadbackCopy& operator=(const ParallelReadbackCopy&) = delete;
+
+  void Copy(void* destination, const void* source, size_t bytes) {
+    if (!bytes) return;
+    // Support concurrent producers without overlapping the single work slot.
+    std::unique_lock operation(operation_mutex_);
+    if (threads_ == 1 || bytes < kMinimumBytes) {
+      std::memcpy(destination, source, bytes);
+      return;
+    }
+    const size_t lines = bytes / 64 + (bytes % 64 != 0);
+    const size_t chunk = (lines / threads_ + (lines % threads_ != 0)) * 64;
+    {
+      std::lock_guard lock(mutex_);
+      destination_ = static_cast<uint8_t*>(destination);
+      source_ = static_cast<const uint8_t*>(source);
+      bytes_ = bytes;
+      chunk_ = chunk;
+      remaining_ = workers_.size();
+      ++generation_;
+    }
+    work_.notify_all();
+    CopyPart(static_cast<uint8_t*>(destination),
+             static_cast<const uint8_t*>(source), bytes, chunk, threads_ - 1);
+    std::unique_lock lock(mutex_);
+    done_.wait(lock, [this] { return remaining_ == 0; });
+    // Do not retain dangling lease pointers between jobs.
+    destination_ = nullptr;
+    source_ = nullptr;
+  }
+
+ private:
+  static constexpr size_t kMinimumBytes = 1024 * 1024;
+  static void CopyPart(uint8_t* destination, const uint8_t* source,
+                       size_t bytes, size_t chunk, size_t index) {
+    // index <= 3 and chunk <= ceil(bytes/threads/64)*64 for large jobs.
+    const size_t begin = index * chunk;
+    if (begin < bytes) {
+      std::memcpy(destination + begin, source + begin, std::min(chunk, bytes - begin));
+    }
+  }
+  void Worker(size_t index) {
+    uint64_t seen = 0;
+    std::unique_lock lock(mutex_);
+    for (;;) {
+      work_.wait(lock, [this, seen] { return stopped_ || generation_ != seen; });
+      if (stopped_) return;
+      seen = generation_;
+      auto* destination = destination_;
+      const auto* source = source_;
+      const size_t bytes = bytes_, chunk = chunk_;
+      lock.unlock();
+      CopyPart(destination, source, bytes, chunk, index);
+      lock.lock();
+      if (--remaining_ == 0) done_.notify_one();
+    }
+  }
+  void Stop() {
+    {
+      std::lock_guard lock(mutex_);
+      stopped_ = true;
+    }
+    work_.notify_all();
+    for (auto& worker : workers_) if (worker.joinable()) worker.join();
+  }
+  const size_t threads_;
+  std::mutex operation_mutex_, mutex_;
+  std::condition_variable work_, done_;
+  std::vector<std::thread> workers_;
+  uint8_t* destination_ = nullptr;
+  const uint8_t* source_ = nullptr;
+  size_t bytes_ = 0, chunk_ = 0, remaining_ = 0;
+  uint64_t generation_ = 0;
+  bool stopped_ = false;
+};
+}  // namespace acv
