@@ -7,6 +7,11 @@
 !/TOOLS.MD
 !/TASK-SQL.MD
 !/PLAN_GUI.MD
+!/report-fps.md
+!/RELEASE_NOTES_1.1.md
+!/perf/
+/perf/*
+!/perf/baseline.md
 !/ABOUT_DE-AC5.MD
 !/LICENSE
 !/tools/

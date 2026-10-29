@@ -1,0 +1,26 @@
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -17,6 +17,7 @@
+ #include <string_view>
+ #include <optional>
+ #include "acv_gpu_packet_snapshot.h"
++#include "acv_swap_trace.h"
+
+ #include <fmt/format.h>
+
+@@ -1041,6 +1042,7 @@
+   reader->AdvanceRead((count - 4) * sizeof(uint32_t));
+
+   const int32_t limit = REXCVAR_GET(frame_limit_fps);
++  auto* acv_trace = acv::swap_trace::begin();
+   const auto now = std::chrono::steady_clock::now();
+   if (limit != previous_frame_limit_ || limit <= 0) next_swap_ = now;
+   previous_frame_limit_ = limit;
+@@ -1068,6 +1070,7 @@
+   previous_swap_ = paced;
+
+   IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);
++  acv::swap_trace::finish(acv_trace, now, paced);
+
+   ++counter_;
+   return true;

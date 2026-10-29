@@ -30,8 +30,15 @@ This is a native Linux build through ReXGlue, not fully recovered game source.
 
 Native file/folder dialogs are integrated; interactive desktop selection is not manually verified.
 Stable 60 FPS and a full gameplay save/load round trip remain unverified; they are
-outside the currently selected work. Do not test CAS/FSR effects; resolution checks
+not yet accepted; FPS work resumes under the explicit2026-10-29 request. Do not test CAS/FSR effects; resolution checks
 are limited to 2560×1080. Gameplay profiling starts only after 90 seconds.
+
+## Active FPS request — 2026-10-29
+
+Target >30FPS with rendering/game-time correctness. First simultaneous60s
+CPU/GPU/IP capture:29.02guest swap/s,GPU92.4%,5665IPs/lost0.
+Mission/action annotation and raw per-frame trace remain missing; GPU limitation
+is a hypothesis. No performance changes applied. [Report](../report-fps.md).
 
 ## Details
 

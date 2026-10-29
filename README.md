@@ -37,17 +37,15 @@ In parallel, an independent C/C++ reconstruction of the game's behaviour is bein
 
 ## Current status
 
-Confirmed so far (details and verification steps are in [docs/PROGRESS.md](docs/PROGRESS.md)):
+The [ACV-Linux 1.1 source release notes](RELEASE_NOTES_1.1.md) describe the launcher, settings and package workflow in English and Russian. This GitHub release contains no game binaries or data; it is not the standalone `ACV-Linux-release-1.0` folder.
 
-- The native build compiles and runs up to the menu and the intro. In mission 2 the game hangs on a black screen;
-  its cause is **not identified**. Evidence: [docs/PROGRESS.md](docs/PROGRESS.md#native-linux),
-  [hang analysis](docs/NATIVE_REXGLUE_LINUX.md#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24).
-- Resources: all 19,744 BHD5 entries and BND3 entries (including format 0x2c) are unpacked, and 7,111 FLVER headers are parsed;
-  the Xbox 360 BC1 layout is confirmed by exact block matches.
-- Game logs: `dlc_sound:` is partially mounted from the image data (75 successful opens); the emblems and 7 sounds
-  need an image with DLC, which is not in the repository.
-- Open: pixel shader emulation, readback verification in the game, and stubs for the kernel functions
-  `ObReferenceObject` and `IoDismountVolumeByFileHandle`.
+The current standalone package is [ACV-Linux-release-1.0](../ACV-Linux-release-1.0/start.sh). Its TRG launcher, profile/settings backend and game/runtime files are tested as a local Linux package. The launcher includes display and graphics settings, XDG profiles, backup/restore, input bindings, and bounded texture-cache/read-ahead controls.
+
+A user-run release1.0 session stayed active beyond 184 seconds. A 60-second sample recorded 29.02 guest swaps/s, 92.4% device-wide GPU utilization, and no lost CPU IP samples. The mission and route were not identified, so this is not a repeatable gameplay baseline; FPS above30, 1% low, image correctness, and game-time pacing remain unaccepted. See the [FPS report](report-fps.md).
+
+A black-screen hang in Mission2 was observed in an earlier session and remains unresolved for that scenario ([evidence](docs/PROGRESS.md#native-linux), [analysis](docs/NATIVE_REXGLUE_LINUX.md#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24)). It is not known whether it matches the later unlabelled performance sample.
+
+Resource work includes validated BHD5/BDT and BND3 parsing, 7,111 FLVER headers, and Xbox360 BC1 block matching. DLC sound is partially mounted; emblems and seven sounds require an image with DLC. Pixel-shader emulation, in-game readback coverage, and kernel behavior for `ObReferenceObject` and `IoDismountVolumeByFileHandle` remain open.
 
 The detailed plan, acceptance criteria and journal are in [docs/PLAN.md](docs/PLAN.md) and [docs/PROGRESS.md](docs/PROGRESS.md).
 

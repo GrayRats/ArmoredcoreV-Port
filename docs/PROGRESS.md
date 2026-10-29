@@ -1,5 +1,25 @@
 # ACV — verified milestones and limits
 
+2026-10-29: user's release1.0 session161152 captured after183.87s:60CPU/GPU rows,
+5665IPs/lost0;5complete pacing windows1500intervals yield29.0203swap/s.
+GPU92.43%device-wide; main GPU Commands68.30%,DrawThread44.71%core.
+No warning/error within sampled window; mission/action,1%low and render/game-time
+acceptance remain missing. File hashes match accepted ELF/runtime/GPU, maps/stat
+device mismatch retained. Game not stopped; no performance edits.
+[Evidence and limits](../report-fps.md).
+
+2026-10-29: concurrent CPU/GPU/IP capture tool added; real host-process regression
+checks identity/start-window overlap, artifact hashes, logs, evidence preservation,
+CLI age gate and early-process-exit failure. No game launch/performance change;
+representative mission/action and raw per-frame trace remain pending.
+[Tool and limits](../report-fps.md).
+
+2026-10-29: FPS reconnaissance: Release/O3/Clang23 build rules checked,
+release ELF/runtime/GPU/FFX SHA match accepted baseline. Preserved latest user's
+late2400swap samples:22.2289/s,44.9865ms; no raw1%low, scene identity or concurrent
+CPU/GPU sample. Two resolve/draw errors prevent correctness acceptance.
+No runtime/config/performance edits; >30FPS remains open. [Report](../report-fps.md).
+
 2026-10-28: isolated the two resolution selectors' ImGui IDs on Screen;
 Ui::Help did not end their shared table. Actual ScreenPage baseline reproduces
 2 items per ID with all advanced controls available; fixed regression passes with1.
