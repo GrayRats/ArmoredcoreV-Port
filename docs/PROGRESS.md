@@ -1,5 +1,14 @@
 # ACV — verified milestones and limits
 
+2026-10-29: bilingual Install guides document Linux/Windows SDK x86-64-v2,
+missing ACV game rebuild inputs, package commands and current GLIBC limits.
+Clean Ubuntu24.04/Clang18 launcher build + real Xvfb JPEG PASS in
+[CI40919963102](https://github.com/GrayRats/ArmoredcoreV-Port/actions/runs/40919963102).
+GHCR build-tools package published; anonymous pull digest verified. Portable
+ACV CMake configure and actual font-path packaging/positive-negative dependency
+checks PASS. Native Windows ACV application remains unported/unbuilt.
+[English](../Install.MD), [Русский](../Install.RU.MD).
+
 2026-10-29: user's release1.0 session161152 captured after183.87s:60CPU/GPU rows,
 5665IPs/lost0;5complete pacing windows1500intervals yield29.0203swap/s.
 GPU92.43%device-wide; main GPU Commands68.30%,DrawThread44.71%core.

@@ -55,6 +55,10 @@ def main():
     ap.add_argument('--include-game-data', action='store_true')
     ap.add_argument('--frontend', choices=('qt', 'trg'), default='qt')
     ap.add_argument('--launcher', type=Path)
+    ap.add_argument('--font-dir', type=Path, default=Path('/usr/share/fonts/TTF'),
+                    help='TRG: folder containing DejaVuSans.ttf and DejaVuSans-Bold.ttf')
+    ap.add_argument('--font-license', type=Path, default=Path('/usr/share/licenses/ttf-dejavu/LICENSE'),
+                    help='TRG: DejaVu license/copyright notice to include in the package')
     ap.add_argument('--skip-settings-tests', action='store_true', help='Package without the settings suite, including effect checks; record the omission')
     ap.add_argument('--candidate-env', action='append', default=[], metavar='KEY=VALUE', help='Explicit bounded readback settings for an unaccepted candidate; repeatable')
     ap.add_argument('--qt-plugins', type=Path, default=Path('/usr/lib/qt6/plugins'))
@@ -111,8 +115,8 @@ def main():
         if args.frontend == 'trg':
             put(ROOT / 'tools/acv-trg-launcher/backend.py', 'tools/acv-trg-launcher/backend.py')
             for name in ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf'):
-                put(Path('/usr/share/fonts/TTF') / name, 'data/fonts/' + name)
-            put(Path('/usr/share/licenses/ttf-dejavu/LICENSE'), 'licenses/DejaVu.txt')
+                put(args.font_dir / name, 'data/fonts/' + name)
+            put(args.font_license, 'licenses/DejaVu.txt')
             for source, name in [('tools/trg-launcher/README.md', 'TRG-upstream-notice'),
                                   ('tmp/acv-trg-build/_deps/acv_sdl2-src/LICENSE.txt', 'SDL2'),
                                   ('tmp/acv-trg-build/_deps/trg_imgui_src-src/LICENSE.txt', 'ImGui'),

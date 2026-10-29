@@ -2,6 +2,8 @@
 
 [English](README.md) | [Русский](README.RU.MD)
 
+[Сборка и установка](Install.RU.MD) · [Участники](CONTRIBUTORS.md) · [Packages](https://github.com/GrayRats/ArmoredcoreV-Port/pkgs/container/acv-build-tools)
+
 Исследовательский проект: реконструкция и нативная Linux-сборка **Armored Core V** (Xbox 360).
 Машинный код PowerPC из `default.xex` переводится в C++ через ReXGlue SDK и запускается на Linux;
 параллельно ведётся независимая C/C++ реконструкция поведения по retail-данным.

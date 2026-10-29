@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 LIMIT = 512 * 1024
-ALLOWED_ROOT = {'.gitignore','README.md','README.RU.MD','AGENTS.md','TASK-SQL.MD','PLAN_GUI.MD','TOOLS.MD','Install.MD','Install.RU.MD','report-fps.md','RELEASE_NOTES_1.1.md','ABOUT_DE-AC5.MD','LICENSE'}
+ALLOWED_ROOT = {'.gitignore','README.md','README.RU.MD','AGENTS.md','TASK-SQL.MD','PLAN_GUI.MD','TOOLS.MD','Install.MD','Install.RU.MD','CONTRIBUTORS.md','report-fps.md','RELEASE_NOTES_1.1.md','ABOUT_DE-AC5.MD','LICENSE'}
 FORBIDDEN = {'node_modules','__pycache__','.venv','build','out','bin','obj','target','dist',
              'generated','thirdparty','third_party','vendor','logs','cache','temp','tmp',
              'rexglue-sdk','XenonRecomp','XenosRecomp','360toolsUpdated','360tools-skill','ghidra-rpc-local'}

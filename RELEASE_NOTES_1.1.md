@@ -2,6 +2,10 @@
 
 ## English
 
+**Build and install:** [Linux/Windows x64-v2 guide](https://github.com/GrayRats/ArmoredcoreV-Port/blob/main/Install.MD) · [Build tools package](https://github.com/GrayRats/ArmoredcoreV-Port/pkgs/container/acv-build-tools). The guide distinguishes the Linux application, Windows SDK build and the remaining native Windows ACV work.
+
+Updated build sources are attached as `ACV-Linux-1.1-build-sources.zip` and `.tar.gz`; `BUILD-SOURCE-COMMIT.txt` identifies their source commit and `ACV-Linux-1.1-build-sources.SHA256SUMS.txt` contains checksums. They include the installation guides, CMake templates and scripts; the guide lists additional generated/SDK inputs required for a full game rebuild.
+
 This GitHub release publishes the source, scripts, configuration examples and
 project documentation used to build and operate ACV-Linux. It also attaches a
 split archive of the existing local `ACV-Linux-release-1.0` Linux package. That
@@ -47,6 +51,10 @@ See `README.md`, `README.RU.MD`, `docs/LAUNCHER_PACKAGE.md`,
 `report-fps.md` and `perf/baseline.md` for setup, scope and verification limits.
 
 ## Русский
+
+**Сборка и установка:** [инструкция Linux/Windows x64-v2](https://github.com/GrayRats/ArmoredcoreV-Port/blob/main/Install.RU.MD) · [пакет инструментов](https://github.com/GrayRats/ArmoredcoreV-Port/pkgs/container/acv-build-tools). В инструкции отдельно отмечены Linux-приложение, сборка Windows SDK и оставшаяся работа по нативному Windows-порту ACV.
+
+Актуальные сборочные исходники приложены как `ACV-Linux-1.1-build-sources.zip` и `.tar.gz`; `BUILD-SOURCE-COMMIT.txt` указывает исходный коммит, а `ACV-Linux-1.1-build-sources.SHA256SUMS.txt` содержит хеши. Внутри находятся Install-инструкции, CMake-шаблоны и скрипты; дополнительные generated/SDK входы полной пересборки игры перечислены в инструкции.
 
 Этот выпуск GitHub публикует исходники, скрипты, примеры настроек и документацию
 ACV-Linux. Также приложен архив существующего локального Linux-пакета

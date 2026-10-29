@@ -8,11 +8,16 @@ project(acv_linux_probe LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+get_filename_component(_acv_default_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(ACV_PROJECT_ROOT "${_acv_default_root}" CACHE PATH "ACV repository root")
+set(ACV_ADJUSTING_THUNKS "${ACV_PROJECT_ROOT}/tmp/acv-native-adjusting-thunks.cpp"
+    CACHE FILEPATH "Previously generated and verified ACV adjusting thunks")
+
 include(generated/rexglue.cmake)
-include("/home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/codegen-override.cmake")
+include("${ACV_PROJECT_ROOT}/tools/native-rexglue/codegen-override.cmake")
 
 # Copy the canonical host header whenever it changes; keep private builds in sync.
-set(ACV_HOST_SOURCE_DIR "/home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue")
+set(ACV_HOST_SOURCE_DIR "${ACV_PROJECT_ROOT}/tools/native-rexglue")
 configure_file("${ACV_HOST_SOURCE_DIR}/acv_linux_probe_app.h"
                "${CMAKE_CURRENT_SOURCE_DIR}/src/acv_linux_probe_app.h" COPYONLY)
 
@@ -28,7 +33,7 @@ set(_acv_revision_inputs
     "${ACV_HOST_SOURCE_DIR}/gpu_poll_backoff.cpp"
     "${ACV_HOST_SOURCE_DIR}/scene_aspect_experiment.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
-    "/home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-native-adjusting-thunks.cpp")
+    "${ACV_ADJUSTING_THUNKS}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_acv_revision_inputs})
 set(_acv_revision_data "")
 foreach(_acv_revision_input IN LISTS _acv_revision_inputs)
@@ -43,12 +48,12 @@ configure_file("${ACV_HOST_SOURCE_DIR}/acv_build_info.h.in"
 # Sources
 set(ACVLINUXPROBE_SOURCES
     src/main.cpp
-    /home/art/DEV/DECOMP/DEArmoredcore/tmp/acv-native-adjusting-thunks.cpp
-    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/retail_leaves.cpp
-    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/gpu_poll_backoff.cpp
-    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/scene_aspect_experiment.cpp
-    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/renderdoc_trigger.cpp
-    /home/art/DEV/DECOMP/DEArmoredcore/tools/native-rexglue/acv_compat_shims.cpp
+    "${ACV_ADJUSTING_THUNKS}"
+    "${ACV_HOST_SOURCE_DIR}/retail_leaves.cpp"
+    "${ACV_HOST_SOURCE_DIR}/gpu_poll_backoff.cpp"
+    "${ACV_HOST_SOURCE_DIR}/scene_aspect_experiment.cpp"
+    "${ACV_HOST_SOURCE_DIR}/renderdoc_trigger.cpp"
+    "${ACV_HOST_SOURCE_DIR}/acv_compat_shims.cpp"
 )
 
 if(WIN32)

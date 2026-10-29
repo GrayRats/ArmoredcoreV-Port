@@ -3,6 +3,7 @@
 import argparse,hashlib,json,os,re,subprocess
 from pathlib import Path
 ap=argparse.ArgumentParser();ap.add_argument("package",type=Path);a=ap.parse_args();p=a.package.resolve()
+development_root=Path(__file__).resolve().parents[2]
 m=json.loads((p/"manifest.json").read_text())
 assert m["frontend"]=="trg"
 for name,record in m["files"].items():
@@ -17,7 +18,8 @@ for name in ["bin/acv-launcher",*['bin/game/'+n for n in m['runtime_hashes']]]:
  r=subprocess.run(["ldd",str(p/name)],env=env,text=True,capture_output=True,check=True)
  assert "not found" not in r.stdout,r.stdout
  for lib,location in re.findall(r"^\s*(\S+) => (/\S+)",r.stdout,re.M):
-  assert "/DEArmoredcore/" not in location,(lib,location)
+  resolved=Path(location).resolve()
+  assert resolved.is_relative_to(p) or not resolved.is_relative_to(development_root),('Development dependency outside package',lib,location)
   assert not lib.startswith(("libQt","libicu")),lib
  resolution[name]=r.stdout
 assert "QT_" not in (p/"start.sh").read_text()
