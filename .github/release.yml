@@ -1,0 +1,8 @@
+changelog:
+  exclude:
+    authors:
+      - claude
+      - 'claude[bot]'
+      - codex
+      - 'codex[bot]'
+      - 'openai[bot]'

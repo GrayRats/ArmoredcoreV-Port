@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 LIMIT = 512 * 1024
-ALLOWED_ROOT = {'.gitignore','README.md','README.RU.MD','AGENTS.md','TASK-SQL.MD','PLAN_GUI.MD','TOOLS.MD','report-fps.md','RELEASE_NOTES_1.1.md','ABOUT_DE-AC5.MD','LICENSE'}
+ALLOWED_ROOT = {'.gitignore','README.md','README.RU.MD','AGENTS.md','TASK-SQL.MD','PLAN_GUI.MD','TOOLS.MD','Install.MD','Install.RU.MD','report-fps.md','RELEASE_NOTES_1.1.md','ABOUT_DE-AC5.MD','LICENSE'}
 FORBIDDEN = {'node_modules','__pycache__','.venv','build','out','bin','obj','target','dist',
              'generated','thirdparty','third_party','vendor','logs','cache','temp','tmp',
              'rexglue-sdk','XenonRecomp','XenosRecomp','360toolsUpdated','360tools-skill','ghidra-rpc-local'}
@@ -22,7 +22,7 @@ for raw in paths:
     name=indexed_name.decode();p=Path(name);count+=1
     if mode.split()[0] not in {b'100644',b'100755'}:
         issues.append((name,'not a regular source file'));continue
-    if name not in ALLOWED_ROOT and p.parts[0] not in {'tools','scripts','docs','fine','perf','SKILL'}:
+    if name not in ALLOWED_ROOT and p.parts[0] not in {'tools','scripts','docs','fine','perf','SKILL','.github'}:
         issues.append((name,'outside allowed source directories'))
     if any(part in FORBIDDEN for part in p.parts):issues.append((name,'excluded directory'))
     if p.parts[0]=='fine' and (len(p.parts)!=2 or p.suffix.lower()!='.md'):

@@ -10,6 +10,9 @@
 !/report-fps.md
 !/RELEASE_NOTES_1.1.md
 !/SKILL/
+!/.github/
+!/Install.MD
+!/Install.RU.MD
 !/perf/
 /perf/*
 !/perf/baseline.md
@@ -139,3 +142,6 @@
 **/Armoredcore.rep
 **/decompilation/
 **/tmp/
+
+# Build toolchain image source.
+!/tools/build-tools/Dockerfile
