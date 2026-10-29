@@ -22,7 +22,7 @@ for raw in paths:
     name=indexed_name.decode();p=Path(name);count+=1
     if mode.split()[0] not in {b'100644',b'100755'}:
         issues.append((name,'not a regular source file'));continue
-    if name not in ALLOWED_ROOT and p.parts[0] not in {'tools','scripts','docs','fine','perf'}:
+    if name not in ALLOWED_ROOT and p.parts[0] not in {'tools','scripts','docs','fine','perf','SKILL'}:
         issues.append((name,'outside allowed source directories'))
     if any(part in FORBIDDEN for part in p.parts):issues.append((name,'excluded directory'))
     if p.parts[0]=='fine' and (len(p.parts)!=2 or p.suffix.lower()!='.md'):
