@@ -37,7 +37,7 @@ In parallel, an independent C/C++ reconstruction of the game's behaviour is bein
 
 ## Current status
 
-The [ACV-Linux 1.1 source release notes](RELEASE_NOTES_1.1.md) describe the launcher, settings and package workflow in English and Russian. This GitHub release contains no game binaries or data; it is not the standalone `ACV-Linux-release-1.0` folder.
+The [ACV-Linux 1.1 release notes](RELEASE_NOTES_1.1.md) describe the launcher and package in English and Russian. The release includes source/build archives and a split download of the existing `ACV-Linux-release-1.0` package; see the notes for its exact version, provenance and reassembly instructions.
 
 The current standalone package is [ACV-Linux-release-1.0](../ACV-Linux-release-1.0/start.sh). Its TRG launcher, profile/settings backend and game/runtime files are tested as a local Linux package. The launcher includes display and graphics settings, XDG profiles, backup/restore, input bindings, and bounded texture-cache/read-ahead controls.
 

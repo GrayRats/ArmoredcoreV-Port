@@ -1,13 +1,21 @@
-# ACV-Linux 1.1 — source release notes
+# ACV-Linux 1.1 — release notes
 
 ## English
 
 This GitHub release publishes the source, scripts, configuration examples and
-project documentation used to build and operate the ACV-Linux standalone
-package. It does **not** include the game executable, ReXGlue runtime/GPU
-binaries, copyrighted game data, XEX/ISO files, keys, saves or user profiles.
-The release tag is a repository source snapshot, not a replacement binary for
-`ACV-Linux-release-1.0`.
+project documentation used to build and operate ACV-Linux. It also attaches a
+split archive of the existing local `ACV-Linux-release-1.0` Linux package. That
+package remains version 1.0: its game ELF, ReXGlue runtime/GPU libraries, game
+data, DLC and bundled media were not rebuilt for this release. The uploader
+attests that public redistribution is authorized; the provenance note records
+that attestation and the package manifest scope.
+
+GitHub requires each release asset to stay below 2 GiB, so the 3.16 GiB
+compressed package archive is split into two parts. Download both
+`ACV-Linux-release-1.0.tar.zst.part-00` and
+`ACV-Linux-release-1.0.tar.zst.part-01`, then follow
+`ACV-Linux-release-1.0-PROVENANCE.md` to verify and reassemble them. This is the
+existing 1.0 build attached to release 1.1, not a new FPS build.
 
 ### Launcher and package functionality
 
@@ -40,12 +48,19 @@ See `README.md`, `README.RU.MD`, `docs/LAUNCHER_PACKAGE.md`,
 
 ## Русский
 
-Этот выпуск GitHub публикует исходники, скрипты, примеры настроек и
-документацию, использованные для сборки и работы отдельного пакета ACV-Linux.
-В выпуск **не входят** исполняемый файл игры, бинарники ReXGlue runtime/GPU,
-защищённые игровые данные, XEX/ISO, ключи, сейвы и профили пользователя.
-Тег содержит снимок исходного репозитория и не заменяет бинарный пакет
-`ACV-Linux-release-1.0`.
+Этот выпуск GitHub публикует исходники, скрипты, примеры настроек и документацию
+ACV-Linux. Также приложен архив существующего локального Linux-пакета
+`ACV-Linux-release-1.0`, разбитый на части. Это по-прежнему версия 1.0: игровой
+ELF, библиотеки ReXGlue runtime/GPU, игровые данные, DLC и видео не пересобирались
+для данного релиза. Публикатор подтвердил наличие разрешения на публичное
+распространение; provenance-файл описывает это подтверждение и манифест пакета.
+
+GitHub ограничивает каждый release asset размером менее 2 ГиБ, поэтому сжатый
+архив 3,16 ГиБ разделён на две части. Скачайте
+`ACV-Linux-release-1.0.tar.zst.part-00` и
+`ACV-Linux-release-1.0.tar.zst.part-01`, затем следуйте инструкции проверки и
+объединения в `ACV-Linux-release-1.0-PROVENANCE.md`. Это существующая сборка 1.0,
+приложенная к релизу 1.1, а не новая FPS-сборка.
 
 ### Лаунчер и функции пакета
 
