@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "uv run --no-project --python 3.15 python -I \"${CLAUDE_PLUGIN_ROOT}/ctx.py\" index --quiet", "timeout": 120 }
+        ]
+      }
+    ]
+  }
+}

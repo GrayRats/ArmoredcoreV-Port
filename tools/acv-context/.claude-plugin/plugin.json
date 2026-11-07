@@ -1,0 +1,8 @@
+{
+  "name": "acv-context",
+  "displayName": "ACV Context",
+  "version": "0.1.0",
+  "description": "Local FTS5 search over Markdown notes, log digests and budgeted context packs (architecture 15%, code 60%, logs 25%)",
+  "license": "GPL-3.0",
+  "keywords": ["fts5", "search", "context", "logs", "markdown"]
+}

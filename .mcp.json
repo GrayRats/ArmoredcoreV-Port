@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "acv-context": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        "-I",
+        "tools/acv-context/mcp_server.py"
+      ],
+      "env": {}
+    }
+  }
+}
