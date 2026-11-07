@@ -6,8 +6,8 @@
 
 **Ограничения:** Установка не подтверждает правильность игры. SDK source и установленный release различаются; сборка source требует его зависимостей. Не смешивать runtime XenonRecomp и ReXGlue без проверки.
 
-Исторический источник: [полная запись установки](originals-20261022.tar.gz), `docs/REXGLUE_INSTALL.md`.
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Исторический источник: [полная запись установки](kb-file:fine__originals-20261022.tar.gz), `tools/acv-context/docs/REXGLUE_INSTALL.md`.
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/REXGLUE_INSTALL.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/REXGLUE_INSTALL.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

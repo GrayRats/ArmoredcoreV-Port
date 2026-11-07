@@ -1,12 +1,22 @@
 # Архитектура проекта (ACV, Xbox 360)
 
-[English](ARCHITECTURE.md)
+[English](kb:ARCHITECTURE)
 
-Редакция 2026-10-21. `default.xex` извлечён, проанализирован и сгенерирован XenonRecomp. Для независимой Linux-проверки ReXGlue создан приватный проект; conditional branch targets уточнены по retail-байтам, и generation pass теперь не содержит выявленных unresolved-branch fatal paths. Linux C++ build запущен; загрузка игры ещё не проверена. Выходы двух рекомпиляторов не смешиваются.
+Редакция 2026-11-04. `default.xex` извлечён, проанализирован и сгенерирован XenonRecomp. Для независимой Linux-проверки ReXGlue создан приватный проект; conditional branch targets уточнены по retail-байтам, и generation pass теперь не содержит выявленных unresolved-branch fatal paths. Linux остаётся поддерживаемой платформой приложения. Windows Vulkan launcher
+PE32+ связан с LunarG SDK 1.4.363.1 и требует API 1.4; Wine smoke renderer прошёл
+через встроенный Wine loader. App-local LunarG loader определился как 1.4.363,
+но не загрузил Wine ICD bridge; Windows Python backend отсутствует. Нативные
+Windows WSI/gameplay не проверены. ReXGlue Windows Vulkan configure и отдельные
+translation units проходят, но полный SDK build и ACV game bridge/package не
+готовы. macOS/MoltenVK не проверены. План: kb:PLAN_WINDOWS. Выходы двух
+рекомпиляторов не смешиваются.
 
-Текущая целевая платформа: Linux. Windows-сборки, Wine и работа только для
-Windows отложены до отдельного запроса пользователя. Существующие Windows
-результаты сохраняются как исторические свидетельства.
+Linux остаётся поддерживаемой платформой приложения. Windows Vulkan launcher
+cross-linked с LunarG SDK 1.4.363.1 и требует API 1.4. Wine smoke renderer
+прошёл через встроенный Wine loader; app-local LunarG loader распознан как
+1.4.363, но Wine ICD bridge загрузить не удалось. Windows Python backend
+отсутствует, поэтому игровая часть не проверялась. Нативные Windows/macOS
+драйвер, WSI и gameplay acceptance остаются открытыми.
 
 ## Принципы
 
@@ -48,22 +58,22 @@ L5 Реконструкция / интеграция (необязательна
 host-контуре с явно указанными внешними зависимостями и арифметикой; они не
 подключены к полному runtime. Для scalar-пары split generated C++ и fused
 кандидат дают разные биты результатов; выбор до L4 oracle остаётся открытым.
-См. [область scalar-проверки](fine/NATIVE_SCALAR_830D68F0.md).
+См. [область scalar-проверки](kb:FINE_NATIVE_SCALAR_830D68F0).
 
 | Слой | Состояние | Доказательство |
 |---|---|---|
-| L0 | работает; Ghidra RPC в GUI-режиме, индексы по `.pdata` | `docs/PROGRESS.md` |
-| L1 | основной XenonRecomp собран; baseline ACV: 797 shard-файлов. Изолированные instruction experiments снизили неподдержанные сообщения 38→24; в остатке `frsqrte`-оценка без подтверждённой Xenon-совместимой реализации. Switch `0x82EF87B0`: 29 case labels подтверждены отдельной генерацией | [XENONRECOMP.md](fine/XENONRECOMP.md), [XENON_MORE_INSTRUCTIONS.md](fine/XENON_MORE_INSTRUCTIONS.md) |
-| L2 | исходники XenosRecomp склонированы, не собраны; формат ACV шейдеров и набор входов не установлены | `docs/PLAN.md` |
-| L3 | ограниченный XenonRecomp host: memory/dispatch, injected-clock closure и один configurable frequency import; проверки Linux/UBSan проходят. Независимая ReXGlue генерация покрывает 19 byte-verified exit fragments и не оставляет известные 95 conditional fatal paths. Linux C++ build/launch, полный runtime и Xenon parity не подтверждены. Windows остаётся по отдельному запросу | [NATIVE_HOST_L3.md](fine/NATIVE_HOST_L3.md), [NATIVE_XEX_RUNTIME.md](fine/NATIVE_XEX_RUNTIME.md), [NATIVE_REXGLUE_LINUX.md](NATIVE_REXGLUE_LINUX.md) |
+| L0 | работает; Ghidra RPC в GUI-режиме, индексы по `.pdata` | `kb:PROGRESS` |
+| L1 | основной XenonRecomp собран; baseline ACV: 797 shard-файлов. Изолированные instruction experiments снизили неподдержанные сообщения 38→24; в остатке `frsqrte`-оценка без подтверждённой Xenon-совместимой реализации. Switch `0x82EF87B0`: 29 case labels подтверждены отдельной генерацией | [FINE_XENONRECOMP](kb:FINE_XENONRECOMP), [FINE_XENON_MORE_INSTRUCTIONS](kb:FINE_XENON_MORE_INSTRUCTIONS) |
+| L2 | исходники XenosRecomp склонированы, не собраны; формат ACV шейдеров и набор входов не установлены | `kb:PLAN` |
+| L3 | ограниченный XenonRecomp host: memory/dispatch, injected-clock closure и один configurable frequency import; проверки Linux/UBSan проходят. Независимая ReXGlue генерация покрывает 19 byte-verified exit fragments и не оставляет известные 95 conditional fatal paths. Linux C++ build/launch, полный runtime и Xenon parity не подтверждены. Windows остаётся по отдельному запросу | [FINE_NATIVE_HOST_L3](kb:FINE_NATIVE_HOST_L3), [FINE_NATIVE_XEX_RUNTIME](kb:FINE_NATIVE_XEX_RUNTIME), [NATIVE_REXGLUE_LINUX](kb:NATIVE_REXGLUE_LINUX) |
 | L4 | не начат | — |
-| L5 | необязательная линия; подтверждённый reference-компонент и Unity EditMode тесты есть, в геймплей не подключены | `docs/PLAN.md` |
+| L5 | необязательная линия; подтверждённый reference-компонент и Unity EditMode тесты есть, в геймплей не подключены | `kb:PLAN` |
 
 ## Решения по архитектуре (предложение, требует подтверждения)
 
 1. **Рекомпиляция — основной путь анализа**, не автоматическая цель доставки. L4 сверяет малые функции по одинаковым входам/выходам в generated/native harness и Xenia. Unity/C# подключаются только при отдельной необходимости.
-2. **Покрытие L1.** Baseline XenonRecomp сообщил 10 939 неподдержанных адресов; isolated `BBB_MoreInstructions` оставил 38. Ordered lookup Xenia классифицировал raw words как `frsqrtex` (24), `vnor128` (3), `vsldoi128` (1), `lhbrx` (8), `mulhdx` (2). Изолированные изменения добавили `vnor128`, убрали PPC403 alias для Cell/Xenon и добавили `lhbrx`, `mulhdx`; diagnostics снизились до 24 (`frsqrte`). Host probes: `vsldoi128` все 16 shifts, `vnor128` 1 048 576 lanes, `lhbrx` 3 aligned halfwords, `mulhdx` 9 signed cases. Это узкие проверки кода и генерации, не Xbox 360 trace, full-shard build или runtime verification. Открыто: подтвердить Xenon-compatible оценку `frsqrte`. Switch `0x82EF87B0` разрешён: signed `addi` даёт базу `0x82EF87B4`; все 29 целей внутри owner `.pdata`, TOML принят отдельной генерацией. Подробности — [XENONRECOMP.md](fine/XENONRECOMP.md) и [XENON_MORE_INSTRUCTIONS.md](fine/XENON_MORE_INSTRUCTIONS.md).
-3. **Единый реестр функций.** Один файл (`tmp/functions.json` → в будущем `logs/functions.sqlite`) с полями: адрес, длина, источник границ (`.pdata` / эвристика / ручной), владелец-листовая ли, статус рекомпиляции, статус сверки. Сейчас границы разбросаны по `.pdata`, Ghidra и xref; расхождение уже привело к ошибке (привязка `mftb` к неверной функции, см. «Correction» в `PROGRESS.md`).
+2. **Покрытие L1.** Baseline XenonRecomp сообщил 10 939 неподдержанных адресов; isolated `BBB_MoreInstructions` оставил 38. Ordered lookup Xenia классифицировал raw words как `frsqrtex` (24), `vnor128` (3), `vsldoi128` (1), `lhbrx` (8), `mulhdx` (2). Изолированные изменения добавили `vnor128`, убрали PPC403 alias для Cell/Xenon и добавили `lhbrx`, `mulhdx`; diagnostics снизились до 24 (`frsqrte`). Host probes: `vsldoi128` все 16 shifts, `vnor128` 1 048 576 lanes, `lhbrx` 3 aligned halfwords, `mulhdx` 9 signed cases. Это узкие проверки кода и генерации, не Xbox 360 trace, full-shard build или runtime verification. Открыто: подтвердить Xenon-compatible оценку `frsqrte`. Switch `0x82EF87B0` разрешён: signed `addi` даёт базу `0x82EF87B4`; все 29 целей внутри owner `.pdata`, TOML принят отдельной генерацией. Подробности — [FINE_XENONRECOMP](kb:FINE_XENONRECOMP) и [FINE_XENON_MORE_INSTRUCTIONS](kb:FINE_XENON_MORE_INSTRUCTIONS).
+3. **Единый реестр функций.** Один файл (`tmp/functions.json` → в будущем `logs/functions.sqlite`) с полями: адрес, длина, источник границ (`.pdata` / эвристика / ручной), владелец-листовая ли, статус рекомпиляции, статус сверки. Сейчас границы разбросаны по `.pdata`, Ghidra и xref; расхождение уже привело к ошибке (привязка `mftb` к неверной функции, см. «Correction» в `kb:PROGRESS`).
 4. **Гейты качества.** Любой вывод, использующий граф вызовов, обязан пройти проверку на листовые функции без `.pdata` и на косвенные вызовы (`bctrl`, vtable); граф только по `bl` — нижняя оценка.
 5. **Инструменты внешних авторов:** исходники в `tools/<имя>/`, сборка в `tmp/<имя>-build/`, локальные настройки — отдельными файлами. Не смешивать кодогенерацию и runtime разных проектов без проверки совместимости.
 
@@ -83,7 +93,7 @@ host-контуре с явно указанными внешними завис
 
 ## Проверенный первый шаг L3
 
-`tools/native-host-probe/` сохраняет ABI существующего hedge-dev XenonRecomp: `PPCContext&, uint8_t* base`. Резерв 4 GiB, проверяемые guest-pages, big-endian load/store и dispatcher работают для двух изолированных call-free функций `0x822B0818` и `0x822B0820`. Clang + UBSan: 41 проверка пройдена; Windows backend через VirtualAlloc/VirtualFree проходит те же 41 проверку под Wine. Это не тест на реальном Windows; RTTI-диагностика static link остаётся. Полные shards не компилировались; XEX не загружался, entry point не вызывался. Это синтетический CPU/memory probe, не L4-сверка с Xenia и не подтверждение совместимости ACV. Подробности и ограничения: [NATIVE_HOST_L3.md](fine/NATIVE_HOST_L3.md).
+`tools/native-host-probe/` сохраняет ABI существующего hedge-dev XenonRecomp: `PPCContext&, uint8_t* base`. Резерв 4 GiB, проверяемые guest-pages, big-endian load/store и dispatcher работают для двух изолированных call-free функций `0x822B0818` и `0x822B0820`. Clang + UBSan: 41 проверка пройдена; Windows backend через VirtualAlloc/VirtualFree проходит те же 41 проверку под Wine. Это не тест на реальном Windows; RTTI-диагностика static link остаётся. Полные shards не компилировались; XEX не загружался, entry point не вызывался. Это синтетический CPU/memory probe, не L4-сверка с Xenia и не подтверждение совместимости ACV. Подробности и ограничения: [FINE_NATIVE_HOST_L3](kb:FINE_NATIVE_HOST_L3).
 
 
 ## Контроль исполнения и журналов
@@ -97,14 +107,14 @@ host-контуре с явно указанными внешними завис
 Общие скрипты `decomp.sh`, `ghidra-rpc.sh`, `assets.sh`, `unity.sh` автоматически
 входят в общий runner. Остальные команды выполняются через `cli.mjs run`;
 результаты прямого MCP сохраняются и передаются в `ingest`. Политика для будущих
-агентов — в корневом `AGENTS.md`. Нет перехвата произвольных внешних процессов.
+агентов — в `kb:AGENTS`. Нет перехвата произвольных внешних процессов.
 
 Файлы legacy logs импортируются потоково, сжатые chunks проверяются обратным
 чтением и SHA-256. Очистка оставляет зарегистрированные/упомянутые доказательства
 и удаляет только точные дубликаты с проверенным архивом и audit-записью.
 SQLite WAL не обеспечивает атомарность crash recovery между несколькими файлами;
 индексы/диагностика повторно согласуются по IDs, незавершённые streams остаются
-помеченными. Процедуры и реальные ограничения: [SQLITE_LOGGING.md](SQLITE_LOGGING.md).
+помеченными. Процедуры и реальные ограничения: [SQLITE_LOGGING](kb:SQLITE_LOGGING).
 
 ## ReXGlue Linux — current state, 2026-10-21
 
@@ -158,7 +168,7 @@ estimates rather than measured metrics.
 
 The private ReXGlue Linux probe uses the installed SDK's MnK driver as a
 synthetic XInput controller for player one. The durable profile is
-`tools/native-rexglue/input-profile.json`; `probe_linux.py` supplies its cvars.
+`tools/native-rexglue/input_keyboard.ini` / `input_gamepad.ini`; `probe_linux.py` supplies its cvars.
 The app hook in `acv_linux_probe_app.h` controls mouse capture (F8/Escape) and
 retains SDK overlay key processing. No retail PPC function was replaced for
 input. This is a host adapter, not a reconstructed game input system.
@@ -167,4 +177,4 @@ Optional persistent user data stays under workspace `tmp/`. Per-run evidence
 stays under `logs/acv-native-linux/` and execution records in the existing SQLite
 ledgers. Error samples/duplicate forwarding are bounded; eight unhandled guest
 access violations stop only the child launched by that probe. Raw SDK logging
-and rotation remain SDK behavior. [Controls and validation](LINUX_INPUT.md).
+and rotation remain SDK behavior. [Controls and validation](kb:LINUX_INPUT).

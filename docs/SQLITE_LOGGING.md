@@ -135,8 +135,8 @@ Verified checkpoint: final eight test groups passed in operation
 Initial bulk import archived 294 existing files (4,403,652,210 source bytes);
 pre-upgrade history preserved 303 events, 113 operations, 84 artifacts and the
 remaining session/function/recovery records. Three unreferenced duplicate logs (two empty and one duplicate help output)
-were deleted after archive verification. See [validation.json](../logs/sqlite-control/validation.json)
-and [cleanup.json](../logs/sqlite-control/cleanup.json). Validation was performed
+were deleted after archive verification. See [validation.json](logs/sqlite-control/validation.json)
+and [cleanup.json](logs/sqlite-control/cleanup.json). Validation was performed
 on Linux; Windows execution of the logger was not tested.
 
 2026-10-21 correction: generic `Command failed` fingerprints from unrelated

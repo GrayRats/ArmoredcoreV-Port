@@ -29,9 +29,9 @@ Sources/harness: `tools/rexglue-graph-opt/`. Experimental CLI:
 `tmp/rexglue-graph-opt/build/rexglue_indexed`.
 
 Confirmed host algorithm evidence:
-[graph tests](../logs/acv-host-20261021/graph-index-verification.json),
-[exact patch](../logs/acv-host-20261021/rexglue-target-index.patch),
-[provenance](../logs/acv-host-20261021/graph-index-provenance.json).
+[graph tests](logs/acv-host-20261021/graph-index-verification.json),
+[exact patch](logs/acv-host-20261021/rexglue-target-index.patch),
+[provenance](logs/acv-host-20261021/graph-index-provenance.json).
 5026 trace steps and a 21024-registration synthetic workload produce identical
 digests with baseline/indexed implementations under UBSan.
 CLI build: verified operation `c95648a8-84cd-4752-a6f6-6c3d983327b3`.
@@ -40,7 +40,7 @@ On ACV, stock analysis failed validation after 1081.9 s; indexed analysis failed
 after 406.7 s. Both produce exactly the same multiset of 39 unresolved target/site
 pairs (28 distinct targets), confirmed by operation
 `716e2410-f58a-4d97-9dc3-3b33e19b8017`.
-[Comparison and saved stream hashes](../logs/acv-host-20261021/codegen-indexed-comparison.json).
+[Comparison and saved stream hashes](logs/acv-host-20261021/codegen-indexed-comparison.json).
 This establishes matching diagnostics on this run, not complete analyzer or
 runtime equivalence. No `--force` validation bypass is used.
 
@@ -49,7 +49,7 @@ runtime equivalence. No `--force` validation bypass is used.
 Original mapped XEX bytes confirm all 39 relative, non-link branches. Their
 28 targets have no owner in the saved original `.pdata` table; absence of an
 entry is not evidence that the code is unused.
-[Original-byte audit](../logs/acv-rexglue-unresolved-20261021/retail-branch-inventory.json).
+[Original-byte audit](logs/acv-rexglue-unresolved-20261021/retail-branch-inventory.json).
 
 The separate XenonRecomp function registry was used only to propose boundaries,
 then every proposed interval was read from original bytes and disassembled.
@@ -68,7 +68,7 @@ all 240 words in 28 intervals are reachable from their proposed entries,
 conditional local targets remain inside, and paths terminate through explicit
 returns, indirect transfers, or direct tail branches. The raw disassemblies
 are `logs/acv-rexglue-unresolved-20261021/candidate-*.asm`.
-[Checked bounds and exits](../logs/acv-rexglue-unresolved-20261021/boundary-validation.json).
+[Checked bounds and exits](logs/acv-rexglue-unresolved-20261021/boundary-validation.json).
 Verified static operation `7437ff6e-f90a-406b-81b2-1be03076ca24`.
 
 Durable hints: `tools/native-rexglue/acv-boundaries.toml`.
@@ -82,14 +82,14 @@ full codegen completed in517.0s and wrote625 C++ files. The saved output reports
 source `src/codegen/builders/context.cpp:316-327` emits `REX_FATAL` when such a
 branch has no `CallTarget`, so the generated image cannot be treated as runnable.
 
-The [retail-byte conditional audit](../logs/acv-rexglue-unresolved-20261021/conditionals/inventory.json)
+The [retail-byte conditional audit](logs/acv-rexglue-unresolved-20261021/conditionals/inventory.json)
 confirms each of the 95 source words is a relative PPC `bc` whose calculated
 address matches original XEX. None of the 19 destination addresses has a
 `.pdata` owner. Raw target windows are in the same `conditionals/` directory.
 Instruction inspection showed that all 19 targets are short exit fragments: 18
 are `li r3,0; blr`, and `0x82500F14` returns a value loaded by `lis/addi` then
 executes `blr`. The supplemental config
-[`acv-conditional-targets.toml`](../tools/native-rexglue/acv-conditional-targets.toml)
+[`acv-conditional-targets.toml`](tools/native-rexglue/acv-conditional-targets.toml)
 records only those byte-backed 8/12-byte extents, with neutral generated names;
 this does not establish their containing retail function ownership.
 
@@ -98,7 +98,7 @@ An isolated generation into `generated/conditional-fragments/` completed in
 19 configured target definitions and zero unresolved-branch `REX_FATAL`
 placeholders; the generation operation is verified in SQLite as
 `3d924902-d86e-4ebf-bcf2-7cc96efd1f42`, and the byte/config check is
-[`config-validation.json`](../logs/acv-rexglue-unresolved-20261021/conditionals/config-validation.json).
+[`config-validation.json`](logs/acv-rexglue-unresolved-20261021/conditionals/config-validation.json).
 This resolves the prior conditional-emission blocker at the code-generation
 level only. The game source has not been compiled or launched. Next: point the
 Linux CMake build at this generated tree, compile, inspect all compiler/linker
@@ -151,12 +151,12 @@ ReXGlue discovery missed. Fixes (all from original bytes; tail/leaf semantics un
 - Two thunk pairs remain unemitted: `0x824FEDC8` (`lwz r3,0(r3); b 0x82746EE0` target class)
   and `0x829C6A98` (`addi; b 0x829C6838`, a `bctr` dispatcher). Not reached at runtime yet.
 - The launch past NOW LOADING is observed in `logs/acv-native-linux/20261021T003515443841Z/`.
-  The black gameplay screen is not diagnosed; see PROGRESS.md.
+  The black gameplay screen is not diagnosed; see kb:PROGRESS.
 
 ## Numeric RenderDoc replay, 2026-10-22
 
 Confirmed, host diagnostics only; no screenshots/image export.
-Canonical run [launch.json](../logs/acv-native-linux/20261021T215316118397Z/launch.json)
+Canonical run [launch.json](logs/acv-native-linux/20261021T215316118397Z/launch.json)
 used `tools/native-rexglue/acv.config`, ARTEM/ARTEM/headless=true; recorded SHA-256
 31ef1d2a86eec575c4458ec70d95c36d3edcfe2a5de38e7574d110a082566256 matches the file.
 150 s bounded shutdown: child0, no device-lost string in runtime/stdout/stderr;
@@ -167,7 +167,7 @@ Ordinary TriggerCapture produced four RDCs. At110 s, frame73703 records
 70/90/140 s captures have only1 draw. Explicit Start/End capture path was removed
 after device loss; nonzero `--renderdoc-window-ms` is rejected before spawn.
 
-[replay_inspect.cpp](../tools/native-rexglue/replay_inspect.cpp) uses RenderDoc1.46
+[replay_inspect.cpp](tools/native-rexglue/replay_inspect.cpp) uses RenderDoc1.46
 public virtual replay APIs; local header provenance is in
 `logs/renderdoc-replay-headers.json` (runtime evidence stays outside the source repository).
 Build (through SQLite logger):
@@ -193,7 +193,7 @@ At final draw event7374, source1280×720 center RGBA is
 central input sample, not full scene correctness or a gamma root cause.
 GetUsage lists only PS-read event7374 for the source; its writer is outside
 the recorded usage. A stale-texture defect is only a hypothesis.
-[Numeric evidence](../logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.usage.replay.json).
+[Numeric evidence](logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.usage.replay.json).
 Dispatch event IDs94,222,295,598,755,5156,5162,5195,5211,5225; preceding
 resolve/async boundaries remain to investigate. No clean validation-layer
 pass or retail/Xenia parity is claimed.
@@ -205,7 +205,7 @@ no device-lost string.70 s frame10222 has400 indexed/35 nonindexed/5 dispatch;
 render-correctness comparison. Replay input source channel fractions below
 1/32 are R0.932925/G0.912833/B0.973901; all three histograms contain921600
 pixels. This establishes a mostly dark source, not its cause.
-[Replay/histograms](../logs/acv-renderdoc/20261021T220305240062Z/acv_frame10222.replay.json).
+[Replay/histograms](logs/acv-renderdoc/20261021T220305240062Z/acv_frame10222.replay.json).
 
 New opt-in `probe_linux.py --renderdoc-frames=1..8` uses public
 `TriggerMultiFrameCapture` (renderdoc_app.h:515-516), no explicit Start/End.
@@ -220,9 +220,9 @@ unchanged. Frame16580 contains1325 indexed/682 nonindexed/64 dispatch;
 frame16581 includes producer image writes: image3 copyDst event90 and
 image5 CS_RWResource event95. Final draw109 samples image4, a different
 mailbox image. This establishes the asynchronous boundary, not a stale-image
-bug. [Writer evidence](../logs/acv-renderdoc/20261021T220733169087Z/acv_frame16581.analysis.json).
+bug. [Writer evidence](logs/acv-renderdoc/20261021T220733169087Z/acv_frame16581.analysis.json).
 
-[analyze_capture.py](../tools/native-rexglue/analyze_capture.py) converts an RDC
+[analyze_capture.py](tools/native-rexglue/analyze_capture.py) converts an RDC
 to XML in tmp/ and writes a numeric `.analysis.json` beside the source. It
 records full RDC SHA-256, checks source stability, reuses the command counter
 and optionally (`--replay [--event N]`) runs the inspector with binary SHA.
@@ -244,7 +244,7 @@ index5→8,9→14,14→26,32→93,64→251,128→582,192→925,255→1020.
 Thus the selected center agrees exactly with the captured LUT after R/B
 swizzle. Shadow darkening is observed at this boundary; an incorrect LUT,
 wrong game brightness setting, or GPU shader defect is not established.
-[Actual views/LUT/replay data](../logs/acv-renderdoc/20261021T220733169087Z/acv_frame16581.event95.analysis.json),
+[Actual views/LUT/replay data](logs/acv-renderdoc/20261021T220733169087Z/acv_frame16581.event95.analysis.json),
 operationbb708328-7a5e-4c68-a532-bacfd5dccfa8,
 decode operationee7f0199-a84a-4940-9170-58184c25f1da.
 SDK gamma table conversion source: graphics/vulkan/command_processor.cpp
@@ -274,7 +274,7 @@ input[9,14,5]/255, output[24,68,40]/1023. LUT5→24,9→40,14→68,64→312,
 128→624,192→936. This confirms a display-type-dependent shadow attenuation
 at the producer LUT. Source/dest views are UNorm, not sRGB. Scene identity
 elsewhere is not proven; correct world rendering remains open.
-[Control LUT](../logs/acv-renderdoc/20261021T221423893732Z/acv_frame15264.event2500.analysis.json),
+[Control LUT](logs/acv-renderdoc/20261021T221423893732Z/acv_frame15264.event2500.analysis.json),
 comparison operationf40c4949-bb81-4702-97b9-512648c67425. Default config/SDK
 gamma unchanged; previous negative visual result does not mean no numeric effect.
 
@@ -282,7 +282,7 @@ At indexed candidate event7302 (6195 elements) in frame73703,64 post-VS float4
 slots are finite, w522..581; sampled clip positions fall inside Vulkan's clip
 volume. Bound512×256 and1024×512 texture inputs have nonzero ranges.
 This rules out universal collapsed geometry/empty material data for that draw,
-not incorrect shading/depth or other draws. [Post-VS data](../logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.event7302.analysis.json),
+not incorrect shading/depth or other draws. [Post-VS data](logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.event7302.analysis.json),
 operationaa0f4840-b3a9-4687-bc2d-93b602110d32. Inspector `--mesh`/analyzer
 `--replay --event N --mesh` sample first64 post-VS slots, instance0/view0; no
 mesh image output.
@@ -322,7 +322,7 @@ all 10 frames the texture read by the last PS event has no write usage in that
 capture. Frames 40146, 44671, 48598 contain no 10/512 MiB buffers (UI only).
 
 Dispatch direction resolved from SPIR-V (`replay_dispatch_shader.cpp`, evidence
-[73703](../logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.dispatch_bindings.json), [42853](../logs/acv-renderdoc/20261021T224404891347Z/acv_frame42853.dispatch_bindings.json);
+[73703](logs/acv-renderdoc/20261021T215316118397Z/acv_frame73703.dispatch_bindings.json), [42853](logs/acv-renderdoc/20261021T224404891347Z/acv_frame42853.dispatch_bindings.json);
 operations 60774c34-5d57-4c9c-938e-5eeb21ce5ad4, 56d34677-b4fc-48f4-afa1-405726838fd3). RenderDoc
 reflection reports these storage buffers as read-write, but the module decorates
 set0/binding0 NonWritable and set1/binding0 NonReadable. Frame73703 dispatches
@@ -371,7 +371,7 @@ noise, operation c81fbe1e-fb5e-474e-90b2-cee21ab6b4a4): in all 10 frames the sou
 and output textures are exactly zero (mean 0, 100 % black), including frames with
 1692 and 2471 draws. Target content after each target's last writer
 (`replay_target_content.cpp`, frames 77730/79584,
-[data](../logs/acv-renderdoc/20261021T231105435173Z/acv_frame79584.target_content.json),
+[data](logs/acv-renderdoc/20261021T231105435173Z/acv_frame79584.target_content.json),
 operations 5984e87f-785e-4e3e-9b5a-3975077373f3, a394aa74-0400-49cf-8541-810a7dd65091): the main colour target
 (1280×2048 UNorm, 1037–1091 writer draws) already has hist means
 [0.014, 0.006, 0.006] with max up to [1.0, 0.56, 0.14]; other targets differ
@@ -395,7 +395,7 @@ evidence readable before EOF; pipe boundary test operation
 
 ### Black material input traced, 2026-10-22
 
-[Numeric evidence](../logs/acv-runtime-triage-20261022/findings.json). Requested run
+[Numeric evidence](logs/acv-runtime-triage-20261022/findings.json). Requested run
 20261022T144521925243Z exits normally after window close; it has no RDC because
 it ends before the scheduled 110 s capture. Its 45 error messages alone do not
 identify the dark-scene cause.
@@ -455,8 +455,8 @@ The12-second run20261022T151046740018Z logs this revision and exits0 on the
 bounded close. No fatal/device-lost marker;15 existing VFS/allocation errors
 remain, and the probe/logger therefore reports failure. This verifies startup
 and artifact identity only, not dark-scene resolution or gameplay.
-[Verification](../logs/acv-test-build-20261022/verification.json).
-[Manual test launcher](../tools/native-rexglue/test_linux.sh) uses the canonical
+[Verification](logs/acv-test-build-20261022/verification.json).
+[Manual test launcher](tools/native-rexglue/test_linux.sh) uses the canonical
 config and existing profile, with a300-second default bound.
 
 ### UTF-8 BOM configuration support, 2026-10-22
@@ -467,8 +467,8 @@ with UTF-8 BOM raised ConfigParser MissingSectionHeaderError. The loader now
 decodes utf-8-sig, retaining the original bytes for the metadata hash.
 Actual CLI guard checks confirm identical plain/BOM configs both reach the
 duration guard, and missing config remains rejected; no game was launched.
-[Before](../logs/acv-user-references-20261022/bom-before.json),
-[after](../logs/acv-user-references-20261022/bom-after.json).
+[Before](logs/acv-user-references-20261022/bom-before.json),
+[after](logs/acv-user-references-20261022/bom-after.json).
 Canonical config and native ELF remain unchanged; no new graphics fix is claimed.
 
 ### Shared-memory compute-write access scope, 2026-10-22
@@ -485,7 +485,7 @@ The installed plugin disassembly at0x17B280 confirmed the old compute-write
 case returns0x20 (SHADER_READ), not0x40 (SHADER_WRITE).
 
 The helper now returns `VK_ACCESS_SHADER_WRITE_BIT`. Regression
-[script](../tools/native-rexglue/test_shared_memory_barriers.py) compiles the
+[script](tools/native-rexglue/test_shared_memory_barriers.py) compiles the
 actual `Use`/`GetUsageMasks` bodies and actual Usage enum with a recording
 command processor, checks compute→read, compute→compute, transfer→read and
 unchanged-read behavior under UBSan, and rejects the archived old source.
@@ -495,9 +495,9 @@ behavior, not GPU execution correctness or a fix for the dark scene.
 Local Khronos synchronization.adoc access-scope rules identify the omitted
 write accesses as outside the memory dependency.
 
-[Evidence directory](../logs/acv-gpu-sync-20261022/) contains original source,
+[Evidence directory](logs/acv-gpu-sync-20261022) contains original source,
 checkpoint hashes and pinned glslang-header provenance. The
-[private plugin build](../tools/native-rexglue/gpu-plugin/CMakeLists.txt) reuses
+[private plugin build](tools/native-rexglue/gpu-plugin/CMakeLists.txt) reuses
 the SDK GPU source inventory and installed runtime/static dependencies;
 internal glslang headers match SDK submodule f4f1d8a352ca1908943aea2ad8c54b39b4879080.
 Installed SDK is preserved. Isolated
@@ -505,8 +505,8 @@ fixed-plugin build SHA86c7d50359133a28efc0f4f2f84096bc2b54e53f00c09864dcbf0821f1
 is staged in `tmp/acv-gpu-sync-test`. Process maps confirmed that exact path was
 loaded. The85-second run20261022T155908068499Z exited0 with8 RDC and15 existing
 VFS/allocation errors. Captures had1/59 draw actions, not a gameplay comparison.
-[Build manifest](../logs/acv-gpu-sync-20261022/build.json),
-[startup verification](../logs/acv-gpu-sync-20261022/verification.json).
+[Build manifest](logs/acv-gpu-sync-20261022/build.json),
+[startup verification](logs/acv-gpu-sync-20261022/verification.json).
 
 ### CPU-origin texture upload compared with GPU mirror, 2026-10-22
 
@@ -515,9 +515,9 @@ physical range with each CPU→staging memcpy in VulkanSharedMemory::UploadRange
 It snapshots the bytes copied to staging before the deferred GPU copy is queued,
 plus submission, physical offset, byte count and source-buffer offset. It does
 not read later live CPU memory. Production SDK source has no diagnostic changes;
-[CMake](../tools/native-rexglue/gpu-plugin/CMakeLists.txt) builds a separate
+[CMake](tools/native-rexglue/gpu-plugin/CMakeLists.txt) builds a separate
 instrumented source copy with `ACV_CAPTURE_UPLOADS=ON` and
-[helper](../tools/native-rexglue/gpu-plugin/upload_probe.h). Limits:32 snapshots,
+[helper](tools/native-rexglue/gpu-plugin/upload_probe.h). Limits:32 snapshots,
 selected range at most8 MiB. Tests checked exact intersection/metadata, count
 limit and rejected out-of-bounds physical ranges under ASan/UBSan
 (operation8276d35f-d1a7-4cfd-8e3b-a7cb025badf8).
@@ -529,15 +529,15 @@ no fatal/device-lost markers observed. This is not a clean runtime pass.
 At95 s, frame58287 has2661 draw actions/64 dispatches, while final source center
 remains [0.00781262,0.0254063,0.0136721]. The access-scope correction has not
 established a fix for dark gameplay; the scene is not matched to a baseline.
-[Replay summary](../logs/acv-gpu-sync-20261022/upload-replay-summary.json).
+[Replay summary](logs/acv-gpu-sync-20261022/upload-replay-summary.json).
 
 Exactly one upload intersected physical0x1F6B3000..0x1F733000: submission2889,
 524288 bytes,32768 repeated blocks00ff9249492424920000000000000000. Its SHA-256 is
 e4428980736f99488a28373777a97ddf74eba5b2a63a21fc53d863c162e70777.
 At frame58287 event13126, unique512-MiB GPU shared buffer inventory index0 has
 exactly the same bytes at that range. This is also the hash from the old FBO
-sample. [CPU/GPU comparison](../logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json),
-[raw snapshots](../logs/acv-gpu-sync-20261022/uploads-first/).
+sample. [CPU/GPU comparison](logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json),
+[raw snapshots](logs/acv-gpu-sync-20261022/uploads-first).
 The source was therefore already transparent-black before this CPU-origin
 upload. The copy event itself was outside sampled frames; this is not an
 atomic CPU/GPU snapshot, proof of current material identity, or a general
@@ -545,8 +545,8 @@ exclusion of cache/invalidation bugs. The writer and material purpose remain ope
 
 A manifest filter found60 extracted1024×512 BC3 TPF candidates. None matched
 the raw mip0 prefix; none contained8 repeated target blocks in raw/8-in-16/
-8-in-32 byte order. [Prefix comparison](../logs/acv-gpu-sync-20261022/asset-prefix-comparison.json),
-[pattern control](../logs/acv-gpu-sync-20261022/asset-pattern-control.json).
+8-in-32 byte order. [Prefix comparison](logs/acv-gpu-sync-20261022/asset-prefix-comparison.json),
+[pattern control](logs/acv-gpu-sync-20261022/asset-pattern-control.json).
 Only those60 candidates were read; no ISO rescan. This does not prove a
 procedurally generated placeholder or an asset decoding failure.
 
@@ -569,7 +569,7 @@ Trace run20261022T161735195655Z identifies callers0x82AEF00C/0x82AEF028,
 return LRs0x82AEF010/0x82AEF02C, for the0x40000/0x800000 failures. Raw PPC shows
 results stored at SP+0x78/+0x80, copied into a parameter block at SP+0x90,
 fields+0x54/+0x5C, then passed in r4 to0x82AF1D38. Field names and downstream
-handling are not established. [Caller evidence](../logs/acv-gpu-sync-20261022/allocation/callers.json).
+handling are not established. [Caller evidence](logs/acv-gpu-sync-20261022/allocation/callers.json).
 Ghidra's saved listing skips this region and its body at0x82AEEF40 is only20
 bytes: raw read-bytes plus full Capstone decoding were used instead. The live
 DB was reopened from its existing saved program with --no-analyze and not repaired.
@@ -579,7 +579,7 @@ c11292b4de6822e2724a8c0e880bc69d8469632cbb2bb6a1a98a2ec1d2114ded,
 host revision de3cd420ba6c080e1901c149eeaddfff5ba38f9bc91c40cbe18d776a8d5c2765.
 The corrected nondiagnostic GPU plugin SHA86c7d503… is staged next to it;
 the upload-snapshot plugin is separate. The final12-second startup exited0
-with15 existing VFS/allocation errors. [Final package verification](../logs/acv-gpu-sync-20261022/final-test-build.json).
+with15 existing VFS/allocation errors. [Final package verification](logs/acv-gpu-sync-20261022/final-test-build.json).
 The older ELF and GPU checkpoints remain in the earlier evidence/private copies.
 
 `build_linux.py --gpu-plugin-artifact tmp/acv-gpu-sync-test/librexgpu-xenos.so`
@@ -596,18 +596,18 @@ existing --compat-mm-wc-rw override. Both initial allocations returned nonzero
 12 RDC and13 VFS errors. However the95-second captures have1/59 draw actions,
 while the baseline has2661: scenarios do not match. Neither a shading fix nor
 an allocation-induced regression is established; keep normalization opt-in.
-[Comparison result](../logs/acv-gpu-sync-20261022/allocation/ab-result.json).
+[Comparison result](logs/acv-gpu-sync-20261022/allocation/ab-result.json).
 
 ### Texture converter provenance and FSI consumer, 2026-10-22
 
-The replay fetch scanner [replay_find_fetch.cpp](../tools/native-rexglue/replay_find_fetch.cpp)
+The replay fetch scanner [replay_find_fetch.cpp](tools/native-rexglue/replay_find_fetch.cpp)
 validated the old FBO draw3790 oracle, then inspected all2661 FSI draws in
 frame58287. Event5940 is the only populated matching fetch and its pixel shader
 actually declares slot0:4158 indices,1024x512 BC3, physical0x1F6B3000. Its decoded
 texture is uniformly RGBA0; post-VS positions are finite and vary in perspective
 W. This establishes a consumer in the FSI scene, not its material name or sole
-responsibility for the darkness. [Fetch evidence](../logs/acv-texture-writer-20261022/fsi-fetches.json),
-[consumer](../logs/acv-texture-writer-20261022/fsi-consumer.json).
+responsibility for the darkness. [Fetch evidence](logs/acv-texture-writer-20261022/fsi-fetches.json),
+[consumer](logs/acv-texture-writer-20261022/fsi-consumer.json).
 
 Opt-in ACV_TRACE_TEXTURE_WRITES records at most256 physical invalidation rows;
 run20261022T164416141605Z emitted128 first-page-write callbacks, all with saved
@@ -621,7 +621,7 @@ The handwritten weak-entry override always calls original __imp__sub_82C83100.
 With tracing enabled only, it snapshots the verified converter copy before the
 original memcpy. In run20261022T164946627340Z its524288-byte output equals both
 CPU staging chunks in submission2724, hash e4428980….
-[Byte comparison and nested asset inventory](../logs/acv-texture-writer-20261022/nested-texture-index.json).
+[Byte comparison and nested asset inventory](logs/acv-texture-writer-20261022/nested-texture-index.json).
 No title function or guest buffer is replaced by the diagnostic.
 
 Raw0x82C833F8/0x82C836D8 establish that converter+0x14 points to a per-level
@@ -630,13 +630,13 @@ trace filename .source-object.bin contains this table, not an identified resourc
 class. A later X11 run captured equal512KiB input staging and output, both
 uniform transparent-black blocks. Its input snapshot is taken after conversion;
 it alone does not establish the pre-conversion bytes.
-[Comparison](../logs/acv-texture-writer-20261022/input-output-comparison.json).
+[Comparison](logs/acv-texture-writer-20261022/input-output-comparison.json).
 The before-input-copy probe at return0x82C8391C then captured the original
 source0xFE111000 in run20261022T165910395240Z. The same converter0x708BF080
 produced the watched output; all three512KiB dumps are byte-identical, hash
 e4428980…. This moves the unresolved producer boundary before converter staging.
-[Before-copy comparison](../logs/acv-texture-writer-20261022/origin-comparison.json),
-[linked findings](../logs/acv-texture-writer-20261022/writer-findings.json).
+[Before-copy comparison](logs/acv-texture-writer-20261022/origin-comparison.json),
+[linked findings](logs/acv-texture-writer-20261022/writer-findings.json).
 The original resource's observed format field+0x20 is9, destination8; field names
 remain provisional. A128-byte neighborhood dump does not establish object extent
 or ownership of every adjacent word. No GPU descriptor in that neighborhood is
@@ -661,8 +661,8 @@ first524288 bytes again hash e4428980…. Callsite0x82C82268 belongs to finish
 0x82C82130; its assertion path0x82115988 names
 DLTextureCompressor_Xbox360Dx.cpp. Thus the blank source is already compressor
 output; original disk data or the compressor input has not yet been identified.
-[Physical writer](../logs/acv-texture-writer-20261022/origin-writer.json),
-[producer snapshot](../logs/acv-texture-writer-20261022/producer-input.json).
+[Physical writer](logs/acv-texture-writer-20261022/origin-writer.json),
+[producer snapshot](logs/acv-texture-writer-20261022/producer-input.json).
 Stack code-like words are only candidates, not a reconstructed call stack;
 0x82C82268's actual instructions independently verify the copy call.
 
@@ -673,15 +673,15 @@ identical and entirely zero, SHA5647f05e…. The same converter0x708BF080 output
 compression;0x82948C90 invokes finish (raw82948be0.asm). This excludes loss
 inside this compression call for the observed zero input; it does not identify
 why the input is blank or whether this material should contain an image.
-[Paired boundary proof](../logs/acv-texture-writer-20261022/compressor-boundary-comparison.json).
+[Paired boundary proof](logs/acv-texture-writer-20261022/compressor-boundary-comparison.json).
 The latest incremental ELF and fixed nondiagnostic plugin are recorded in
-[current manifest](../logs/acv-texture-writer-20261022/current-test-build.json);
+[current manifest](logs/acv-texture-writer-20261022/current-test-build.json);
 all new overrides are disabled unless ACV_TRACE_TEXTURE_WRITES is explicitly set.
 
 ### Resolve/readback audit and preserved checkpoint, 2026-10-22
 
-Progress checkpoint: [manifest](../logs/acv-readback-checkpoint-20261022T171359Z/manifest.json),
-[verified archive](../logs/acv-readback-checkpoint-20261022T171359Z/verification.json).
+Progress checkpoint: [manifest](logs/acv-readback-checkpoint-20261022T171359Z/manifest.json),
+[verified archive](logs/acv-readback-checkpoint-20261022T171359Z/verification.json).
 Sources/state are in sources-and-state.tar.gz; the ELF/runtime/fixed plugin are
 copied separately to tmp/acv-readback-checkpoint-20261022T171359Z. This preserves
 artifacts and investigation context, not a suspended OS process.
@@ -714,7 +714,7 @@ physical address. Dump GPU resolve bytes, completed staging bytes and copied gue
 bytes at their actual boundaries; an absent Resolve or an already-zero GPU source
 requires producer/state investigation rather than additional host barriers.
 
-Reference helper [readback_reference.hpp](../tools/native-rexglue/readback_reference.hpp)
+Reference helper [readback_reference.hpp](tools/native-rexglue/readback_reference.hpp)
 implements same-queue compute-write→transfer-read, copy, transfer-write→host-read,
 submit/fence wait, noncoherent invalidation and CPU publication. It is not wired
 into the runtime and requires owned dedicated fully mapped staging, valid ranges,
@@ -724,7 +724,7 @@ other queues need semaphore/ownership handling. A GPU buffer and guest CPU memor
 are separate copies: vkInvalidateMappedMemoryRanges alone cannot populate guest
 memory or refresh an emulator generation/cache entry.
 
-[Host contract tests](../tools/native-rexglue/test_readback_reference.cpp) compile
+[Host contract tests](tools/native-rexglue/test_readback_reference.cpp) compile
 with ASan/UBSan and check barrier scopes, waiting before invalidation, no CPU
 publication on wait timeout/device-lost/invalidate failure, and coherent memory
 still waiting. Operation62946412-11b8-494a-8b29-72c5df37623e passed. This is not a
@@ -744,7 +744,7 @@ copy at physical0x1F6B3000.
 Paired identical-profile-origin runs use the same original resource/native-header
 bytes: default disabled readback produces2MiB of zeros; --readback_resolve=full
 produces2066418 nonzero bytes, SHA52fdd6d7…. Compressor input before/after matches
-the original snapshot; output BC3 becomes varied. [Copy-boundary comparison](../logs/acv-readback-origin-20261022/ab-chain.json).
+the original snapshot; output BC3 becomes varied. [Copy-boundary comparison](logs/acv-readback-origin-20261022/ab-chain.json).
 The converter may transform/reorder bytes; do not assert byte equality across a
 conversion or between different update generations. Its captured input/output
 preserve the16-byte block multiset, while the first converter snapshot differs
@@ -765,14 +765,14 @@ declares and samples slot0 with that fetch. Its512KiB GPU shared-memory bytes
 match the same-run upload exactly. Decoded texture233 is no longer all-zero:
 max RGBA[1,0.666667,0.709804,0.709804], center
 [0.223529,0.215686,0.223529,0.14902].
-[GPU proof](../logs/acv-readback-origin-20261022/gpu-material-proof.json).
+[GPU proof](logs/acv-readback-origin-20261022/gpu-material-proof.json).
 This accepts restored dynamic texture content, not global gameplay/visual parity.
 The full mode blocks for readback and performance remains to be measured.
 
 Incremental build succeeded; the ordinary package keeps nondiagnostic fixed GPU
 plugin86c7d503…. Upload diagnostic plugin remains isolated in tmp/acv-readback-fixed-test.
-[Accepted artifact/launcher manifest](../logs/acv-readback-origin-20261022/accepted-fix.json).
-[Launch-boundary tests](../tools/native-rexglue/test_probe_readback_profile.py)
+[Accepted artifact/launcher manifest](logs/acv-readback-origin-20261022/accepted-fix.json).
+[Launch-boundary tests](tools/native-rexglue/test_probe_readback_profile.py)
 passed ACV full default, unchanged SDK profile, CLI/config overrides, BOM and
 missing-config failure without launching a game (operation48ab947f-541d-4081-99ba-f9dbe367ffea).
 
@@ -801,7 +801,7 @@ representations; delayed work must not publish into a recycled allocation.
 Repeated workload after completed retirements distinguishes retained pools from
 unbounded unowned allocations; overlapping ranges alone do not prove a leak.
 
-[async_readback_reference.hpp](../tools/native-rexglue/async_readback_reference.hpp)
+[async_readback_reference.hpp](tools/native-rexglue/async_readback_reference.hpp)
 provides an owned-slot fence submission/poll model, with logical resource,
 allocation/GPU/CPU-write generations. It includes VkBuffer-copy of the existing
 Xenos guest-format Resolve output and a separate ordinary single-sample RGBA8
@@ -823,7 +823,7 @@ existing resolve/tiling/endian conversion; a native Vulkan image copy alone does
 not reconstruct guest EDRAM bytes. Partial rectangles need guest-pitch row scatter
 or tile-aware range copies, and cannot mark untouched portions synchronized.
 
-[Host mock tests](../tools/native-rexglue/test_async_readback_reference.cpp) passed
+[Host mock tests](tools/native-rexglue/test_async_readback_reference.cpp) passed
 ASan/UBSan: unsignaled fence prevents publication; busy slot prevents reset/reuse;
 allocation reuse, newer GPU generation and CPU writes reject stale data; failures
 poison slots; ordinary-image ROI and resolved-buffer paths record host barriers.
@@ -844,11 +844,11 @@ Full remains the ACV default and publishes the current Resolve. Invalidate
 VkResult is checked; failure returns without copying to guest memory. Resolve
 staging growth rounds to64KiB instead of16MiB; MEMEXPORT policy is unchanged.
 A submission closed by buffer reallocation is reopened before recording copies.
-[Portable patch](../tools/native-rexglue/patches/resolve-readback-completion.patch).
+[Portable patch](tools/native-rexglue/patches/resolve-readback-completion.patch).
 This is correctness hardening and allocation granularity reduction, not a
 validated nonblocking replacement for full or an FPS improvement claim.
 
-[Actual-source host test](../tools/native-rexglue/test_resolve_readback.py)
+[Actual-source host test](tools/native-rexglue/test_resolve_readback.py)
 passed ASan/UBSan: pending/short previous slot, wait/invalidate/device failures,
 full-current and explicit delayed-mode policy (operation263eea70-a05b-4c6f-810b-84d5c8bd538c).
 Shared-memory barrier regression and launcher default/override checks passed.
@@ -870,18 +870,18 @@ RGBA SHA52fdd6d7… and BC3 compressor SHAe481cf47….
 Diagnostic frame53712/event69 has933 draws; declared slot0,4158indices,
 1024x512BC3. Its512KiB GPU data exactly equal two contiguous same-run CPU upload
 chunks and accepted SHA00c279ff….
-[Same-run proof](../logs/acv-integrated-readback-20261022/gpu-byte-proof.json).
+[Same-run proof](logs/acv-integrated-readback-20261022/gpu-byte-proof.json).
 Normal GPU frame37095/event69 has916 draws and identical material bytes.
-[Normal-plugin proof](../logs/acv-integrated-readback-20261022/release-gpu-proof.json).
+[Normal-plugin proof](logs/acv-integrated-readback-20261022/release-gpu-proof.json).
 This verifies this material, not global scene correctness or stable FPS.
 
-[Bounded VFS verifier](../tools/native-rexglue/verify_resource_io.py) checked177
+[Bounded VFS verifier](tools/native-rexglue/verify_resource_io.py) checked177
 reads/33554426bytes against original game files with no checksum/count/offset
 anomalies.16 source DCX entries containing verified runtime reads strictly decode
 to the existing decoded SHA manifest. Guest decompressor output and render-queue
 ownership are not captured by these source-slice checks.
-[VFS results](../logs/acv-integrated-readback-20261022/vfs-payload-check.json),
-[DCX results](../logs/acv-integrated-readback-20261022/consumed-dcx-check.json).
+[VFS results](logs/acv-integrated-readback-20261022/vfs-payload-check.json),
+[DCX results](logs/acv-integrated-readback-20261022/consumed-dcx-check.json).
 Two failed requests0x40000/0x800000 still return0; no live-overlap candidates in
 the observed import records. This is not evidence of double allocation/leak.
 
@@ -896,7 +896,7 @@ The generic async reference remains separate from production execution.
 
 ### Resolve-to-first-CPU-read chain established, 2026-10-23
 
-[Exact2MiB proof](../logs/acv-resolve-consumer-20261023/complete-proof.json)
+[Exact2MiB proof](logs/acv-resolve-consumer-20261023/complete-proof.json)
 identifies the upstream bake range: physical0x0FCA7000, first2MiB publication
 submission1298/frame627. Its full bytes equal the same-run source copied at
 retail0x82C83918 (LR0x82C8391C), SHA6af9819e…. This is earlier than the previously
@@ -924,8 +924,8 @@ expected in copy-source mode. The retained table, destination dimensions and
 retail0x82C836D8 instructions establish this, not a guessed resource identity.
 A physical write watch at0x1E192000 captures128 pages written with LR0x82C83164:
 copy-out of converted bytes, not direct GPU Resolve writes.
-[Raw instructions](../logs/acv-resolve-consumer-20261023/82ba3900.rpc.asm),
-[caller](../logs/acv-resolve-consumer-20261023/82948a00.rpc.asm).
+[Raw instructions](logs/acv-resolve-consumer-20261023/82ba3900.rpc.asm),
+[caller](logs/acv-resolve-consumer-20261023/82948a00.rpc.asm).
 The generic analyzer's initial zero overlap at0x1E192000 was resolved by tracing
 this earlier converter; it was not a Vulkan memory-mapping defect.
 
@@ -944,8 +944,8 @@ reads match latest publication by size and4KiB sample. First2MiB exactly equal
 the same-run Resolve and full oracle SHA6af9819e….44 flushes came from CPU
 requests,2 from slot reuse,3 from eviction. First2MiB request waited2429us;
 this diagnostic measurement does not establish FPS or lower stalls.
-[Proof](../logs/acv-resolve-consumer-20261023/deferred-test/second-final-proof.json),
-[runs](../logs/acv-resolve-consumer-20261023/deferred-test/runtime-summary.json).
+[Proof](logs/acv-resolve-consumer-20261023/deferred-test/second-final-proof.json),
+[runs](logs/acv-resolve-consumer-20261023/deferred-test/runtime-summary.json).
 
 Actual-header ASan/UBSan tests reject CPU changes/failed completion, verify
 wait outside memory lock and overlapping slot retirement. Unique active tracing
@@ -968,21 +968,21 @@ SPIR-V translator, а не эксперимент deferred readback.
 `exp_adjust` из dword4, содержащего LOD bias. По `xenos.h:1236–1254`
 и `dxbc_translator_fetch.cpp:1957–1958` правильное поле — signed bits13:18
 из dword3. Теперь оно загружается отдельно; dword4 остаётся источником LOD.
-[Переносимый patch](../tools/native-rexglue/patches/texture-fetch-exponent-word.patch).
+[Переносимый patch](tools/native-rexglue/patches/texture-fetch-exponent-word.patch).
 
 На сохранённом frame37095/event69/pixel560,480 texture sample RGB≈0.21
 умножался на2^-16: после выборки≈3.2e-6, при упаковке RGB округлялся до0.
 Для этого descriptor dword3 задаёт exponent0, то есть множитель1.
-[Причина и значения](../logs/acv-gameplay-black-20261023/root-cause.json).
+[Причина и значения](logs/acv-gameplay-black-20261023/root-cause.json).
 Это replay с диагностически снятым FSI/RTE ограничением; он устанавливает
 вычислительную причину, а визуальное улучшение подтверждено пользователем.
 
-[Test](../tools/native-rexglue/test_texture_fetch_exponent.py):2048 случаев
+[Test](tools/native-rexglue/test_texture_fetch_exponent.py):2048 случаев
 знакового exponent/texture slot, реальный descriptor ACV, ASan/UBSan;
 negative control со старым dword4 отвергается. GPU build прошёл, plugin
 SHA90d8ef1adcad93dd043750aecdd24753eb52f17260f8398deb532dbb3a061f78.
 Текущий host SHA8b10aa52…, runtime d8fb56af…. Полный manifest и source
-checkpoint: [accepted-fix.json](../logs/acv-texture-fix-accepted-20261024/accepted-fix.json).
+checkpoint: [accepted-fix.json](logs/acv-texture-fix-accepted-20261024/accepted-fix.json).
 Сохранённый fixed plugin: `tmp/acv-gpu-texture-fix/librexgpu-xenos.so`.
 Для следующих host builds использовать
 `--gpu-plugin-artifact tmp/acv-gpu-texture-fix/librexgpu-xenos.so`,
@@ -1001,7 +1001,7 @@ word used by exponent extraction changes scale2^-16→1 and final RGB
 [0.0000031726,0.00000315055,0.00000288745]→
 [0.207919,0.206474,0.189232]. Ratios65535.84–65536.03 reflect printed precision;
 packed RGB changes from0 to nonzero.
-[Proof](../logs/acv-gameplay-black-20261024/same-input-color-proof.json),
+[Proof](logs/acv-gameplay-black-20261024/same-input-color-proof.json),
 operation ed190804-dd8b-43f7-bd2a-9cabee4198e9.
 The diagnostic replacement corrects two fetches and preserves original dword4
 LOD accesses; both compared replays remove unsupported interlock/RTE for the
@@ -1010,7 +1010,7 @@ debugger. This is a matched arithmetic proof, not an interlock-output oracle.
 The existing105s test20261023T192728538829Z used the accepted fixed GPU and
 current user config98d1c2ed…, ended child0/abort_reason=null. Only error-level
 message was missing `system:\system.properties`; dlc_sound was mounted.
-[Run](../logs/acv-native-linux/20261023T192728538829Z/launch.json).
+[Run](logs/acv-native-linux/20261023T192728538829Z/launch.json).
 Eight RDCs exist, but frame42120 has no4158-index target draw; these captures
 do not establish a regression across all gameplay models. The user's visual
 confirmation remains the accepted in-game evidence.
@@ -1023,12 +1023,12 @@ recorded artifact fails before CMake; a mutation during the host build fails
 before private staging. Explicit artifact selection records a new expected hash.
 Fresh workspaces without an override still use SDK defaults.
 
-[Test](../tools/native-rexglue/test_build_gpu_retention.py) executes the actual
+[Test](tools/native-rexglue/test_build_gpu_retention.py) executes the actual
 wrapper with a fake CMake that stages the old SDK plugin, and checks all five
 selection/failure scenarios (operation2684a64e-e31d-426c-83a1-bf5dc76ff797).
 Real `build_linux.py --jobs4` preserved host8b10aa52… / GPU90d8ef1a…
 (operation0cfa9293-a4ba-48bb-aa97-cc84665a8f66).
-[Retained manifest](../logs/acv-gameplay-black-20261024/retained-build.json).
+[Retained manifest](logs/acv-gameplay-black-20261024/retained-build.json).
 Explicit `--gpu-plugin-artifact tmp/acv-gpu-texture-fix/librexgpu-xenos.so`
 remains the recovery path if another GPU build changes a recorded mutable file.
 This changes build staging only; no new gameplay/visual claim.
@@ -1049,9 +1049,9 @@ Loader0x82C22B90 calls file-status check0x82C33458 at0x82C22BF4; a false result
 branches0x82C22C00→0x82C22C8C, skips parser0x82C25810, destroys the local file
 wrapper and returns. Caller0x82C23DF4 does not test a return value and continues
 initialization. No abort or fabricated replacement is required on that branch.
-[Classification and exact addresses](../logs/acv-gameplay-black-20261024/system-properties-classification.json),
-[raw loader](../logs/acv-gameplay-black-20261024/system-properties-read.rpc.asm),
-[caller continuation](../logs/acv-gameplay-black-20261024/system-properties-tail.rpc.asm).
+[Classification and exact addresses](logs/acv-gameplay-black-20261024/system-properties-classification.json),
+[raw loader](logs/acv-gameplay-black-20261024/system-properties-read.rpc.asm),
+[caller continuation](logs/acv-gameplay-black-20261024/system-properties-tail.rpc.asm).
 
 This is static absence-path evidence plus the recorded failed NtCreateFile and
 normal runtime completion; no new guest hook correlated the loader at runtime.
@@ -1070,13 +1070,13 @@ UTF-16 surrogate pairs without splitting at the guest-name capacity. The
 header participates in host revision hashing; original XAM completion still
 runs. ARTEM and canonical config are unchanged.
 
-[Test](../tools/native-rexglue/test_profile_text.py) checks1112063 valid non-NUL
+[Test](tools/native-rexglue/test_profile_text.py) checks1112063 valid non-NUL
 Unicode scalars, Cyrillic, malformed/truncated UTF-8, pair capacity and the
 actual StoreGuestWide UTF16BE/NUL/canary bounds under ASan/UBSan
 (operation cb7209b6-bcd6-47ac-a218-385746ea3f9f).
 New host f61ee442… built with retained fixed GPU90d8ef1a….55s smoke reached
 XamShowKeyboardUI pilot-name ARTEM and child0;13 known system/DLC-image errors.
-[Proof](../logs/acv-gameplay-black-20261024/profile-text-smoke-proof.json).
+[Proof](logs/acv-gameplay-black-20261024/profile-text-smoke-proof.json).
 Prior working package is preserved in `tmp/acv-profile-text-previous-package`.
 
 This fixes config/profile conversion only. The installed SDK's non-headless
@@ -1122,9 +1122,9 @@ truncates the initial text through the shared bounded decoder, reads the actual
 NUL-terminated input, and decodes the result to at most `buffer_length - 1`
 UTF-16 units before guest storage. Zero and overflowing guest lengths are
 rejected. Portable source delta is
-[`keyboard-dialog-utf8-boundaries.patch`](../tools/native-rexglue/patches/keyboard-dialog-utf8-boundaries.patch);
+[`keyboard-dialog-utf8-boundaries.patch`](tools/native-rexglue/patches/keyboard-dialog-utf8-boundaries.patch);
 it applies to SDK base `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518` and depends on
-[`profile_text.h`](../tools/native-rexglue/profile_text.h).
+[`profile_text.h`](tools/native-rexglue/profile_text.h).
 
 `test_profile_text.py` passed Unicode, malformed/truncated input, capacity and
 canary tests under ASan/UBSan. SDK runtime was rebuilt privately (SHA
@@ -1149,7 +1149,7 @@ for `piece00/01.tpf.dcx`. Its manifest is generated only under `tmp/`.
 `acv_linux_probe_app.h` mounts this directory read-only at `dlc_image:` when
 present. The bounded probe discovers `tmp/acv-dlc-image` and supplies the root;
 without that generated asset directory no mount is made. The regression test
-[`test_dlc_image_mount.py`](../tools/native-rexglue/test_dlc_image_mount.py)
+[`test_dlc_image_mount.py`](tools/native-rexglue/test_dlc_image_mount.py)
 checks all four paths against actual BHD5/BDT bytes, hashes, magic and file set.
 
 The rebuilt host `2d112d64…` kept GPU `90d8ef1a…`, private runtime
@@ -1178,7 +1178,7 @@ ASan/UBSan. It verifies no unmap/destroy/free while pending and reclamation afte
 the ticket completes, including map-cap pressure. Evidence is logger stage
 `gpu_lifetime_test`; a real GPU run has not forced eviction under queue load.
 
-[`audit_runtime_file_misses.py`](../tools/audit_runtime_file_misses.py) scans
+[`audit_runtime_file_misses.py`](tools/audit_runtime_file_misses.py) scans
 explicit `NtCreateFile FAILED` records only, excluding VFS root-resolution
 noise. Across117 runtime logs it found3241 historical failures/35 unique paths.
 Most were repeated requests before the `dlc_image:` and `dlc_sound:` mounts
@@ -1197,7 +1197,7 @@ The extracted `0000_acv.ini` sets `VoiceLang=jp`; the sound builder now resolves
 the literal token to `acv_talk_jp.fev` for lookup and will create a read-only
 VFS alias only when that verified localized bank exists. It does not exist in
 this disc image, so the fifth request remains unresolved. Complete audit:
-[`runtime-file-open-audit.json`](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json).
+[`runtime-file-open-audit.json`](logs/acv-gameplay-black-20261024/runtime-file-open-audit.json).
 
 The follow-up MEMEXPORT changes additionally validate guest physical ranges,
 key staging buffers by exact ordered range topology, wait before reusing a slot,
@@ -1830,7 +1830,7 @@ request to save progress. Continue from this checkpoint, not from a claim that m
 ### Isolated save-name trial and probe error accounting, 2026-10-25
 
 Verified backup `20261025T114543011388Z` was made under the source profile lock.
-[Trial manifest](../logs/acv-save-name-trial-20261025/trial.json) records the original
+[Trial manifest](logs/acv-save-name-trial-20261025/trial.json) records the original
 userdata hashes and a separate copy under `tmp/acv-user-data-name-trial/`.
 Only the two10-byte ARTEM fields at0x27728/0x37C08 were changed in the copy, LE→BE.
 Original APGD SHA remains051fc16d6d4bc094edf1b0a1d87ac57a717157d6023e5f77a5c58ef98e7eae81;
@@ -1949,7 +1949,7 @@ Runtime SHA256 ca04c1c60bbd3b2cb3ed147fb777bd395cba641d4c46781f360cd54e97efa7ca.
 Candidate tmp/acv-wait-poll-fix/build.json retains ELF08045fae, GPUfe3b0dc4 and
 FFX0933159a. Normal session20261025T171212311161Z mapped the exact fixed library,
 ran190s, child0/fatal0. Audio-thread CPU in window60..135s decreased78.05%→0.56%.
-[Comparison](../logs/acv-wait-poll-fix-20261025/comparison.json).
+[Comparison](logs/acv-wait-poll-fix-20261025/comparison.json).
 These are observed windows, not identical-frame gameplay A/B.
 
 CPU waste is fixed; stable60FPS remains OPEN. Later heavy-scene submitted cadence
@@ -1968,7 +1968,7 @@ a7dfed32-ed42-49da-baa0-f32df2fd5649 passed. Frontend verification now waits for
 deferred GPU/FFX dlopen before checking exact module paths: the earlier immediate
 assertion raced startup, rather than proving a missing packaged plugin.
 
-WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
 
 
 ### FPS diagnostics gated at game age90s, 2026-10-25
@@ -1984,8 +1984,8 @@ logs remain separate; diagnostic gameplay sampling excludes the first90s.
 Session20261025T172256652085Z, PID58307, runtimeca04c1c6/GPUfe3b0dc4,
 normal300s launch: child0/fatal0. Both profilers started at age90.000408s.
 120 CPU/GPU rows span ages90.0058..209.0048;6917 native user-IP samples,
-zero lost/unavailable. [Provenance](../logs/acv-fps-after90-20261025/provenance.json),
-[summary](../logs/acv-fps-after90-20261025/summary.json), native symbols in
+zero lost/unavailable. [Provenance](logs/acv-fps-after90-20261025/provenance.json),
+[summary](logs/acv-fps-after90-20261025/summary.json), native symbols in
 logs/acv-fps-after90-20261025/ips/summary.json.
 GPU utilization averaged65.37% (29..70); command thread38.66% CPU and frequent
 do_sys_poll waits. The hot libc offsets are AVX memcpy loop instructions,
@@ -1998,7 +1998,7 @@ patches/vulkan-delayed-stage-profile.patch. It changes no Vulkan calls/results,
 barriers, buffer ownership or publication semantics. Disabled unless
 ACV_GPU_STAGE_PROFILE names a file; hard process-age90s gate,5s windows.
 Nested stage durations are inclusive and must not be added together.
-[Source manifest](../logs/acv-fps-after90-source-20261025/manifest.json).
+[Source manifest](logs/acv-fps-after90-source-20261025/manifest.json).
 Actual C++ pre90s no-file and aggregation regression
 3aee9d7a-aee7-4ec7-9d53-3a850b9bd878 passed.
 
@@ -2019,7 +2019,7 @@ tmp/acv-user-data-fps-fast-trial/, same UUID/XUID and explicit per-launch
 --readback_resolve=fast. Source copy was taken only after acquiring its writer lock;
 game exit precedes the normal probe releasing that lock, so waiting for /proc/exe
 alone was insufficient and was corrected. Full remains the normal default.
-[Trial command](../logs/acv-fps-after90-20261025/fast-trial.json).
+[Trial command](logs/acv-fps-after90-20261025/fast-trial.json).
 Fast returns a previous generation and has not passed image/generation acceptance;
 it is a diagnostic comparison, not an accepted FPS fix.
 
@@ -2032,10 +2032,10 @@ working full-mode texture/readback fix and original profile must be retained.
 Fast comparison completed: session20261025T173444622396Z, PID68655,240s,
 child0/fatal0. In comparable post90s recorded windows, Resolve readback remained
 76.80% inclusive wall time versus77.35% in full; fence checks60.86% versus63.34%.
-No stable60FPS result. [Mode comparison](../logs/acv-fps-after90-20261025/readback-mode-comparison.json).
+No stable60FPS result. [Mode comparison](logs/acv-fps-after90-20261025/readback-mode-comparison.json).
 These are observed play windows, not deterministic identical-frame A/B.
 The experiment does not justify changing the default or accepting delayed images.
-[Resume checkpoint](../logs/acv-fps-after90-20261025/checkpoint.json).
+[Resume checkpoint](logs/acv-fps-after90-20261025/checkpoint.json).
 
 The subsequent split measurement below resolves the slot/miss uncertainty.
 Full remains the normal mode; delayed images have not passed ACV acceptance.
@@ -2049,9 +2049,9 @@ process-age gate remains active. C++ host tests exercise every metric and absenc
 of an early output file. Full session20261025T212958686635Z and old-fast
 session20261025T213304904190Z each completed180s with child0/fatal0 on X11,
 2560x1080 output, bilinear, no CAS/FSR, limiter60, VSync off. Diagnostic GPU
-b5e9ad41, runtimeca04c1c6; [candidate manifest](../tmp/acv-gpu-split-profile/build.json).
+b5e9ad41, runtimeca04c1c6; [candidate manifest](tmp/acv-gpu-split-profile/build.json).
 
-[Duration-weighted timer report](../logs/acv-fps-readback-split-20261026/baseline-summary.json):
+[Duration-weighted timer report](logs/acv-fps-readback-split-20261026/baseline-summary.json):
 
 | Inclusive wall metric | Full,90.063s windows | Old fast,85.119s windows |
 |---|---:|---:|
@@ -2077,7 +2077,7 @@ or undersized previous data still falls back to the current generation. Full and
 some retain their existing publication policy. Wait/invalidate failures still
 reject publication; slot completion guards remain enabled.
 
-[Reproducible fast patch](../tools/native-rexglue/patches/vulkan-fast-previous-generation-wait.patch)
+[Reproducible fast patch](tools/native-rexglue/patches/vulkan-fast-previous-generation-wait.patch)
 is applied after the diagnostic patch. Actual SDK-tail ASan/UBSan host regression
 0295a809-ecde-475c-98ea-c25f01cdc52c proves previous ticket9/previous bytes0x71
 in fast, ticket10/current bytes0x42 in full, and no publication after failed waits.
@@ -2085,7 +2085,7 @@ Both patches reproduce their pinned source with zero fuzz. Candidate GPU45dbaab6
 is isolated in tmp/acv-gpu-fast-generation-fix/; normal package/GPU, original save
 and canonical config are unchanged. Runtime session20261025T213630477137Z ran180s,
 child0/fatal0. Gate file absent at89.241s, first timer record after95s. Corrected
-fast-generation branch executes; [measured windows](../logs/acv-fps-readback-split-20261026/fast-fixed-summary.json)
+fast-generation branch executes; [measured windows](logs/acv-fps-readback-split-20261026/fast-fixed-summary.json)
 still show75.10% resolve wall time,60.44% waiting for the previous generation,
 13.62% memcpy. Heavy-scene cadence remains approximately15–17FPS. No speedup or
 image correctness is accepted from this observed session.
@@ -2100,7 +2100,7 @@ bc52c766-20a3-4dab-b623-173c83ba2836 verifies both ring indices, old/new bytes,
 submit failure and invalidate failure. Patch vulkan-fast-readback-submit-experiment.patch
 is the third step after the diagnostic and generation-selection patches;
 zero-fuzz chain reproduction passes. Build succeeded (bc07dd18-d802-446f-b36b-7a6d318b39b0). Isolated candidate
-GPUd2404533, [manifest](../tmp/acv-gpu-fast-submit-experiment/build.json).
+GPUd2404533, [manifest](tmp/acv-gpu-fast-submit-experiment/build.json).
 Session20261025T214132535324Z completed180s with child0/fatal0, termination by
 test duration. Gate file absent at89.155s and all three mapped libraries matched
 the isolated candidate hashes. Full/default package was not changed.
@@ -2112,9 +2112,9 @@ GPU command CPU56.71% of one core, Draw27.33%, main22.83%. Recorded late submitt
 cadence is about22–25FPS; this observed session is not an identical-input comparison
 with the preceding15–17FPS run. In confirmed gameplay windows135..180s, inclusive
 Resolve66.52%, previous-generation wait38.40%, memcpy21.14%, fast-submit5.63%.
-[Confirmed gameplay evidence](../logs/acv-fps-readback-split-20261026/confirmed-gameplay-summary.json),
-[user confirmation](../logs/acv-fps-readback-split-20261026/user-gameplay-confirmation.json),
-[full timer report](../logs/acv-fps-readback-split-20261026/fast-submit-summary.json).
+[Confirmed gameplay evidence](logs/acv-fps-readback-split-20261026/confirmed-gameplay-summary.json),
+[user confirmation](logs/acv-fps-readback-split-20261026/user-gameplay-confirmation.json),
+[full timer report](logs/acv-fps-readback-split-20261026/fast-submit-summary.json).
 Image/generation correctness of delayed fast mode is still unaccepted; no stable60FPS
 or accurate-full-mode speedup is claimed. The explicit visual feedback question is
 pending; the candidate is not promoted.
@@ -2147,10 +2147,10 @@ The previously unused third-party strategy had reversed argument order in both
 condition_variable timed overloads. Corrected to wait_for(lock, duration, predicate)
 and wait_until(lock, deadline, predicate); actual-header duration/deadline timeout,
 publication wakeup and untimed wait pass (e620be34-7b4e-442a-84f4-f9e64ba60fc1).
-[Reproducible SDK/dependency patch](../tools/native-rexglue/patches/timer-queue-blocking-wait.patch)
+[Reproducible SDK/dependency patch](tools/native-rexglue/patches/timer-queue-blocking-wait.patch)
 reproduces exact source with zero fuzz; dependency attribution is retained.
 
-[Actual shared-library fixture](../tools/native-rexglue/timer_queue_cpu_test.cpp):
+[Actual shared-library fixture](tools/native-rexglue/timer_queue_cpu_test.cpp):
 
 | Host metric | Before, runtimeca04c1c6 | After, runtime7b1f69a0 |
 |---|---:|---:|
@@ -2167,7 +2167,7 @@ These host measurements establish CPU efficiency and scheduler behavior, not gam
 Existing WaitMultiple CPU test remains≈1%, event/semaphore/WaitAll/alertable checks
 pass;3 successful Thread waits still join exactly once (9312a47c-d159-4d3c-ae36-0889040b15b6).
 
-[Isolated candidate manifest](../tmp/acv-timer-queue-fix/build.json):
+[Isolated candidate manifest](tmp/acv-timer-queue-fix/build.json):
 runtime7b1f69a00408334ca3f50a6c2d50a5d8de9aa1f1ddcacfae80109fcbab7139dc,
 GPUd2404533 retained for the controlled fast-mode comparison, ELF08045fae/FFX0933159a.
 Live session20261025T215215281009Z, PID69477, probe --session without a3-minute game
@@ -2175,8 +2175,8 @@ limit (outer logger bound30min). The user confirmed gameplay at followup age83.1
 no stage output file existed then. CPU/IP gates started at90.000363/90.000362s.
 Actual X11 output settled to2560x1080 after initial resize; bilinear/no CAS/FSR,
 limiter60/VSync off. All candidate mapped library paths and hashes match, canonical
-config and original save unchanged. [Live verification](../logs/acv-timer-queue-fix-20261026/live-verification.json),
-[user gameplay confirmation](../logs/acv-timer-queue-fix-20261026/user-gameplay-confirmation.json).
+config and original save unchanged. [Live verification](logs/acv-timer-queue-fix-20261026/live-verification.json),
+[user gameplay confirmation](logs/acv-timer-queue-fix-20261026/user-gameplay-confirmation.json).
 Post90s runtime CPU verification completed:90 rows at90.005..179.004s,
 6393 user-IP samples, lost0/unavailable0. Timer dispatcher TID69481 is confirmed
 by TimerThreadMain/kernel-clock callback symbols and pthread_cond_clockwait;
@@ -2184,9 +2184,9 @@ CPU9.33%→0.640% of one core. GPU utilization87.94% (83..91). Later cadence rem
 about21–24FPS; timer CPU waste is fixed, stable60FPS is not. Observed windows are
 not an identical-input FPS benchmark. Resolve65.48%, previous-generation wait38.29%,
 memcpy20.23% remain dominant inclusive wall fractions in90..180s.
-[Runtime comparison](../logs/acv-timer-queue-fix-20261026/runtime-comparison.json),
-[immutable timer snapshot/report](../logs/acv-timer-queue-fix-20261026/stage-summary.json),
-[checkpoint](../logs/acv-timer-queue-fix-20261026/checkpoint.json).
+[Runtime comparison](logs/acv-timer-queue-fix-20261026/runtime-comparison.json),
+[immutable timer snapshot/report](logs/acv-timer-queue-fix-20261026/stage-summary.json),
+[checkpoint](logs/acv-timer-queue-fix-20261026/checkpoint.json).
 Game remains open; shutdown/normal
 exit for this session is not yet checked. Fast image/generation acceptance and
 stable60FPS remain open; no normal-package promotion.
@@ -2202,10 +2202,10 @@ The capture triggered at100s (`acv_frame70994.rdc`) contains only3 draws.
 Replay event66 has exactly zero RGB in both the1280x720 source and2560x1080
 output. This localizes the black image upstream of final scaling, but this
 presentation-only capture cannot identify the failing scene draw/resolve.
-[Checkpoint and capture checksum](../logs/acv-fbo-retest-20261026/checkpoint.json),
-[numeric inspection](../logs/acv-fbo-retest-20261026/present-inspect.json).
+[Checkpoint and capture checksum](logs/acv-fbo-retest-20261026/checkpoint.json),
+[numeric inspection](logs/acv-fbo-retest-20261026/present-inspect.json).
 
-Added [GPU replay timestamp tool](../tools/native-rexglue/replay_gpu_times.cpp),
+Added [GPU replay timestamp tool](tools/native-rexglue/replay_gpu_times.cpp),
 built against existing RenderDoc1.46 headers/library. It validates counter
 availability/type/unit, excludes parent actions and rejects invalid/duplicate
 samples. Actual capture replay passed; leaf duration sum0.64144ms is only
@@ -2228,13 +2228,13 @@ libc memcpy loop; this does not by itself measure GPU wait time. Full readback
 serialization remains the leading optimization target from earlier stage timers.
 The cap60 is not binding. No new FPS fix is claimed, and sampled scenes are not
 identical-input A/B comparisons. Game left running.
-[Summary](../logs/acv-fsi-full-confirmed-20261026/summary.json),
-[symbols](../logs/acv-fsi-full-confirmed-20261026/ips/summary.json).
+[Summary](logs/acv-fsi-full-confirmed-20261026/summary.json),
+[symbols](logs/acv-fsi-full-confirmed-20261026/ips/summary.json).
 
 ### General deferred readback scheduling core, 2026-10-26
 
-Implemented [DeferredReadbackQueue](../tools/native-rexglue/deferred_readback_queue.h)
-and [host regression](../tools/native-rexglue/deferred_readback_queue_test.cpp).
+Implemented [DeferredReadbackQueue](tools/native-rexglue/deferred_readback_queue.h)
+and [host regression](tools/native-rexglue/deferred_readback_queue_test.cpp).
 GPU-worker ownership; submitted monotonic tickets; retained staging callback;
 bounded64 jobs/64MiB by default. Enqueue does not normally wait or copy.
 CPU access flushes the prefix through the last overlapping job, waiting once
@@ -2246,7 +2246,7 @@ no later CPU access may succeed until the owner handles the device failure.
 Actual C++ ASan/UBSan regression passed: deferred bytes, unrelated CPU access,
 partial overlap ordering, CPU write ordering, slot reuse, capacity, malformed
 ranges, ticket regression, wrong worker, failed wait/publication, callback
-exception and reentrancy. [Checkpoint](../logs/acv-deferred-readback-core-20261026/checkpoint.json).
+exception and reentrancy. [Checkpoint](logs/acv-deferred-readback-core-20261026/checkpoint.json).
 This is a host scheduling core, not integrated runtime acceleration; no FPS gain claimed.
 
 Integration requirements: SDK xmemory.cpp EnableAccessCallbacks currently rejects
@@ -2262,8 +2262,8 @@ boundaries and current-generation CPU/GPU bytes are tested. Diagnostics retain90
 
 ### Readback worker dispatch and memory integration analysis, 2026-10-26
 
-Implemented SDK patches [dispatch locking](../tools/native-rexglue/patches/gpu-worker-dispatch-lock.patch)
-and [readback service during guest waits](../tools/native-rexglue/patches/gpu-readback-service-during-wait.patch).
+Implemented SDK patches [dispatch locking](tools/native-rexglue/patches/gpu-worker-dispatch-lock.patch)
+and [readback service during guest waits](tools/native-rexglue/patches/gpu-readback-service-during-wait.patch).
 The previous std::queue was accessed by multiple threads without synchronization.
 All queue accesses now hold a mutex; callbacks execute outside it and enqueues
 wake the worker. A separate restricted queue services already-recorded readback
@@ -2271,7 +2271,7 @@ completion during WAIT_REG_MEM, preventing a CPU-readback/guest-WAIT dependency
 cycle. Ordinary host callbacks remain outside the guest wait. The private leased
 experiment now uses this service; general memory read interception is still absent.
 
-[Host test](../tools/native-rexglue/test_gpu_worker_dispatch.py) compiles actual SDK
+[Host test](tools/native-rexglue/test_gpu_worker_dispatch.py) compiles actual SDK
 methods and the actual WAIT_REG_MEM implementation with host dependencies:
 32000 normal +32000 nested +32000 restricted requests, exactly-once owner-thread
 execution, per-producer normal FIFO, callback recursion, guest-wait progress,
@@ -2281,7 +2281,7 @@ Both patches reproduce final SDK sources with zero fuzz. New state is appended
 at the end of CommandProcessor to preserve existing inline getter member offsets.
 Final candidate `tmp/acv-readback-service-fix/`, GPU48994593, runtime7b1f69a0,
 ELF08045fae, FFX0933159a; built, host-tested, final service not runtime-tested.
-[Manifest/checkpoint](../logs/acv-readback-dispatch-20261026/checkpoint.json).
+[Manifest/checkpoint](logs/acv-readback-dispatch-20261026/checkpoint.json).
 
 Earlier mutex-only GPU013217a0 ran session20261026T031256047692Z for180s,
 child0/fatal0. It used an intermediate member layout and is superseded, never
@@ -2313,7 +2313,7 @@ Source analysis identifies the remaining integration boundaries:
   general CPU coherence. Protection of all A/C/E aliases, host access handling,
   staging lifetime and teardown still need implementation and regression tests.
 
-[Source hashes and findings](../logs/acv-readback-dispatch-20261026/memory-analysis.json).
+[Source hashes and findings](logs/acv-readback-dispatch-20261026/memory-analysis.json).
 Implementation order: versioned ownership; alias read protection; wait outside the
 lock and generation-checked publication under it; pre-write/free host paths; Vulkan
 connection; exact current-generation bytes, then identical-scene measurements after90s.
@@ -2361,7 +2361,7 @@ mutations, Memory reset/save/restore, Vulkan staging resources/queue integration
 teardown while the device is still valid. Registration and alias arming must occur
 under the same global lock with allocator ownership held. No general mode may be
 enabled until those consumers and lifetimes are covered. No60FPS claim.
-[Evidence and hashes](../logs/acv-memory-provider-bridge-20261026/checkpoint.json).
+[Evidence and hashes](logs/acv-memory-provider-bridge-20261026/checkpoint.json).
 
 ### Physical host file IO reservation, 2026-10-26
 
@@ -2382,7 +2382,7 @@ XMA needs atomic multi-range reservations before its raw input/output pointers a
 used. The general Vulkan producer remains disabled. Direct GetPhysicalHeap() has
 no callers in current SDK/native source search; reset/save/restore and lifetime
 integration still need coverage.
-[Sources, incremental patch and hashes](../logs/acv-host-physical-io-20261026/checkpoint.json).
+[Sources, incremental patch and hashes](logs/acv-host-physical-io-20261026/checkpoint.json).
 
 ### XMA direct physical access reservation, 2026-10-26
 
@@ -2413,7 +2413,7 @@ at7F000000; LookupHeap returns null there, so A/C/E tests do not prove coherence
 of that mirror. The deferred GPU producer must exclude this range or implement
 its protection. No current GetPhysicalHeap caller was found in SDK/native sources.
 Reset/save/restore remain unverified; the general producer is still disabled.
-[Patch/source/test/runtime hashes](../logs/acv-xma-physical-access-20261026/checkpoint.json).
+[Patch/source/test/runtime hashes](logs/acv-xma-physical-access-20261026/checkpoint.json).
 
 ### Graphics CPU physical coherence, 2026-10-26
 
@@ -2439,7 +2439,7 @@ General Vulkan producer integration follows separately. The unprotected7F mirror
 excludes physical0..16MiB; bulk state APIs remain unverified. No current source
 caller of Memory Reset/Save/Restore was found; this differs from guest save-file
 IO, which uses XFile. The accepted package is unchanged.
-[Sources, patch, tests and runtime hashes](../logs/acv-graphics-cpu-coherence-20261026/checkpoint.json).
+[Sources, patch, tests and runtime hashes](logs/acv-graphics-cpu-coherence-20261026/checkpoint.json).
 
 ### General Vulkan readback producer, experimental integration, 2026-10-26
 
@@ -2491,7 +2491,7 @@ tmp/acv-general-readback-teardown-fix/ runtimeb0bf9b46/GPU06400c82. A second
 CPU/GPU profile starts after90s to select the next optimization. Current-generation
 byte preservation is host/GPU-tested; image/game-time, representative mission
 transitions, save/load and stable60FPS still require acceptance.
-[Patch, source hashes, tests and runtime records](../logs/acv-general-vulkan-readback-20261026/checkpoint.json).
+[Patch, source hashes, tests and runtime records](logs/acv-general-vulkan-readback-20261026/checkpoint.json).
 
 ### Coherent CPU read fast path, 2026-10-26 UTC / 2026-10-27 local
 
@@ -2524,7 +2524,7 @@ this is not an identical-input FPS comparison or visual/game-time acceptance.
 Most sampled new SDK read instructions iterate the pending-provider list
 (runtime offsets4396ec/4396ef/4396fe). Next add a safe range rejection and
 identify whether remaining fence waits arise from CPU demand or staging pressure.
-[Patch, hashes, byte regressions and profiles](../logs/acv-physical-read-fastpath-20261026/checkpoint.json).
+[Patch, hashes, byte regressions and profiles](logs/acv-physical-read-fastpath-20261026/checkpoint.json).
 
 ### Provider range rejection — source/host checkpoint, 2026-10-27 local
 
@@ -2570,7 +2570,7 @@ pending jobs to admit the next copy instead of draining the entire queue. It is
 not implemented yet. Retain exact current-generation bytes, slot/fence ownership,
 capacity limits and fail-closed publication; validate with queue/admission/failure,
 SDK and actual GPU regressions before another >=90s profile.
-[Source hashes, patch replay and exact resume steps](../logs/acv-provider-range-rejection-20261026/checkpoint.json).
+[Source hashes, patch replay and exact resume steps](logs/acv-provider-range-rejection-20261026/checkpoint.json).
 
 ### Projection census and the UltraWide experiment extended, 2026-10-27
 
@@ -2664,7 +2664,7 @@ requested from the user.
 Next independently retire an oldest fitting occupied slot when pool allocation
 pressure would otherwise drain every pending copy. That policy is not yet
 implemented. Maintain slot/fence ownership and fail-closed reuse.
-[Patch, runtime records and reproducible benchmark](../logs/acv-readback-minimal-admission-20261026/checkpoint.json).
+[Patch, runtime records and reproducible benchmark](logs/acv-readback-minimal-admission-20261026/checkpoint.json).
 
 ### Oldest fitting staging slot and complete progress save, 2026-10-27
 
@@ -2690,18 +2690,18 @@ writer lock with a verified source backup; saved SDL input sequences were found
 in the existing projection-census sessions. Control/candidate comparison remains
 unstarted; sampling is planned after120s. No live-copy or protected-save/config
 modification was performed. The separate accepted WideView package is preserved.
-[Hashes, tests, benchmark](../logs/acv-readback-fitting-slot-20261027/checkpoint.json),
-[complete Russian progress and remaining work](FPS_READBACK_PROGRESS_20261027.md).
+[Hashes, tests, benchmark](logs/acv-readback-fitting-slot-20261027/checkpoint.json),
+[complete Russian progress and remaining work](kb:FPS_READBACK_PROGRESS_20261027).
 
 
 ## Focused readback runtime comparison, 2026-10-27
 
 Runtime-сравнение завершено: кандидат20261027T052317764850Z и контроль с фокусом20261027T052659721550Z, по210с child0/fatal0. Ожидание пула976.869→33.794мс за поздние35с; cadence≈60 в обоих, прирост FPS миссии не доказан. Main XThread44.79→95.29% ядра; polling82BAF218/82BAE308 требует проверки. Фактический fullscreen1920×1080; миссия/темп/картинка не подтверждены. Все процессы завершены; пакет не заменён.
 
-[Detailed results and remaining work](FPS_READBACK_PROGRESS_20261027.md).
+[Detailed results and remaining work](kb:FPS_READBACK_PROGRESS_20261027).
 
 
-- 2026-10-27: Параллельная копия принята пользователем; host/GPU/ASan и два210с запуска child0/fatal0. Worker16.79% ядра. Gameplay-окна различались: прирост FPS не доказан. Перенос в отдельный пакет открыт. [Детали](CPU_PARALLEL_READBACK_20261027.md).
+- 2026-10-27: Параллельная копия принята пользователем; host/GPU/ASan и два210с запуска child0/fatal0. Worker16.79% ядра. Gameplay-окна различались: прирост FPS не доказан. Перенос в отдельный пакет открыт. [Детали](kb:CPU_PARALLEL_READBACK_20261027).
 
 
 ## Selected integration and FOV/HUD refinement — 2026-10-27
@@ -2709,7 +2709,7 @@ Runtime-сравнение завершено: кандидат20261027T05231776
 Current separate package: ACV-Linux-TRG-FOVHUD-20261027 (`../../ACV-Linux-TRG-FOVHUD-20261027/start.sh`, исторический пакет; каталог сейчас отсутствует),
 185 manifest files, TRG without Qt/ICU. Prior WideView and Integrated packages
 are preserved. Exact hashes and evidence:
-[checkpoint](../logs/acv-fov-hud-refine-20261027/checkpoint.json).
+[checkpoint](logs/acv-fov-hud-refine-20261027/checkpoint.json).
 ELF6c02660d/runtimeebf338a1/GPU8fb12565/FFX0933159a.
 
 The user accepted parallel readback copying. start.sh now reproducibly exports
@@ -2744,7 +2744,7 @@ No gameplay FPS conclusion. Package manifest/dependencies PASS185files.
 Earlier same-pipeline Integrated package frontend check confirms launch from cwd/,
 correct library mappings and inherited accepted environment, game survival and
 profile lock after GUI exit, release after shutdown; child0/fatal0.
-[Frontend evidence](../logs/acv-selected-package-20261027/frontend/verification.json).
+[Frontend evidence](logs/acv-selected-package-20261027/frontend/verification.json).
 
 Colour integration remains RGB application output with actual surface reporting.
 The separate2560x1080 RGB10-bit request20261027T145115528083Z offered only
@@ -2766,7 +2766,7 @@ actual-source ASan/UBSan tested and published as a separate candidate. Both210s
 scripted runs exit child0/fatal0; no cache evictions under either policy. This does
 not establish a fix for model/location unloads. Read-only retail82586050 confirms
 conditional cleanup calls; ownership semantics unchanged.
-[Technical result, hashes, limits and next step](RESOURCE_STREAMING_20261027.md).
+[Technical result, hashes, limits and next step](kb:RESOURCE_STREAMING_20261027).
 
 
 ### Local frustum and UltraWide sphere rejection — 2026-10-28
@@ -2775,4 +2775,4 @@ Retail82302520 builds local side planes before the hooked projection;82300CE0
 consumes them. The camera-build override now follows the actual widened
 projection through a scoped thread-local marker and updates only4normal fields.
 Actual translated sphere tests/SDK context pass ASan/UBSan; build passes.
-[Evidence, runtime verification and limits](ENGINE_OFFSCREEN_20261028.md).
+[Evidence, runtime verification and limits](kb:ENGINE_OFFSCREEN_20261028).

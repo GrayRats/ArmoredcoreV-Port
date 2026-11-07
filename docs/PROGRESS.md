@@ -1,5 +1,141 @@
 # ACV — verified milestones and limits
 
+2026-11-05: ReXGlue game Vulkan backend now targets API 1.4, checks the
+`vkEnumerateInstanceVersion` result and rejects loaders/physical devices below
+1.4. Linux Release `rexui` and Windows MinGW-targeted Clang `rexui` builds pass.
+The complete Windows SDK/game build remains blocked in vendored FFmpeg's MSVC
+CRT setup (`crtversion.h`) in this Linux cross environment. No Windows game
+runtime was produced; Wine gameplay and native Windows WSI remain untested.
+ReXGlue is pinned to Vulkan 1.4.357.0 headers; LunarG 1.4.363.1 remains the
+launcher SDK/runtime. [Windows plan](kb:PLAN_WINDOWS).
+
+2026-11-04: Windows/all-OS Vulkan checkpoint. Launcher Vulkan PE32+ cross-link
+passes against LunarG SDK 1.4.363.1; renderer requests API 1.4. Wine with the
+app-local LunarG Runtime Components loader identified version 1.4.363 but could
+not load Wine's ICD bridge. A separate Wine run through Wine's built-in loader
+completed the 80-frame Vulkan renderer loop; backend_ready=0 because the Windows
+Python backend is absent. Linux SDK 1.4.363.1 launcher build, Vulkan/OpenGL
+80-frame smokes, CTest 3/3 and Python portability 39/39 pass. ReXGlue Windows
+configure/selected TUs pass; full SDK build still stops in vendored FFmpeg/MSVC
+CRT (crtversion.h). Native Windows WSI/gameplay, macOS and cross-OS performance
+remain untested. No game release promoted; launcher profiling remains NOT ASSESSED.
+
+2026-11-04: ACV-Linux-release-2.1 compiled and packaged separately. All243
+native TUs rebuilt without stale PCH; both runtime/GPU libraries linked.
+Package verifier checked189 payload files; `start.sh` syntax and library
+resolution PASS. Release2.0 hashes and canonical config/XEX preserved.
+No v2.1 runtime/gameplay test; image, save/load, game-time and performance
+acceptance remain open. [Evidence](kb:ACV_LINUX_RELEASE_2_1_20261104).
+
+2026-11-04: persistent driver cache дополнительно передаётся двум lazy
+render-target ownership-transfer pipelines; callback сбрасывается перед
+уничтожением cache. Эта часть вошла в v2.1 и прошла compile/package checks;
+GPU/gameplay acceptance не проводилась. Release2.0 прежний; эффект на FPS/stutter
+неизвестен.
+[Status](kb:FPS_VULKAN_RENDER_TARGET_CACHE_20261104).
+
+2026-11-04: реализованы все 7 opt-in Vulkan путей: persistent cache, sync2,
+timeline, vertex-input GPL, dynamic cull/front-face, staging suballocation и
+вторая copy queue того же family. Native runtime/GPU пересобраны (243 TU,
+без старого PCH). ASan/UBSan, GPU bytes/pixels, deferred/patch replay PASS;
+cold/warm runtime135s оба child0/fatal0/errors0; cache reload=true. Прирост FPS и gameplay
+не приняты; release2.0 сохранена. [Результат](kb:FPS_VULKAN_SEVEN_20261104).
+
+2026-11-04: реализован opt-in exact descriptor-bind dedup (a8abd3a1).
+Host ASan/UBSan/build/replay/load/check-only PASS. GPU oracle скомпилирован,
+но отложен из-за активной пользовательской игры; FPS/render не проверены.
+Release2.0 сохранён. [Следующая проверка](kb:FPS_DESCRIPTOR_BINDS_20261104).
+
+2026-11-03: готов отдельный ACV-Linux-release-2.0 со stencil3 и предыдущими
+Vulkan API доработками. GPU3TU и TRG пересобраны; неизменённые guest ELF/runtime/FFX
+переиспользованы. ASan/UBSan, backend, UI600frames,189hashes/loader и135s startup
+PASS (child0/fatal0/errors0). Исправлен выбор2.0 вместо сохранённого пути1.0;
+пользовательский settings/config не переписан. Версия1.0 сохранена.
+Миссия/FPS/stencil-image acceptance открыты.
+
+2026-11-03: по запросу пользователя проверенные Vulkan API доработки включены
+в ACV-Linux-release-1.0. GPU/default env и packaging baseline обновлены,
+189file manifest и release135s smoke PASS (child0/fatal0/errors0).
+Старые файлы с хешами сохранены. Три дополнительных stencil-фильтра собраны,
+host-tested,default off в отдельном кандидате; GPU render acceptance открыт.
+
+2026-11-03: Vulkan state dedup (Sol) runtime240s и counter135s завершены без
+runtime/fatal ошибок. За40.04s пропущено173122index binds (6.54%) и2638push updates
+(4.15%). Vertex/blend/depth не вызывались; их польза в этой сцене не измерена.
+FPS/render acceptance открыты. [Результат](kb:FPS_VULKAN_STATE_DEDUP_20261103).
+
+2026-11-03: Sol собрала opt-in Vulkan API state dedup: index/vertex bindings,
+push constants, blend constants и depth bias. Host ASan/UBSan и compute push
+GPU oracle PASS; render/gameplay набора ещё не проверен. Copy-bytes runtime240s
+чистый,3516копий/9размеров; FPS-прирост не доказан.
+
+2026-11-03: Sol добавила copy_bytes в GPU timestamp профиль staging-копий.
+Суммирование coalesced команд и сброс слота проверены ASan/UBSan; actual GPU
+oracle bytes/guards и метаданные PASS, 3TU кандидат собран. Новый игровой замер
+с размерами ещё не выполнен; FPS-прирост не заявлен.
+
+2026-11-03: Astra6 реализовала opt-in GPU timestamps (кандидат38b2e377).
+Host/GPU oracle/build/replay/load PASS; реальный240s сеанс завершён без ошибок,
+1092 samples проверены, drops/truncation/API failures=0. Профиль указывает на
+длинные draw-участки и staging copy для дальнейшего исследования; FPS-прирост,
+сцена и render/game-time не приняты. Default/release сохранены.
+[Результат](kb:FPS_GPU_TIMESTAMPS_20261103).
+
+2026-11-02: Astra6 добавила opt-in direct vkGetFenceStatus для нулевых опросов.
+Host/GPU oracle и сборка7029daf1 PASS;блокирующие wait/prefix/lifetime сохранены.
+Экономия микротеста≈0.1µs/call,заметный FPS-выигрыш не заявлен;default off.
+Следующий приоритет: GPU timestamps FSI/Resolve/copy. Release не менялся.
+[Результат](kb:FPS_FENCE_STATUS_20261102).
+
+2026-11-02: coherent0/1 runtime оба240s,child0/fatal0/errors0,полные120–180s
+CPU/GPU/IP и raw swaps. Пользователь подтвердил «Да, лучше стало» — субъективное
+улучшение текущей комбинации batching1/descriptor1/coherent1.
+Окна не matched:Resolve1800→41837,draw106196→3881056,GPU29.9→91.85%;
+swap29.998→19.373 не является регрессией/приростом от этой API-правки.
+Release/default не менялись,оба собственных запуска завершены.
+[Evidence](logs/readback-coherent-invalidate-20261101/runtime-comparison.json), [оценка пользователя](logs/readback-coherent-invalidate-20261101/user-acceptance.json).
+
+2026-11-01: Astra6 добавила opt-in coherent GeneralReadback invalidate elision.
+Actual allocation flags+completed ticket проверяются;noncoherent/unknown path сохранён.
+Host/GPU oracle PASS:invalidate32→0,bytes/guards совпали. Noncoherent GPU недоступна,
+её ветка host-injected only. Timing неоднороден,FPS не доказан,default/release прежние.
+[Результат](kb:FPS_COHERENT_READBACK_20261101).
+
+2026-11-01: Astra6 добавила opt-in immutable Resolve descriptor cache64keys.
+Host/GPU binding oracle PASS:128→4vkUpdateDescriptorSets,bytes/guards сохранены.
+Изолированный72554319,default off;timing неоднороден,FPS/hit-rate не измерены.
+[Результат](kb:FPS_VULKAN_API_20261101).
+
+2026-10-31: bounded batching0/1 runtime240s оба child0/fatal0/errors0.
+Наблюдалось14.57→17.58swap/s (+20.7%),1%low12.29→15.58;batch mean3.295,max4.
+Artifact/config/settings/profile одинаковые,но сцена/маршрут не подтверждены:
+причинный FPS-выигрыш и render/game-time acceptance остаются открытыми.
+Оба запуска завершены,release/default не менялись.
+[Evidence](logs/resolve-batching-20261031/runtime-comparison.json).
+
+2026-10-31: Astra6 реализовала opt-in Resolve batching4jobs/16MiB,default off.
+Host ASan/UBSan и GPU oracle PASS:40Resolve→14vkQueueSubmit,точные bytes,
+все40публикаций,одинаковый peak40,325,120B. Изолированный кандидат готов;
+На этапе сборки gameplay/FPS не измерялись; новые runtime результаты выше.
+[Результат и ограничения](kb:FPS_RESOLVE_BATCHING_20261031).
+
+2026-10-30: TRG/MangoHud settings review complete. 19 settings/137 values and six preset/depth combinations audited; 21 schema, 6 preset, 6 HUD, 6 input, 4 backend and actual App/UI tests PASS. 112s capped startup child0/fatal0: MangoHud30.0FPS, Guest30.0002/s; mission mismatch not reproduced. Adaptive quality cache4096/4608MiB,800s,AF2/FSR1; visible dithering help and shared preset application deployed. Package189hashes/dependencies and isolated frontend smoke PASS. No effect or gameplay FPS acceptance. [Details](kb:LAUNCHER_SETTINGS_20261030).
+
+2026-10-30: Astra6 built opt-in idle-reclaim d9998da1 and latest-fence5bf5a83f;
+ASan/UBSan, exact GPU bytes/earlier fence states/reuse and shared retirement PASS.
+Reclaim capacity waits31→23 but transfer-only timing5.2–19.5%slower; latest-prefix32
+passes1handle rather than32, no FPS claim. EndSubmission-loss ownership guard tested.
+Both default off; gameplay untested, no FPS candidate promoted to release.
+Current runtime8e2bae61 differs from historical544bdaae; old candidates retained.
+Submit batching contract/dependencies documented. [Evidence and limits](kb:FPS_READBACK_ALTERNATIVES_20261030).
+
+2026-10-29: Forward128 integration complete, explicit candidate6090b52a on-runtime
+240s exit0/fatal0/runtime_errors0;1072raw intervals17.8587swap/s,1%low14.3942.
+Control0 exited90.45s before120s gate, no valid FPS A/B. Astra6 added/tested actual
+GPU-written staging oracle and ASan/UBSan protected ends: bytes PASS; copy≈3%slower
+than libc on cached coherent type4. No FPS/default/release promotion.
+[Runtime, GPU result and limits](kb:FPS_FORWARD_COPY_20261029).
+
 2026-10-29: bilingual Install guides document Linux/Windows SDK x86-64-v2,
 missing ACV game rebuild inputs, package commands and current GLIBC limits.
 Clean Ubuntu24.04/Clang18 launcher build + real Xvfb JPEG PASS in
@@ -7,7 +143,22 @@ Clean Ubuntu24.04/Clang18 launcher build + real Xvfb JPEG PASS in
 GHCR build-tools package published; anonymous pull digest verified. Portable
 ACV CMake configure and actual font-path packaging/positive-negative dependency
 checks PASS. Native Windows ACV application remains unported/unbuilt.
-[English](../Install.MD), [Русский](../Install.RU.MD).
+[English](Install.MD), [Русский](Install.RU.MD).
+
+2026-10-29: existing game PID11835 sampled without restart/settings writes:
+509backward-copy samples(477pool),317/317disjoint/page-aligned geometry hits,lost0.
+Late window24.75swap/s,GPU95.7%; route uncontrolled. Forward128 opt-in GPU6090b52a
+built/host-tested; exact bytes/ASan/UBSan/concurrent producers/patch/dlopen PASS,
+actual2-thread RAM A/B1.03–1.16speedup. Release/SDK outputs unchanged.
+Game/GPU-staging A/B,>30FPS and1%low remain pending.
+[Evidence and scope](kb:FPS_FORWARD_COPY_20261029).
+
+2026-10-29: user identified mission1 gameplay and minor freezes; repeat60s capture
+29.3226swap/s,GPU93.65%,5791IPs/lost0,no physical disk reads/window diagnostics.
+Previous803ms pause not repeated(max49.10ms). Raw-swap candidate15b043d5 built
+in isolation, ASan/UBSan recorder and exact1%low arithmetic, patch replay, dlopen,
+settings dryrun and preserved release/SDK hashes PASS. Gameplay trace remains
+pending; no performance fix or render/time acceptance. [Details](report-fps.md).
 
 2026-10-29: user's release1.0 session161152 captured after183.87s:60CPU/GPU rows,
 5665IPs/lost0;5complete pacing windows1500intervals yield29.0203swap/s.
@@ -15,42 +166,42 @@ GPU92.43%device-wide; main GPU Commands68.30%,DrawThread44.71%core.
 No warning/error within sampled window; mission/action,1%low and render/game-time
 acceptance remain missing. File hashes match accepted ELF/runtime/GPU, maps/stat
 device mismatch retained. Game not stopped; no performance edits.
-[Evidence and limits](../report-fps.md).
+[Evidence and limits](report-fps.md).
 
 2026-10-29: concurrent CPU/GPU/IP capture tool added; real host-process regression
 checks identity/start-window overlap, artifact hashes, logs, evidence preservation,
 CLI age gate and early-process-exit failure. No game launch/performance change;
 representative mission/action and raw per-frame trace remain pending.
-[Tool and limits](../report-fps.md).
+[Tool and limits](report-fps.md).
 
 2026-10-29: FPS reconnaissance: Release/O3/Clang23 build rules checked,
 release ELF/runtime/GPU/FFX SHA match accepted baseline. Preserved latest user's
 late2400swap samples:22.2289/s,44.9865ms; no raw1%low, scene identity or concurrent
 CPU/GPU sample. Two resolve/draw errors prevent correctness acceptance.
-No runtime/config/performance edits; >30FPS remains open. [Report](../report-fps.md).
+No runtime/config/performance edits; >30FPS remains open. [Report](report-fps.md).
 
 2026-10-28: isolated the two resolution selectors' ImGui IDs on Screen;
 Ui::Help did not end their shared table. Actual ScreenPage baseline reproduces
 2 items per ID with all advanced controls available; fixed regression passes with1.
-[Details](LAUNCHER_PACKAGE.md#resolution-picker-id-conflict--2026-10-28).
+[Details](kb:LAUNCHER_PACKAGE#resolution-picker-id-conflict--2026-10-28).
 
 2026-10-28: launcher guidance refined: executable instructions/full bundled path
 are always visible,36 resolution presets plus Auto have aspect-group filters,
 and10-bit selection instructions/actual-format refresh are visible on Colour.
 Effect choices remain bilinear/CAS/FSR1; no effect tests or other-resolution game runs.
-[Details](LAUNCHER_PACKAGE.md#visible-guidance-and-resolution-groups--2026-10-28).
+[Details](kb:LAUNCHER_PACKAGE#visible-guidance-and-resolution-groups--2026-10-28).
 
 2026-10-28: game window renamed to `ARMORE CORE V [Rexglue]`; internal
 app/storage identity retained. Host build and actual X11 title/startup35s PASS;
 release1.0 updated, runtime/GPU/FFX and protected data preserved.
-[Checkpoint](../logs/acv-game-window-title-20261028/checkpoint.json).
+[Checkpoint](logs/acv-game-window-title-20261028/checkpoint.json).
 
 2026-10-28: launcher options updated in release1.0: Cyrillic X11 window title,
 executable guidance, frame caps30/60/120, shared resolution presets including32:9,
 10-bit request with dithering coordination and actual-session depth display;
 FSR2/3 removed from choices. Real X11 title-property oracle, backend and App
 regression and six-page smoke pass; CAS/FSR effects remain untested.
-[Details](LAUNCHER_PACKAGE.md#launcher-options--2026-10-28).
+[Details](kb:LAUNCHER_PACKAGE#launcher-options--2026-10-28).
 
 2026-10-28: TRG interface workflows fixed and published in existing release1.0:
 read-only debounced draft preview, dirty refresh/revert, unsaved graphics-only
@@ -58,14 +209,14 @@ reset, profile form population, separate backups/session state, file/folder pick
 bundled-game selection, empty-operation guards and effect-dependent sharpness controls.
 User-visible PLAN references removed. Two isolated Python checks, real App regression
 and six-page render smoke pass. Accepted game binaries preserved; CAS/FSR not tested.
-[Evidence and limits](LAUNCHER_PACKAGE.md#interface-polish--2026-10-28).
+[Evidence and limits](kb:LAUNCHER_PACKAGE#interface-polish--2026-10-28).
 
 This is a summary of evidence, not a task queue.
-Priorities are in [PLAN](PLAN.md); the quick entry point is the [state](X360_PROJECT_STATE.md).
-The full earlier journal, unchanged: [originals.tar.gz](../logs/docs-context-20261022/originals.tar.gz),
-entry `docs/PROGRESS.md`; SHA-256, headers and links are in the [manifest](../logs/docs-context-20261022/manifest.json).
+Priorities are in [PLAN](kb:PLAN); the quick entry point is the [state](kb:X360_PROJECT_STATE).
+The full earlier journal, unchanged: [originals.tar.gz](logs/docs-context-20261022/originals.tar.gz),
+entry `kb:PROGRESS`; SHA-256, headers and links are in the [manifest](logs/docs-context-20261022/manifest.json).
 
-[Русская версия](PROGRESS.RU.MD)
+[Русская версия](kb:PROGRESS_RU)
 
 ## Native Linux
 
@@ -77,7 +228,7 @@ isolated session20261025T215215281009Z running; user confirmed gameplay before90
 CPU/IP sampling gated at90.00036s.90 rows/6393 IPs, lost0; actual timer CPU
 9.33%→0.64% of one core. Later21–24FPS remains; game left open, fast image
 acceptance and normal game exit still unverified.
-[Evidence](NATIVE_REXGLUE_LINUX.md#timerqueue-blocking-wait-and-deadline-validation-2026-10-26).
+[Evidence](kb:NATIVE_REXGLUE_LINUX#timerqueue-blocking-wait-and-deadline-validation-2026-10-26).
 
 2026-10-26:90s-gated split timers rule out pending-slot reuse in observed full/fast
 runs (180s each, child0/fatal0). Fast waited for the new generation9217 times when
@@ -88,13 +239,13 @@ Nonblocking fast-submit candidate d2404533 also completed180s child0/fatal0;
 user confirmed gameplay,25 CPU/GPU rows plus1869 IP samples after90s.
 Late cadence22–25FPS, GPU88.4%; observed sessions are not identical-input A/B.
 Fast image/generation acceptance pending. Full/default preserved;
-no stable60FPS claim. [Details](NATIVE_REXGLUE_LINUX.md#resolve-wait-attribution-and-fast-generation-correction-2026-10-26).
+no stable60FPS claim. [Details](kb:NATIVE_REXGLUE_LINUX#resolve-wait-attribution-and-fast-generation-correction-2026-10-26).
 
 2026-10-25: user90s diagnostic gate implemented and tested. Actual sampling began
 at90.000408s,6917 user-IP samples without loss. Opt-in gated Vulkan stage timers
 identify Resolve readback≈78% inclusive command-thread wall time, fence checks
 ≈64% nested; full-mode default retained. No stable60FPS fix claimed.
-[Evidence](NATIVE_REXGLUE_LINUX.md#fps-diagnostics-gated-at-game-age90s-2026-10-25).
+[Evidence](kb:NATIVE_REXGLUE_LINUX#fps-diagnostics-gated-at-game-age90s-2026-10-25).
 
 
 2026-10-25: fixed fractional1ms busy polling in SDK WaitMultiple. Actual shared-library
@@ -103,7 +254,7 @@ preserved. Normal190s session20261025T171212311161Z child0/fatal0; audio-thread
 CPU78.05%→0.56% of one core. Separate185-file TRG candidate
 ../ACV-Linux-TRG-WaitFix-20261025/ hashes/dependencies verified.
 Heavy-scene16–21FPS remains unresolved.
-[Evidence](NATIVE_REXGLUE_LINUX.md#waitmultiple-fractional-sleep-and-measured-cpu-fix-2026-10-25).
+[Evidence](kb:NATIVE_REXGLUE_LINUX#waitmultiple-fractional-sleep-and-measured-cpu-fix-2026-10-25).
 
 
 2026-10-25: user confirmed the mission now works. Normal session `20261025T165411391172Z`
@@ -111,14 +262,14 @@ on the isolated profile ran180s and exited0/fatal0. No original save was replace
 The last diagnostic-session abort belonged to GDB PID36997 (breakpoint.c:9182 assertion),
 not a game SIGABRT. Thread-scoped finish probes replaced with explicit native-return correlation;
 actual GDB stress test160 exiting threads/3840 callbacks PASS (`139606fa-7bfb-4c09-8c0e-69864e3741a9`).
-Full profile migration/save-load remains open. [Details](NATIVE_REXGLUE_LINUX.md#mission-accepted-and-debugger-failure-2026-10-25).
+Full profile migration/save-load remains open. [Details](kb:NATIVE_REXGLUE_LINUX#mission-accepted-and-debugger-failure-2026-10-25).
 
 
-2026-10-25: TRG frontend built (C++17,SDL2 2.32.10,ImGui1.92.9b), six pages and existing Python settings/profile bridge. X11 smoke covers page rendering, resize and Cyrillic glyph availability. Actual GUI→probe→game test verifies selected runtime libraries, unbounded session, writer rejection, game/lock survival after GUI exit and release after game exit (`572164e8-9aea-42a1-a046-defec0e456a0`). Real ISO import verifies all26 payloads, no overwrite, cancellation cleanup and unchanged original ISO (`0151026f-deb8-472b-a478-217cfa620632`). Separate185-file candidate `../ACV-Linux-TRG-20261025/`; final relocated test child0/fatal0, XUID matches, one language option and no new shm orphans: [checkpoint](../logs/acv-trg-final-20261025-r2/checkpoint.json). Package/tmp path fixed into profile cache; original Qt package retained. Probe fatal counter independently fixed and regression-tested. See [TRG package checkpoint](LAUNCHER_PACKAGE.md#trg-frontend-and-installation--2026-10-25). Gameplay, physical controller/HiDPI, visual CAS/FSR and new baseline acceptance remain open.
+2026-10-25: TRG frontend built (C++17,SDL2 2.32.10,ImGui1.92.9b), six pages and existing Python settings/profile bridge. X11 smoke covers page rendering, resize and Cyrillic glyph availability. Actual GUI→probe→game test verifies selected runtime libraries, unbounded session, writer rejection, game/lock survival after GUI exit and release after game exit (`572164e8-9aea-42a1-a046-defec0e456a0`). Real ISO import verifies all26 payloads, no overwrite, cancellation cleanup and unchanged original ISO (`0151026f-deb8-472b-a478-217cfa620632`). Separate185-file candidate `../ACV-Linux-TRG-20261025/`; final relocated test child0/fatal0, XUID matches, one language option and no new shm orphans: [checkpoint](logs/acv-trg-final-20261025-r2/checkpoint.json). Package/tmp path fixed into profile cache; original Qt package retained. Probe fatal counter independently fixed and regression-tested. See [TRG package checkpoint](kb:LAUNCHER_PACKAGE#trg-frontend-and-installation--2026-10-25). Gameplay, physical controller/HiDPI, visual CAS/FSR and new baseline acceptance remain open.
 
-2026-10-25: verified profile backup and isolated two-field name trial created; original APGD SHA unchanged. Auto-input did not reach mission selection; the one trace_ready row does not establish save-load or checksum acceptance. [Trial manifest](../logs/acv-save-name-trial-20261025/trial.json).
+2026-10-25: verified profile backup and isolated two-field name trial created; original APGD SHA unchanged. Auto-input did not reach mission selection; the one trace_ready row does not establish save-load or checksum acceptance. [Trial manifest](logs/acv-save-name-trial-20261025/trial.json).
 
-2026-10-25 16:40: keyboard-fix runtimef3600aca still aborts on selection with loaded save; trace confirms empty lookup key, no keyboard call, old LE name remains in memory. APGD.DAT and two aligned name offsets identified read-only. Save migration and integrity validation not performed; gameplay fix remains open. See latest [native checkpoint](NATIVE_REXGLUE_LINUX.md#resume-checkpoint-selection-still-aborts-with-old-save-2026-10-25-1640).
+2026-10-25 16:40: keyboard-fix runtimef3600aca still aborts on selection with loaded save; trace confirms empty lookup key, no keyboard call, old LE name remains in memory. APGD.DAT and two aligned name offsets identified read-only. Save migration and integrity validation not performed; gameplay fix remains open. See latest [native checkpoint](kb:NATIVE_REXGLUE_LINUX#resume-checkpoint-selection-still-aborts-with-old-save-2026-10-25-1640).
 
 2026-10-25: fixed independently reproduced guest UTF-16 double swap in headless keyboard and fallback. Actual SDK lambda with real MappedPtr passes ASan/UBSan; baseline corrupts ARTEM bytes. Mission selection trace confirms empty resource lookup key and pre-cleanup failure. Runtimef3600aca built; gameplay verification session `20261025T112001461079Z` pending.
 
@@ -132,7 +283,7 @@ Full profile migration/save-load remains open. [Details](NATIVE_REXGLUE_LINUX.md
 
 2026-10-24: fixed repeated POSIX thread reaping in SDK. Same runtime-boundary regression: baseline3 joins / fixed1 join for3 waits (operation `50fdd9aa-2caa-428a-9af5-3ec03b90edc6`). Mission-2 freeze reproduced with IMMEDIATE; new join-fix session `20261024T171241321091Z` awaits gameplay verification.
 
-2026-10-24: mission-2 diagnostic runtime built and launched in isolated `tmp/acv-mission2-watchdog/`; actual IMMEDIATE presentation verified, accepted ELF/GPU retained. Session `20261024T170256271467Z`; manual mission-2 outcome pending. See [native evidence](NATIVE_REXGLUE_LINUX.md#mission-2-watchdog-runtime-and-vsync-off-test-2026-10-24-2203).
+2026-10-24: mission-2 diagnostic runtime built and launched in isolated `tmp/acv-mission2-watchdog/`; actual IMMEDIATE presentation verified, accepted ELF/GPU retained. Session `20261024T170256271467Z`; manual mission-2 outcome pending. See [native evidence](kb:NATIVE_REXGLUE_LINUX#mission-2-watchdog-runtime-and-vsync-off-test-2026-10-24-2203).
 
 | Stage | Result and evidence | Verification boundary |
 |---|---|---|
@@ -140,9 +291,9 @@ Full profile migration/save-load remains open. [Details](NATIVE_REXGLUE_LINUX.md
 | Generation/build | ReXGlue 0.10.0, Clang/Ninja ELF; 459 supplemental entries, 63 thunks, known leaves; 0 REX_FATAL in the verified tree | Not a full decompilation or coverage of all runtime paths |
 | Conditional targets | 95 branches / 19 targets, 31 boundary hints; audit 625 files / 311 C++ units | Instruction fragments, no .pdata ownership; logs/acv-rexglue-unresolved-20261021/conditionals/ |
 | Boot/render | NOW LOADING, menu, intro, HUD/effects and 3D submissions observed; the user confirmed that the black fur textures are fixed | Other visual areas were not accepted separately; an additional material regression was removed from the tasks at the user's request |
-| Mission 2 black-screen hang | Reproduces on the accepted build (session `20261024T135710111433Z`, watch `logs/acv-hang-watch/20261024T185710/`). Before the stop, one warning about constant `8A000000 0F9FF097` (1280-wide tile surface, `24_8_FLOAT`), then about 12 s, then silence; the same order appeared in earlier hangs. Stacks: the main window thread is in `PaintAndPresentImpl` → NVIDIA driver → `drmSyncobjTimelineWait`; GPU Commands waits for an event and the GPU is idle; no RenderDoc frames in the stacks | The 2 s limit on waiting for the previous submission, the 5 s wait diagnostics and the frame-acquire timeout did not fire, so the blocking call has no timeout. Most likely `vkQueuePresentKHR` or `vkQueueSubmit`; which one is not established. Why the screen stays black is not established. [Details](NATIVE_REXGLUE_LINUX.md#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24) |
+| Mission 2 black-screen hang | Reproduces on the accepted build (session `20261024T135710111433Z`, watch `logs/acv-hang-watch/20261024T185710/`). Before the stop, one warning about constant `8A000000 0F9FF097` (1280-wide tile surface, `24_8_FLOAT`), then about 12 s, then silence; the same order appeared in earlier hangs. Stacks: the main window thread is in `PaintAndPresentImpl` → NVIDIA driver → `drmSyncobjTimelineWait`; GPU Commands waits for an event and the GPU is idle; no RenderDoc frames in the stacks | The 2 s limit on waiting for the previous submission, the 5 s wait diagnostics and the frame-acquire timeout did not fire, so the blocking call has no timeout. Most likely `vkQueuePresentKHR` or `vkQueueSubmit`; which one is not established. Why the screen stays black is not established. [Details](kb:NATIVE_REXGLUE_LINUX#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24) |
 | RenderDoc | X11 swapchain and RDC confirmed; the Wayland surface mismatch was analysed | A single present / a single draw may be a repeated output, not a game frame |
-| Input | 61 SDK integration checks; F8/Escape; SDL→XInput→guest menu | OS delivery and gameplay camera parity are not fully verified; [input](LINUX_INPUT.md) |
+| Input | 61 SDK integration checks; F8/Escape; SDL→XInput→guest menu | OS delivery and gameplay camera parity are not fully verified; [input](kb:LINUX_INPUT) |
 | Settings | Single acv.config: ARTEM / ARTEM, headless=true; default reader and missing-file failure verified | The user cause of the Setup screen is not proven; headless is a bypass of the dialog |
 
 Main render evidence: runs `20261021T175546161473Z` (70 s: 1975 indexed
@@ -159,10 +310,10 @@ this backend writes to an EDRAM storage buffer and performs a compute resolve.
 | protect_zero=false | In the last 150 s probes there is no longer the earlier series of guest NULL writes; without the flag the fault loop reproduced | Kept in the ACV profile; the retail meaning of the writes is not recovered |
 | UTF-8 Setup | Bounded SDK keyboard buffer/conversion fix built; ARTEM non-headless smoke without a crash | Real Unicode input/Cancel and tutorial glyphs are not yet verified |
 | FSI/readback | Early fast/full comparisons did not reveal a fix for darkening in those scenes; separately, the `exp_adjust` defect was found, after which the user confirmed the fix for black fur textures | Do not mix the historical readback A/B with the accepted texture fix; full remains the standard |
-| invalid fetch | In the 5-minute run `20261023T205031330068Z` 3,853 warnings were recorded. The repeating fetch `8A000000 0F9FF097 0059E4FF 00A80D11 00000003 00000200` addresses `0x0F9FF000`, 1280×720, format 23 (`24_8_FLOAT`); there are also separate invalid-typed constants at `0x1C1...` | Not tied to a material draw and not linked to the already fixed black fur textures; keep as a separate runtime warning. See [manual gameplay capture session](NATIVE_REXGLUE_LINUX.md#manual-gameplay-capture-2026-10-24) |
+| invalid fetch | In the 5-minute run `20261023T205031330068Z` 3,853 warnings were recorded. The repeating fetch `8A000000 0F9FF097 0059E4FF 00A80D11 00000003 00000200` addresses `0x0F9FF000`, 1280×720, format 23 (`24_8_FLOAT`); there are also separate invalid-typed constants at `0x1C1...` | Not tied to a material draw and not linked to the already fixed black fur textures; keep as a separate runtime warning. See [manual gameplay capture session](kb:NATIVE_REXGLUE_LINUX#manual-gameplay-capture-2026-10-24) |
 | Display gamma | The SDK fixes BT.709; two actual hook calls 2→1 confirmed in run 20261021T211435257956Z | Override is not the default |
-| Shared-memory compute access / CPU upload | The SDK kComputeWrite was fixed READ→WRITE; host regression + negative control, private plugin build, 85/110 s probes. CPU-origin 524288 bytes matched the late GPU mirror SHA e4428980… | Writer/material not established; copy event outside the RDC; [evidence](../logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json) |
-| Allocation shim | Caller sites 0x82AEF00C/0x82AEF028 confirmed by trace/raw PPC; two 0 values are passed to the parameters of 0x82AF1D38. The override gives non-zero addresses, child 0/110 s, 12 RDC | Scenes did not match: 1/59 draws vs 2661; render effect unknown, default false; [evidence](../logs/acv-gpu-sync-20261022/allocation/ab-result.json) |
+| Shared-memory compute access / CPU upload | The SDK kComputeWrite was fixed READ→WRITE; host regression + negative control, private plugin build, 85/110 s probes. CPU-origin 524288 bytes matched the late GPU mirror SHA e4428980… | Writer/material not established; copy event outside the RDC; [evidence](logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json) |
+| Allocation shim | Caller sites 0x82AEF00C/0x82AEF028 confirmed by trace/raw PPC; two 0 values are passed to the parameters of 0x82AF1D38. The override gives non-zero addresses, child 0/110 s, 12 RDC | Scenes did not match: 1/59 draws vs 2661; render effect unknown, default false; [evidence](logs/acv-gpu-sync-20261022/allocation/ab-result.json) |
 | VFS/glyphs | Read-only dlc_image mount provides 4 confirmed TPF files; no failed dlc_image opens in the final smoke | Missing sound DLC and tutorial glyphs remain; shading is separate |
 | FIFO capture control | run 20261021T220305240062Z: mode 2,4 RDC, child 0/150 s; frame 10222: 400 indexed / 35 non-indexed / 5 dispatch | Input histogram 91–97% below 1/32 per channel; the source writer is outside the captured usage |
 | Burst capture | run 20261021T220733169087Z: 8 RDC, child 0/140 s; frame 16580: 1325 indexed / 682 draws / 64 dispatch | Frame 16581 contains copyDst 90→gamma write 95; final present 109 reads another mailbox image; cause open |
@@ -178,34 +329,34 @@ Numeric replay in RenderDoc 1.46 started working after exporting the replay mark
 Frame 73703: 1366 draw actions / 10 dispatches; final source 1280×720 centre RGB
 [0.00781262, 0.0254063, 0.0136721], output 2560×1080 centre
 [0.00784314, 0.0235294, 0.0117647]. The source GetUsage contains only PS-read; no image export.
-Evidence: [details](NATIVE_REXGLUE_LINUX.md#numeric-renderdoc-replay-2026-10-22),
+Evidence: [details](kb:NATIVE_REXGLUE_LINUX#numeric-renderdoc-replay-2026-10-22),
 operations `daec2451-6971-49b8-8382-61116d38f909` /
 `4e993eaa-9b88-4f9c-acf1-860cdb9da3c6`.
 
 ## Static research and bounded reconstruction
 
-- [Timing](ACV_TIMING.md): the Main→DrawThread handoff and the step consumer are confirmed.
+- [Timing](kb:ACV_TIMING): the Main→DrawThread handoff and the step consumer are confirmed.
   The gameplay physics/combat link is not established. Unity batch
   AcvTimingTests: 13 passed, 0 failed/skipped; this is a separate historical branch.
 - The lookup `0x82C25350` returns bool/default after ${...}, not a record pointer.
   Startup FileManager.BindRead=true; 14 direct setters; the known dynamic
   setter `0x823E07DC` builds Assembly.%s and does not write the exact key.
   Object aliasing and other indirect writers are open:
-  [lookup evidence](../logs/acv-lookup-20261020/followup-20261021.md).
+  [lookup evidence](logs/acv-lookup-20261020/followup-20261021.md).
 - `0x83885E80+0x910/+0x914 = 1280/720` feed the rectangles; the screen/camera meaning is not accepted.
-  Vector provenance and the remaining aliases are in [PLAN](PLAN.md).
-- [0x8245FA20](fine/NATIVE_DECOMP_8245FA20.md): 69,152 state comparisons +
+  Vector provenance and the remaining aliases are in [PLAN](kb:PLAN).
+- [0x8245FA20](kb:FINE_NATIVE_DECOMP_8245FA20): 69,152 state comparisons +
   10 expected transitions, generated-host agreement; not retail parity.
-- [0x82303138](fine/NATIVE_DECOMP_82303138.md): 10,080 object/callee-input
+- [0x82303138](kb:FINE_NATIVE_DECOMP_82303138): 10,080 object/callee-input
   comparisons; 0x82302520 was replaced by a measuring stub.
-- [Scalar pair](fine/NATIVE_SCALAR_830D68F0.md): 80,784 finite split comparisons;
+- [Scalar pair](kb:FINE_NATIVE_SCALAR_830D68F0): 80,784 finite split comparisons;
   fused differs 3825/3772; the FPSCR/Xenon oracle is open. Tan-like 0x830D6AB0:
   200,000 host samples / 5.993e-13, with RN-even not proven; not guest parity.
-- [L3](fine/NATIVE_HOST_L3.md): 41 memory/dispatch + 6 clock checks;
+- [L3](kb:FINE_NATIVE_HOST_L3): 41 memory/dispatch + 6 clock checks;
   wrapper closure 4096 cases / 32768 assertions; frequency adapter 44 checks.
   These are alternative limited host probes, not a full game runtime.
   Windows/Wine results are historical; real Windows is not accepted.
-- [XEX inventory](fine/NATIVE_XEX_RUNTIME.md): 577 descriptor records →
+- [XEX inventory](kb:FINE_NATIVE_XEX_RUNTIME): 577 descriptor records →
   295 imports (282 function / 13 variable); earlier header reports were wrong.
   24 XenonRecomp frsqrte sites have no verified estimate semantics.
 
@@ -213,8 +364,8 @@ operations `daec2451-6971-49b8-8382-61116d38f909` /
 
 - Asset milestone: 2833 BHD buckets / 19,744 entries; 14,971 DCX DFLT
   checked by size/zlib; 22,605 raw textures exported. Unsupported BND3/TPF
-  variants and tiling/GPU-format parity remain: [formats](ASSET_FORMATS.md),
-  [RE log](REVERSE_ENGINEERING.md). These are not ready Linux/Unity assets.
+  variants and tiling/GPU-format parity remain: [formats](kb:ASSET_FORMATS),
+  [RE log](kb:REVERSE_ENGINEERING). These are not ready Linux/Unity assets.
 - Ghidra RPC reopening of default.xex with --no-analyze confirmed; PowerPC/BE,
   pointers32, 67,314 function definitions. Incomplete bodies/noreturn fixups
   make part of the decompiler ABI unreliable. The live database was not changed;
@@ -225,10 +376,10 @@ operations `daec2451-6971-49b8-8382-61116d38f909` /
   logger suite: 10 groups, including retry-stage isolation, diagnostic parsing and
   explicit stdout-data for source/doc listings; stderr/exit/default tool checks
   are kept. Operation c2bfac88-7367-4964-8865-9bb0cd363956.
-  [SQLite workflow](SQLITE_LOGGING.md) stores commands, operations and limits.
+  [SQLite workflow](kb:SQLITE_LOGGING) stores commands, operations and limits.
 - Vulkan skill/reference installation: all 6 pinned submodules verified,
   `logs/vulkan-skill-install.json`. The skill is not a game fix.
-  `docs/fine/planning-merge.json`, originals byte-verified, earlier files removed.
+  `kb:FINE_PLANNING_MERGE`, originals byte-verified, earlier files removed.
 
 ## How to update this log
 
@@ -324,22 +475,22 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   contains a fully transparent black BC3. This is not a CPU dump and not an explanation of
   the whole scene. Full resolve + synchronous memexport: 85 s, child 0, 8 RDC,
   frame 66671 — 967 indexed draws; source RGB means 4.0–4.4 %, the fix not accepted.
-  [Evidence/limits](../logs/acv-runtime-triage-20261022/findings.json);
-  [technical section](NATIVE_REXGLUE_LINUX.md#black-material-input-traced-2026-10-22).
+  [Evidence/limits](logs/acv-runtime-triage-20261022/findings.json);
+  [technical section](kb:NATIVE_REXGLUE_LINUX#black-material-input-traced-2026-10-22).
 
 - Test Linux build at the user's request: the confirmed
   runtime/input/import/capture fixes were kept; the pixel debugger fixes were rebuilt separately. The synchronisation of the main app header and
   the host source identifier in the log were added. Compile/link exit 0, ELF 89a858719402…;
   a 12-second run: child 0, 15 earlier VFS/allocation errors, graphics not accepted.
-  [Check](../logs/acv-test-build-20261022/verification.json);
-  [run](../tools/native-rexglue/test_linux.sh).
+  [Check](logs/acv-test-build-20261022/verification.json);
+  [run](tools/native-rexglue/test_linux.sh).
 
 - The user's FromSoftware references: pinned snapshots of
   four repos and Xenia a192b94 were saved. The DCX decoder of DSEventScriptTools on an ACV sample
   matched the earlier unpacking byte-for-byte (1,417,648 bytes). The checked PC TPF/BHD5
   layouts differ from the ACV Xbox 360 ones. In the Xenia commit the UTF-8 BOM failure of the loader was reproduced and fixed;
   plain/BOM/missing config guards were checked without the game.
-  [Applicability and limits](../logs/acv-user-references-20261022/assessment.json).
+  [Applicability and limits](logs/acv-user-references-20261022/assessment.json).
 
 - Provenance of the empty BC3 texture: FSI draw 5940 confirmed by the
   fetch and the declared shader slot 0; a first-write watch on 128 pages led to
@@ -349,26 +500,26 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   before/after compression: 2 MiB of zeros, byte-for-byte equal; the upstream producer/material
   identity remains open.
   The incremental build passed; the diagnostic hooks call the originals and are off by default. This is not a fix of the dark scene.
-  [Evidence](../logs/acv-texture-writer-20261022/origin-comparison.json),
-  [current build](../logs/acv-texture-writer-20261022/current-test-build.json).
+  [Evidence](logs/acv-texture-writer-20261022/origin-comparison.json),
+  [current build](logs/acv-texture-writer-20261022/current-test-build.json).
 
 - The research process was saved in a checksum-verified archive of the sources/state and a copy of the ELF/runtime/plugin. The readback reference helper
   passed mock Vulkan + ASan/UBSan checks of publication on errors; it is not connected to the runtime. GPU bake/readback remains a hypothesis until it is linked to Resolve.
-  [Checkpoint](../logs/acv-readback-checkpoint-20261022T171359Z/verification.json),
-  [audit](NATIVE_REXGLUE_LINUX.md#resolvereadback-audit-and-preserved-checkpoint-2026-10-22).
+  [Checkpoint](logs/acv-readback-checkpoint-20261022T171359Z/verification.json),
+  [audit](kb:NATIVE_REXGLUE_LINUX#resolvereadback-audit-and-preserved-checkpoint-2026-10-22).
 
 - The confirmed fix of the ACV dynamic texture: the acv-fsi profile enables readback_resolve=full. A/B of one source resource: 2 MiB of zeros →
   2,066,418 non-zero bytes. The real FSI draw 75 / frame 34282 receives a coloured BC3,
   GPU 512 KiB matches the CPU upload; before, the texture was RGBA 0. Build exit 0,
   120 s child 0 / 8 RDC, 45 earlier VFS/allocation errors. The global scene/FPS are not accepted.
-  [Result](../logs/acv-readback-origin-20261022/accepted-fix.json),
-  [GPU proof](../logs/acv-readback-origin-20261022/gpu-material-proof.json).
+  [Result](logs/acv-readback-origin-20261022/accepted-fix.json),
+  [GPU proof](logs/acv-readback-origin-20261022/gpu-material-proof.json).
 
 - A stopping point was saved before the integration of VFS/allocation/async
   readback. The reference header was prepared, the earlier host mock ASan/UBSan checks
   passed (operation eefd29b7-88f4-4a5a-9b91-ab2199038ab8); the runtime integration and
   GPU/performance checks were not run. After the integration request, there were no new runtime fixes, builds or launches.
-  [Continuation context](X360_PROJECT_STATE.md#точка-остановки-интеграции--2026-10-22).
+  [Continuation context](kb:X360_PROJECT_STATE).
 - Step 12 (check of the integration stop): `integrate-runtime-release` (0bff52a2) was marked failed
   by a probe because of `ResolvePath(system:/dlc_*)` noise with `child_returncode 0` and a 120 s limit; this is a known false
   classification, the process did not hang. The following integration steps (summaries, indexes, final render check,
@@ -425,21 +576,21 @@ model `0001_o2092.flv` is confirmed by byte-for-byte textures; BC3 is not verifi
   same-run CPU uploads. 177 VFS reads / ≈32 MiB verified against source slices, 16 source
   DCX by decoded SHA. The default remains full; deferred CPU-consumer integration,
   gameplay/FPS and guest decompressor ownership are open.
-  [Technical milestone](NATIVE_REXGLUE_LINUX.md#integrated-resolve-completion-and-resource-tracing-2026-10-23).
+  [Technical milestone](kb:NATIVE_REXGLUE_LINUX#integrated-resolve-completion-and-resource-tracing-2026-10-23).
 
 - Resolve linked to the first CPU read: physical 0x0FCA7000,
   submission 1298 / frame 627, 2 MiB SHA 6af9819e… byte-for-byte equal to the input copy 0x82C83918.
   An intermediate tiled→linear converter before the earlier RGBA 0x1E192000 was found;
   the source writes a copy-out, not a direct Resolve. Read-only hooks and a private trace
   plugin were built; the pending readback/fence integration remains open.
-  [Proof](../logs/acv-resolve-consumer-20261023/complete-proof.json).
+  [Proof](logs/acv-resolve-consumer-20261023/complete-proof.json).
 
 ## Deferred readback checkpoint
 
 A private experiment was built and ran twice for 70 s, child 0. The first 2 MiB Resolve→CPU
 exactly match the full oracle; 51 jobs were published, 47 sampled CPU reads matched.
 CPU-triggered publication is established; the ASan/UBSan queue failure tests passed.
-[Details](NATIVE_REXGLUE_LINUX.md#private-deferred-resolve-experiment-2026-10-23).
+[Details](kb:NATIVE_REXGLUE_LINUX#private-deferred-resolve-experiment-2026-10-23).
 The normal full remains the default. The user confirmed that the black mech
 gameplay textures are fixed; the remaining scene coverage and the async performance
 measurement are separate follow-up work.
@@ -473,8 +624,8 @@ measurement are separate follow-up work.
 ## Refinement of the earlier summary statuses
 
 The summary before the texture fix is kept unchanged in the
-[archive](../logs/acv-gameplay-black-20261024/docs-before-build-retention.tar.gz),
-entry docs/PROGRESS.md, [hashes](../logs/acv-gameplay-black-20261024/docs-before-build-retention.sha256.json).
+[archive](logs/acv-gameplay-black-20261024/docs-before-build-retention.tar.gz),
+entry kb:PROGRESS, [hashes](logs/acv-gameplay-black-20261024/docs-before-build-retention.sha256.json).
 Its claims "the cause of the dark frame was not found" and "readback was not verified"
 are replaced by later milestones: full restores the atlas with a CPU/GPU byte proof;
 dword4→dword3 removes the wrong texture scale; the user confirmed the improvement. The inventory/BHD/BND3/FLVER/BC1 tools remain verified
@@ -533,7 +684,7 @@ and the queue are further below and in PLAN.
   `MmAllocatePhysicalMemoryEx: bad protection bits`; from the trace, two failed allocations (262144 and 8388608 bytes,
   protect 0x20000400). The existing flag `--compat-mm-wc-rw` (READWRITE for protect) was checked: probe
   `logs/acv-mm-compat-check/` (child exit 0) — both allocations succeed, `allocate_failed` 0, `bad protection bits` 0.
-  According to `docs/PLAN.md`, allocation experiments are not enabled by default without an explicit decision, so the config
+  According to `kb:PLAN`, allocation experiments are not enabled by default without an explicit decision, so the config
   `acv.config` was not changed: the flag works, but enabling it by default requires your decision. The effect on the dark
   frame was not measured.
 - Step 25 (fix of the allocation error): by the user's decision, `[compat] mm_wc_rw = true` was enabled in `tools/native-rexglue/acv.config`
@@ -560,7 +711,7 @@ in gameplay. Fixed: reading `exp_adjust` from the wrong dword4 in the Vulkan
 SPIR-V translator; now dword3 is used. The error reduced the colour by
 65,536 times and made it black when packed. 2048 regression cases,
 ASan/UBSan and a negative control passed; the fixed GPU 90d8ef1a… was built and installed.
-[Fix, build, checkpoint and verification limit](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
+[Fix, build, checkpoint and verification limit](kb:NATIVE_REXGLUE_LINUX#texture-rendering-fix-confirmed-by-user-2026-10-24).
 Full visual parity of all materials/scenes is not established by this confirmation.
 
 ## Colour check on identical input
@@ -568,7 +719,7 @@ Full visual parity of all materials/scenes is not established by this confirmati
 After dword4→dword3, the same texture sample and nine shader inputs
 give a final RGB ≈ [0.208, 0.206, 0.189] instead of ≈ 3e-6. The error multiplier
 of 65,536 is removed; the numeric packed RGB is no longer 0.
-[Proof and replay limits](NATIVE_REXGLUE_LINUX.md#same-input-texture-colour-regression-2026-10-24).
+[Proof and replay limits](kb:NATIVE_REXGLUE_LINUX#same-input-texture-colour-regression-2026-10-24).
 The last 105 s fixed-plugin run: child 0, one error about system.properties;
 the automatic captures do not confirm a check of all models in the mission.
 
@@ -578,10 +729,10 @@ the automatic captures do not confirm a check of all models in the mission.
 manifest, checks the path/ELF/hash before the build and the hash before staging. A changed
 or missing artifact requires an explicit re-selection; the old
 installed SDK plugin is no longer substituted silently.
-[Test](../tools/native-rexglue/test_build_gpu_retention.py): explicit/default
+[Test](tools/native-rexglue/test_build_gpu_retention.py): explicit/default
 staging, substitution before/during the build, explicit re-selection — passed. The real plain
 incremental build kept host 8b10aa52… and the fixed GPU 90d8ef1a…;
-[manifest](../logs/acv-gameplay-black-20261024/retained-build.json).
+[manifest](logs/acv-gameplay-black-20261024/retained-build.json).
 
 An additional material regression is so far limited: event 79 before/after selects
 different interpolated inputs even when primitive 0 is requested; event 74 gave no pixel
@@ -594,7 +745,7 @@ Read-only PPC: the string 0x8210FA38 and the pointer 0x83573270 set the default 
 path. The loader 0x82C22B90, for an invalid file, skips the parser and returns normally
 via 0x82C22C8C; the caller continues the initialisation. This is an
 optional startup override with an expected absence, not a texture
-payload. [Evidence and limits](NATIVE_REXGLUE_LINUX.md#missing-systemproperties-is-handled-2026-10-24).
+payload. [Evidence and limits](kb:NATIVE_REXGLUE_LINUX#missing-systemproperties-is-handled-2026-10-24).
 The VFS error is not hidden; no files or mounts were added to mask it.
 
 ## Limits of UTF-8/UTF-16 profile names
@@ -604,7 +755,7 @@ UTF-8 with the earlier replacement '?', and keeps UTF-16 pairs whole at the leng
 1,112,063 valid scalar cases and the actual guest store were checked by ASan/UBSan.
 Host f61ee442… was built; a 55 s headless smoke executed the ARTEM name path, child 0.
 The fixed GPU 90d8ef1a… and config 98d1c2ed… are kept.
-[Evidence/limits](NATIVE_REXGLUE_LINUX.md#bounded-profile-utf-8-decoding-2026-10-24).
+[Evidence/limits](kb:NATIVE_REXGLUE_LINUX#bounded-profile-utf-8-decoding-2026-10-24).
 The non-headless SDK dialog and the tutorial glyphs remain separate open tasks.
 
 ## What is still to fix
@@ -616,14 +767,14 @@ The accepted texture fix must not be changed: the same-input replay confirms the
 What remains: the frame-time/FPS and p95/p99 measurement with full Resolve; real input and
 camera, non-headless keyboard UI and tutorial glyphs; DLC/VFS and the correctness
 of GPU release lifetime; save/load, menu/mission transitions, sound and a 20–30 min soak.
-The implementation queue and criteria are in [PLAN_GUI](../PLAN_GUI.MD); the short status is in [PLAN](PLAN.md).
+The implementation queue and criteria are in [PLAN_GUI](kb:PLAN_GUI); the short status is in [PLAN](kb:PLAN).
 Evidence of the current capture: `logs/acv-gameplay-black-20261024/fixed-capture-neighbor-coverage.json`.
 
 A refinement on draw 309 from this capture: 3129 indices, declared BC1 fetch
 512×512; the captured exp_adjust dword3 gives exponent 0 / scale 1. The raw texture is
 non-zero (122,691 non-zero-luma pixels), but the material name is unknown and no pixel
 trace for EDRAM/interlock was obtained. This confirms only the data path in the
-shader, not the appearance of the mech. Details: [NATIVE capture note](NATIVE_REXGLUE_LINUX.md#fixed-build-material-capture-follow-up-2026-10-24).
+shader, not the appearance of the mech. Details: [NATIVE capture note](kb:NATIVE_REXGLUE_LINUX#fixed-build-material-capture-follow-up-2026-10-24).
 
 
 ## Non-headless keyboard dialog bounds
@@ -639,7 +790,7 @@ config 98d1c2ed… recorded in the manifest. Non-headless 105 s smoke
 child 0, without abort/exception; Setup then finished, but the real input/Cancel
 was not verified. Headless smoke `20261023T202535711425Z` child 0, 13 expected
 `system.properties`/missing `dlc_image` requests.
-[Details and limits](NATIVE_REXGLUE_LINUX.md#bounded-keyboard-dialog-conversion-2026-10-24).
+[Details and limits](kb:NATIVE_REXGLUE_LINUX#bounded-keyboard-dialog-conversion-2026-10-24).
 
 The later DLC file-open audit and the GPU readback lifetime fix were completed within the
 available data; the user instructed that their residual signals be skipped (see the section below). FPS, input and save/load/soak are postponed; the texture fix and the request to remove the
@@ -657,7 +808,7 @@ GPU `90d8ef1a…` and SDK runtime `40b0e134…`. The final 70 s smoke
 `logs/acv-native-linux/20261023T203303169143Z/`: child 0, only the optional
 `system.properties` error, no failed `dlc_image` opens. Unknown
 asset paths are not covered by this; the VFS mount is not counted as a fix for the fur shading.
-[Technical details](NATIVE_REXGLUE_LINUX.md#recovered-dlc_image-emblem-assets-from-retail-dvdbnd-2026-10-24).
+[Technical details](kb:NATIVE_REXGLUE_LINUX#recovered-dlc_image-emblem-assets-from-retail-dvdbnd-2026-10-24).
 
 ## DLC file-open and GPU readback lifetime audit
 
@@ -679,8 +830,8 @@ from the literal request to the verified locale-specific file, if it is in the B
 that it is compatible with the requested `ch09.fsb`. There is no complete DLC/voice payload in the image;
 empty banks or an unverified alias would hide the error and would not return the sound.
 `system.properties` is an optional loader fallback per the PPC trace. Full slice:
-[audit JSON](../logs/acv-gameplay-black-20261024/runtime-file-open-audit.json),
-[scanner](../tools/audit_runtime_file_misses.py).
+[audit JSON](logs/acv-gameplay-black-20261024/runtime-file-open-audit.json),
+[scanner](tools/audit_runtime_file_misses.py).
 
 Besides the eviction guard, the SDK now waits for the previous ticket before a repeated write
 into the MEMEXPORT slot, caches the exact ordered layout of the ranges, and
@@ -689,11 +840,11 @@ Invalidate errors no longer publish host-cache bytes; fence-wait errors
 defer the destruction of staging handles to the submission ticket, and a helper failure
 correctly reaches the calling code. Actual-source tests under ASan/UBSan
 check eviction, resolve, bounds, packed layouts and deferred release:
-[`readback tests`](../tools/native-rexglue/test_memexport_readback_layout.py),
-[`failed-wait lifetime test`](../tools/native-rexglue/test_memexport_readback_failure.py),
-[`DLC locale test`](../tools/native-rexglue/test_dlc_sound_locale.py),
-[`test_resolve_readback.py`](../tools/native-rexglue/test_resolve_readback.py),
-[`test_readback_eviction.py`](../tools/native-rexglue/test_readback_eviction.py).
+[`readback tests`](tools/native-rexglue/test_memexport_readback_layout.py),
+[`failed-wait lifetime test`](tools/native-rexglue/test_memexport_readback_failure.py),
+[`DLC locale test`](tools/native-rexglue/test_dlc_sound_locale.py),
+[`test_resolve_readback.py`](tools/native-rexglue/test_resolve_readback.py),
+[`test_readback_eviction.py`](tools/native-rexglue/test_readback_eviction.py).
 The locale-builder check passes; generation from the current retail ISO matched
 122 sound files and left the same five missing banks. It correctly
 resolves the placeholder to `acv_talk_jp.fev`, but the bank itself is not in the image,
@@ -720,7 +871,7 @@ Built `../ACV-Linux/` (183 files): the game/launcher, local data, Qt/ICU and
 the patched runtime candidate. Hashes, the X11 launcher window, a 20 s game startup
 from cwd `/`, the actually loaded local libraries and the absence of new shm
 orphans were verified. 58 startup samples were obtained with a clean shm. Save/load, CAS/FSR, pacing
-and a new accepted baseline remain open. [Evidence/limits](LAUNCHER_PACKAGE.md).
+and a new accepted baseline remain open. [Evidence/limits](kb:LAUNCHER_PACKAGE).
 
 ## Display, FPS and effects
 
@@ -728,7 +879,7 @@ Three 35 s X11 checks confirmed the fitting of 16:9 into UltraWide/16:10 and res
 VSync→FIFO, working CAS/FSR shader paths, an explicit 10→8-bit fallback and the limiter cadence of
 60. Guest/window modes are separated in the SDK. The launcher shows the actual
 parameters. Native FOV/HUD, high FPS and visual acceptance are still open.
-[Matrix and limits](LAUNCHER_PACKAGE.md#display-colour-and-frame-pacing--2026-10-24).
+[Matrix and limits](kb:LAUNCHER_PACKAGE#display-colour-and-frame-pacing--2026-10-24).
 
 ### UltraWide projection evidence
 
@@ -736,7 +887,7 @@ A read-only bounded trace confirmed 64 results of `0x82BC8980` as a perspective
 with FOV ≈ 60°, aspect 16:9, near/far 1/1000; max normalised error 3.285e-7.
 192 entry samples, debugger read errors 0, shm orphans 0 before/after. One input
 set; the gameplay camera/HUD/culling and the original console were not checked.
-[Method, tools and limits](LAUNCHER_PACKAGE.md#ultrawide-perspective-confirmation).
+[Method, tools and limits](kb:LAUNCHER_PACKAGE#ultrawide-perspective-confirmation).
 
 ### UltraWide native experiment
 
@@ -745,53 +896,53 @@ An override of a single perspective callsite 0x822B450C was implemented, disable
 30 boundary cases of the actual hook object passed. The full UltraWide is not accepted:
 the viewport/output, HUD/crosshair, related projections and culling are not yet consistent.
 The ACV-Linux package remains the earlier display build; the experimental host is separate.
-[Technical facts and evidence](LAUNCHER_PACKAGE.md#ultrawide-single-call-experiment--2026-10-24).
+[Technical facts and evidence](kb:LAUNCHER_PACKAGE#ultrawide-single-call-experiment--2026-10-24).
 
 ### Fullscreen 2560×1080 test
 
 120 s X11: the window and output rect 2560×1080 without bars; the 64:27 experiment fired
 on the selected callsite. Child 0, the optional system.properties remains, orphans 0.
 The late scene ≈ 15.5–15.9 XE_SWAP FPS at cap 60; visual acceptance/HUD/culling
-remain open. [Result and limits](LAUNCHER_PACKAGE.md#full-screen-test-2560×1080--2026-10-24).
+remain open. [Result and limits](kb:LAUNCHER_PACKAGE#full-screen-test-25601080--2026-10-24).
 
-WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
 
-2026-10-25: isolated fast comparison240s child0/fatal0; post90s Resolve still76.80% inclusive wall time, full77.35%; no stable60FPS or image acceptance. Full default retained. [Checkpoint](../logs/acv-fps-after90-20261025/checkpoint.json).
+2026-10-25: isolated fast comparison240s child0/fatal0; post90s Resolve still76.80% inclusive wall time, full77.35%; no stable60FPS or image acceptance. Full default retained. [Checkpoint](logs/acv-fps-after90-20261025/checkpoint.json).
 
 - 2026-10-26: FBO/full retested on current runtime; user confirmed black gameplay.
   Replay proves black source and output, but capture contains only presentation.
   Test stopped cleanly; FSI/full restored. GPU timestamp replay utility built and
-  exercised; no60FPS claim. [Evidence](../logs/acv-fbo-retest-20261026/checkpoint.json).
+  exercised; no60FPS claim. [Evidence](logs/acv-fbo-retest-20261026/checkpoint.json).
 
 - 2026-10-26: user confirmed FSI/full image restored and gameplay entered.
  60s read-only sample after90s gate completed (3103IPs, zero lost); ~15FPS,
- no new speed improvement claimed. [Evidence](../logs/acv-fsi-full-confirmed-20261026/summary.json).
+ no new speed improvement claimed. [Evidence](logs/acv-fsi-full-confirmed-20261026/summary.json).
 
-- 2026-10-26: deferred readback scheduling core implemented and host-tested with ASan/UBSan. Runtime integration and FPS validation remain open. [Checkpoint](../logs/acv-deferred-readback-core-20261026/checkpoint.json).
+- 2026-10-26: deferred readback scheduling core implemented and host-tested with ASan/UBSan. Runtime integration and FPS validation remain open. [Checkpoint](logs/acv-deferred-readback-core-20261026/checkpoint.json).
 
-- 2026-10-26: actual SDK dispatch/WAIT host regression passed ASan/UBSan, 96000 callbacks plus dependency-cycle/shutdown checks. Final GPU48994593 built, not runtime-tested. Source analysis identified pre-write/free and alias protection requirements; no FPS claim. [Checkpoint](../logs/acv-readback-dispatch-20261026/checkpoint.json).
+- 2026-10-26: actual SDK dispatch/WAIT host regression passed ASan/UBSan, 96000 callbacks plus dependency-cycle/shutdown checks. Final GPU48994593 built, not runtime-tested. Source analysis identified pre-write/free and alias protection requirements; no FPS claim. [Checkpoint](logs/acv-readback-dispatch-20261026/checkpoint.json).
 
 - 2026-10-26: compiled SDK physical provider/allocator regression passed real A/C/E
   read/write faults, partial writes, read-only rearming and same-address reuse;
   explicit bridge passed ASan/UBSan. Isolated runtime a9125a31 passed75s X11/full/FSI smoke child0/fatal0;
   general GPU deferral remains off, no FPS gain claimed.
-  [Checkpoint](../logs/acv-memory-provider-bridge-20261026/checkpoint.json).
+  [Checkpoint](logs/acv-memory-provider-bridge-20261026/checkpoint.json).
 
 - 2026-10-26: physical file IO reservation built; actual XFile source/SDK memory test
   and alias regression PASS, no temporary texture copy. Runtime not launched;
-  XMA and general Vulkan deferral remain open. [Checkpoint](../logs/acv-host-physical-io-20261026/checkpoint.json).
+  XMA and general Vulkan deferral remain open. [Checkpoint](logs/acv-host-physical-io-20261026/checkpoint.json).
 
 - 2026-10-26: XMA atomic physical access built; actual Work/RAII + SDK Memory test
   and file/alias regressions PASS. Runtime5b126405 passed75s X11/full/FSI startup
   child0/fatal0. General GPU deferral off, no gameplay/FPS acceptance.
-  [Checkpoint](../logs/acv-xma-physical-access-20261026/checkpoint.json).
+  [Checkpoint](logs/acv-xma-physical-access-20261026/checkpoint.json).
 
 - 2026-10-26: graphics CPU snapshots, packet provenance, upload reopening and
   completed-provider retirement built and host-tested. Runtime131b829f /
   GPUf2f3ee56 passed75s X11/full/FSI startup, child0/fatal0,
   session20261026T181420117779Z ended. General producer off in that build;
   no gameplay/FPS gain established.
-  [Checkpoint](../logs/acv-graphics-cpu-coherence-20261026/checkpoint.json).
+  [Checkpoint](logs/acv-graphics-cpu-coherence-20261026/checkpoint.json).
 
 - 2026-10-26: general Vulkan producer integrated behind explicit flag, full/native
   FSI with low16MiB excluded. Real GPU/SDK oracle verifies11 copies/8 faults,
@@ -800,7 +951,7 @@ WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, 
   20261026T183953558552Z ended child0/fatal0; >=90s general-path activity
   confirmed. No verified gameplay FPS gain. Safer teardown buildb0bf9b46/
   06400c82 is isolated; second CPU/GPU profile in progress.
-  [Checkpoint](../logs/acv-general-vulkan-readback-20261026/checkpoint.json).
+  [Checkpoint](logs/acv-general-vulkan-readback-20261026/checkpoint.json).
 
 - 2026-10-26 UTC: coherent CPU read fast path built; allocation count6→0 and
   same-input host median107.546→22.275ns. SDK IO/owner/hole/readonly/packet,
@@ -808,7 +959,7 @@ WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, 
   GPU06400c82 passed180s X11/full/FSI child0/fatal0, session
   20261026T185840508042Z ended. Profile started >=90s,2468 IPs lost0.
   No identical-scene gameplay FPS acceptance; next provider scan/wait reason.
-  [Checkpoint](../logs/acv-physical-read-fastpath-20261026/checkpoint.json).
+  [Checkpoint](logs/acv-physical-read-fastpath-20261026/checkpoint.json).
 
 - 2026-10-27 local: provider envelope/matched SDK build and real GPU/SDK
   regressions completed. Runtimeebf338a1/GPU14154063 passed180s
@@ -816,14 +967,14 @@ WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, 
   process ended. >=90s profile:2389 IPs lost0,4019 pool waits and0 CPU-demand
   bridge waits. Next admission-prefix optimization not yet implemented.
   No stable60FPS, image/game-time or package-promotion acceptance.
-  [Latest checkpoint](../logs/acv-provider-range-rejection-20261026/checkpoint.json).
+  [Latest checkpoint](logs/acv-provider-range-rejection-20261026/checkpoint.json).
 
 - 2026-10-27: minimal-prefix readback admission built; queue/retirement/bridge
   ASan/UBSan and actual GPU12-copy/8-fault/partial-prefix regression PASS.
   Reproducible512x4MiB pressure test improves component throughput1.298x.
   Runtimeebf338a1/GPUc558cb37 passed180s menu-only X11/full/native FSI
   20261027T043019725818Z child0/fatal0, ended. No gameplay60FPS claim.
-  [Checkpoint](../logs/acv-readback-minimal-admission-20261026/checkpoint.json).
+  [Checkpoint](logs/acv-readback-minimal-admission-20261026/checkpoint.json).
 
 - 2026-10-27: oldest fitting-slot retirement built4cf700f5; selector/teardown
   ASan/UBSan04e3f279, actual GPU/SDK12-copy/8-fault a2f09d07 and90с gate
@@ -831,26 +982,28 @@ WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, 
   allocator full drains32→0. Candidate ebf338a1/f1ccdfb9 is not runtime-tested.
   Identical offline profile clones prepared under source lock/verified backup;
   scripted comparison not started. No gameplay60FPS or promotion claim.
-  [Consolidated progress](FPS_READBACK_PROGRESS_20261027.md).
+  [Consolidated progress](kb:FPS_READBACK_PROGRESS_20261027).
 
 
 ## Focused readback runtime comparison, 2026-10-27
 
 Runtime comparison completed: candidate20261027T052317764850Z and focused control20261027T052659721550Z,210s each, child0/fatal0. Pool wait976.869→33.794ms in late35s; cadence≈60 in both, no mission FPS gain proven. Main XThread44.79→95.29% core; polling82BAF218/82BAE308 needs investigation. Actual fullscreen1920x1080; mission identity/pacing/image unconfirmed. All runs ended; no promotion.
 
-[Detailed results and remaining work](FPS_READBACK_PROGRESS_20261027.md).
+[Detailed results and remaining work](kb:FPS_READBACK_PROGRESS_20261027).
 
 
-- 2026-10-27: Parallel copy accepted by user; host/GPU/ASan checks and two210s game runs pass. Actual copy worker16.79% core. Gameplay windows differed, so no FPS gain claim. Separate package promotion remains pending. [Details](CPU_PARALLEL_READBACK_20261027.md).
+- 2026-10-27: Parallel copy accepted by user; host/GPU/ASan checks and two210s game runs pass. Actual copy worker16.79% core. Gameplay windows differed, so no FPS gain claim. Separate package promotion remains pending. [Details](kb:CPU_PARALLEL_READBACK_20261027).
 
 
-- 2026-10-27: Published separate FOVHUD package185files; accepted two-thread readback launch mode, CAS/FSR1 integrated without effect tests per user. Viewport-derived HUD/RAII and camera LR diagnostics fixed. Actual-source ASan/UBSan and35s2560x1080 startup pass; world-marker/visual parity unverified. [Package](LAUNCHER_PACKAGE.md), [checkpoint](../logs/acv-fov-hud-refine-20261027/checkpoint.json).
+- 2026-10-27: Published separate FOVHUD package185files; accepted two-thread readback launch mode, CAS/FSR1 integrated without effect tests per user. Viewport-derived HUD/RAII and camera LR diagnostics fixed. Actual-source ASan/UBSan and35s2560x1080 startup pass; world-marker/visual parity unverified. [Package](kb:LAUNCHER_PACKAGE), [checkpoint](logs/acv-fov-hud-refine-20261027/checkpoint.json).
 
-- 2026-10-27: Launcher memory/retention/readahead and recovery settings complete in separate Streaming candidate185files. Bounded archive worker and actual eviction/IO ASan/UBSan pass; two210s runs child0/fatal0, package/frontend/UI checks pass. Cache evictions0 under both policies; model/location unloading and loading-time gain unconfirmed, representative reproduction needed. CAS/FSR effects untested, accepted baseline retained. [Evidence and remaining work](RESOURCE_STREAMING_20261027.md).
+- 2026-10-27: Launcher memory/retention/readahead and recovery settings complete in separate Streaming candidate185files. Bounded archive worker and actual eviction/IO ASan/UBSan pass; two210s runs child0/fatal0, package/frontend/UI checks pass. Cache evictions0 under both policies; model/location unloading and loading-time gain unconfirmed, representative reproduction needed. CAS/FSR effects untested, accepted baseline retained. [Evidence and remaining work](kb:RESOURCE_STREAMING_20261027).
 
-- 2026-10-27: User-requested ACV-Linux-release-1.0 assembled with current TRG launcher, recompiled game and copied data/libraries.186 manifest files (~3.88GiB), version metadata/release notes, dependency/hash checks pass. Previous packages and saves retained; CAS/FSR tests omitted. Startup result and exact hashes: [release checkpoint](../logs/acv-release-1.0-20261027/checkpoint.json). Existing gameplay/loading-time limits remain.
+- 2026-10-27: User-requested ACV-Linux-release-1.0 assembled with current TRG launcher, recompiled game and copied data/libraries.186 manifest files (~3.88GiB), version metadata/release notes, dependency/hash checks pass. Previous packages and saves retained; CAS/FSR tests omitted. Startup result and exact hashes: [release checkpoint](logs/acv-release-1.0-20261027/checkpoint.json). Existing gameplay/loading-time limits remain.
 
   Release1.0 exact-folder45s frontend check: child0/fatal0, local runtime/environment,
   profile lock and shutdown lifecycle PASS; startup scope only.
 
-- 2026-10-28: User confirmed «Да, помогло» for the native UltraWide local-frustum fix. Actual translated retail sphere tests/SDK context and FOV/HUD ASan/UBSan pass;160s2560×1080 run child0/fatal0, both camera paths patched. Release1.0 updated to ELFefa4756c with verified backup,186hashes/dependencies pass. Resource ownership unchanged; no new FPS or blanket streaming-unload claim. [Details](ENGINE_OFFSCREEN_20261028.md).
+- 2026-10-28: User confirmed «Да, помогло» for the native UltraWide local-frustum fix. Actual translated retail sphere tests/SDK context and FOV/HUD ASan/UBSan pass;160s2560×1080 run child0/fatal0, both camera paths patched. Release1.0 updated to ELFefa4756c with verified backup,186hashes/dependencies pass. Resource ownership unchanged; no new FPS or blanket streaming-unload claim. [Details](kb:ENGINE_OFFSCREEN_20261028).
+
+- 2026-10-30: Added persisted MangoHud toggle to TRG and Vulkan game launch, plus CLI overrides. Clang Release `-O3 -DNDEBUG -march=x86-64-v2`, settings/environment tests and actual interface regression pass. Local release package updated with verified manifest (187 files), backup retained. Package dry-run confirms `MANGOHUD=1`; no game process was started, so actual Vulkan layer/overlay and FPS are unverified. [Details](kb:LAUNCHER_PACKAGE).

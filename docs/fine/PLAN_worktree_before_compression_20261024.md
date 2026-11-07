@@ -1,17 +1,17 @@
 # ACV — единый план Linux и декомпиляции
 
 Актуально: 2026-10-24.
-Новый план реализации по запросу пользователя: [PLAN_GUI.MD](../PLAN_GUI.MD) —
+Новый план реализации по запросу пользователя: [PLAN_GUI.MD](tools/acv-context/docs/PLAN_GUI.MD) —
 сохранения, постоянные профили, лаунчер Qt 6 LTS, экран/цвет/FPS и улучшения
 графики. Подробная очередь этой новой работы хранится в указанном файле;
 реализация пока не начата. Разделы ниже сохраняют статус прежних работ.
 
-Читать вместе с [AGENTS](../AGENTS.md), [журналом](PROGRESS.md),
-[архитектурой](ARCHITECTURE.md) и [RE evidence](REVERSE_ENGINEERING.md).
+Читать вместе с [AGENTS](kb:DOCS_AGENTS), [журналом](tools/acv-context/docs/fine/PROGRESS.md),
+[архитектурой](tools/acv-context/docs/fine/ARCHITECTURE.md) и [RE evidence](tools/acv-context/docs/fine/REVERSE_ENGINEERING.md).
 Полный исходный архив трёх планов хранится локально в
-`docs/fine/planning-originals-20261022.tar.gz` и не публикуется в source repo;
+`kb-file:fine__planning-originals-20261022.tar.gz` и не публикуется в source repo;
 проверка, исходные заголовки и индекс ссылок доступны в
-[planning-merge.json](fine/planning-merge.json).
+[planning-merge.json](tools/acv-context/docs/fine/fine/planning-merge.json).
 Старые проценты готовности и статусы «ещё не собрано» являются историческими.
 
 ## Цель и границы
@@ -27,7 +27,7 @@ Windows/Wine — только после отдельного запроса.
 ## Правила работы
 
 - Исходный `../Original/Armoredcore/iso.iso` только читать.
-  Проект: ``; выходы — tools/, tmp/, logs/, docs/.
+  Проект: ``; выходы — tools/, tmp/, logs/, tools/acv-context/docs/.
 - Для вывода указывать guest VA или SDK file:line, источник и уверенность:
   подтверждено, гипотеза, не проверено. Отсутствие прямых xrefs не исключает
   indirect calls. Не называть неизвестные поля/функции по сходству.
@@ -48,7 +48,7 @@ Windows/Wine — только после отдельного запроса.
 
 ## Единый конфиг и запуск
 
-Использовать [tools/native-rexglue/acv.config](../tools/native-rexglue/acv.config):
+Использовать [tools/native-rexglue/acv.config](tools/acv-context/docs/tools/native-rexglue/acv.config):
 `pilot_name=ARTEM`, `gamertag=ARTEM`, `headless=true`. probe_linux.py читает его
 по умолчанию; отсутствующий файл должен завершать запуск ошибкой, а не переходом
 к SDK имени User. Сохранять настройки пользователя; любые диагностические
@@ -58,7 +58,7 @@ ELF: `tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv_linux_probe`.
 Данные: `tmp/iso_root`; user/cache — внутри tmp/. Профиль acv-fsi передаёт
 `protect_zero=false`, `render_target_path_vulkan=fsi`, `readback_resolve=full`;
 `--graphics-profile=sdk` нужен только для сравнений. Full принят для восстановленной
-динамической текстуры; gamma/allocation experiments остаются opt-in. [Клавиши и мышь](LINUX_INPUT.md).
+динамической текстуры; gamma/allocation experiments остаются opt-in. [Клавиши и мышь](tools/acv-context/docs/fine/LINUX_INPUT.md).
 
 ```bash
 node tools/decomp-logging/cli.mjs run --stage linux_probe --timeout-ms 175000 -- python3 tools/native-rexglue/probe_linux.py --seconds 150 --video-driver x11 --user-root tmp/acv-mnk-profile
@@ -81,7 +81,7 @@ node tools/decomp-logging/cli.mjs run --stage linux_probe --timeout-ms 175000 --
 | RenderDoc | X11 создаёт swapchain и RDC; Wayland capture был несовместим с включёнными surface extensions | Сам факт present/capture не подтверждает игровой кадр |
 | SQLite | 4 DB и execution logger работают, история сохранена | Необёрнутые операции автоматически не фиксируются |
 
-Codegen evidence: [conditional audit](../logs/acv-rexglue-unresolved-20261021/conditionals/).
+Codegen evidence: [conditional audit](tools/acv-context/docs/logs/acv-rexglue-unresolved-20261021/conditionals).
 Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
 Предыдущие утверждения «не собран/не запускался» в старых источниках заменены
 этим статусом; полная совместимость, audio/network/save и длительная игра не приняты.
@@ -133,7 +133,7 @@ Runtime evidence: `logs/acv-native-linux/`, `logs/acv-renderdoc/`.
   отвергается до запуска. Incremental rebuild operation
   5f0c239e-76a4-4eea-b093-6dea3880f9ec прошла; input/config guards проверены
   operation214f3d6b-e316-42e3-bba3-33f8917f7157. Обычный capture восстановлен: run20261021T215316118397Z, 4 RDC, child exit0 после150 s; ошибок VFS/protect всё ещё45, gameplay не принят. Инструмент
-  [summarize_capture.py](../tools/native-rexglue/summarize_capture.py) считает
+  [summarize_capture.py](tools/acv-context/docs/tools/native-rexglue/summarize_capture.py) считает
   команды XML; regression согласуется с 235 draws / 1184 indexed / 18 dispatches.
 
 ## Статус DLC и GPU readback
@@ -175,19 +175,19 @@ forced queue-pressure eviction. Не возвращаться к ним без �
 для evidence/acceptance; приоритет задаёт эта текущая очередь.
 
 
-План уточнён 2026-10-22 по [runtime evidence](../logs/acv-runtime-triage-20261022/findings.json),
-[проверке сборки](../logs/acv-test-build-20261022/verification.json) и
-[аудиту пользовательских ссылок](../logs/acv-user-references-20261022/assessment.json).
+План уточнён 2026-10-22 по [runtime evidence](tools/acv-context/docs/logs/acv-runtime-triage-20261022/findings.json),
+[проверке сборки](tools/acv-context/docs/logs/acv-test-build-20261022/verification.json) и
+[аудиту пользовательских ссылок](tools/acv-context/docs/logs/acv-user-references-20261022/assessment.json).
 Предыдущая версия раздела целиком сохранена в
-[копии PLAN](../logs/acv-critical-plan-20261022/PLAN.before.md),
-[SHA-256](../logs/acv-critical-plan-20261022/manifest.json).
+[копии PLAN](tools/acv-context/docs/logs/acv-critical-plan-20261022/PLAN.before.md),
+[SHA-256](tools/acv-context/docs/logs/acv-critical-plan-20261022/manifest.json).
 Планирование завершено; перечисленные ниже исправления ещё требуют выполнения.
 
 ### 1. P0 — воспроизводимый сценарий и граница потери текстуры
 
 **Принято 2026-10-24:** пользователь подтвердил улучшение рендера текстур
 после исправления Vulkan `exp_adjust` (dword4→dword3).
-[Checkpoint](NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
+[Checkpoint](tools/acv-context/docs/fine/NATIVE_REXGLUE_LINUX.md#texture-rendering-fix-confirmed-by-user-2026-10-24).
 Эту причину считать установленной; fixed plugin90d8ef1a… сохранять при сборках.
 
 **Исторический приоритет пользователя 2026-10-23:** исправить чёрные модели
@@ -217,7 +217,7 @@ submission/completion. Не сравнивать произвольный поз
 GPU mirror содержит одинаковые transparent-black блоки.
 В run20261022T160513877989Z уже сняты CPU-origin staging bytes после memcpy:
 submission2889,524288 bytes; они совпали с GPU mirror frame58287/event13126
-(SHAe4428980…). [Сравнение](../logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json).
+(SHAe4428980…). [Сравнение](tools/acv-context/docs/logs/acv-gpu-sync-20261022/cpu-gpu-comparison.json).
 Сам copy event не попал в RDC. В FSI frame58287 найден draw5940 с тем же
 fetch и реально объявленным shader slot0; texture RGBA0, post-VS конечен.
 Writer trace привёл к DLTextureConverter_Xbox360Dx.cpp:0x82C83DE8 →
@@ -230,7 +230,7 @@ compression и их сохранность. Дальнейший A/B подтв�
 CPU RGBA source0xFE191000 остаётся нулевым, при full содержит2066418 ненулевых
 bytes; native/resource headers совпадают. ACV profile теперь включает
 --readback_resolve=full. Frame34282/event75 уже семплирует непустую BC3;
-GPU bytes равны same-run CPU upload. [Принятый fix](../logs/acv-readback-origin-20261022/accepted-fix.json).
+GPU bytes равны same-run CPU upload. [Принятый fix](tools/acv-context/docs/logs/acv-readback-origin-20261022/accepted-fix.json).
 
 Пользователь подтвердил исправление чёрных текстур мехов; повторная задача
 scene/material regression снята по его просьбе. Следующий активный шаг — измерить
@@ -239,14 +239,14 @@ FPS/frame-time и p95/p99 с этим профилем. Не возвращат�
 Точный Resolve ID можно уточнить для оптимизации; потеря CPU-данных уже доказана
 переключением режима и последующим GPU sampling. Адресная async-оптимизация: отслеживать CPU-consumed dirty Resolve ranges,
 allocation/GPU/CPU-write generation, ring staging и completion ticket; сохранять
-семантику немедленного CPU consumer. [Проверенный host reference](../tools/native-rexglue/async_readback_reference.hpp)
+семантику немедленного CPU consumer. [Проверенный host reference](tools/acv-context/docs/tools/native-rexglue/async_readback_reference.hpp)
 не заменяет full в игре. Slot completion/reuse, invalidate guards и64KiB staging
 уже интегрированы, ASan/UBSan и real material byte regression прошли. VFS import
 correlation и allocation/free-request tracing подключены;177 reads/≈32MiB сверены
-с файлами. [Milestone](NATIVE_REXGLUE_LINUX.md#integrated-resolve-completion-and-resource-tracing-2026-10-23).
+с файлами. [Milestone](tools/acv-context/docs/fine/NATIVE_REXGLUE_LINUX.md#integrated-resolve-completion-and-resource-tracing-2026-10-23).
 CPU consumer уже связан с Resolve:0x0FCA7000/submission1298 → first copy
 0x82C83918,2MiB побайтно равны; затем tiled→linear→RGBA0x1E192000→compressor.
-[Chain proof](../logs/acv-resolve-consumer-20261023/complete-proof.json).
+[Chain proof](tools/acv-context/docs/logs/acv-resolve-consumer-20261023/complete-proof.json).
 Следующий шаг — отложенная публикация до guest fence/CPU first-read boundary;
 проверить PM4 EVENT_WRITE_SHD/read-pointer/interrupt ordering, lifetime и отсутствие
 ожидания под memory/GPU locks. После этого реализовать pending-readback publication по
@@ -268,7 +268,7 @@ cache invalidation и видимость памяти; одинаково пус
 
 Caller trace уже установил sites0x82AEF00C/0x82AEF028: возвращённые0
 попадают в поля+0x54/+0x5C блока параметров, передаваемого в0x82AF1D38.
-[Raw PPC и trace](../logs/acv-gpu-sync-20261022/allocation/callers.json).
+[Raw PPC и trace](tools/acv-context/docs/logs/acv-gpu-sync-20261022/allocation/callers.json).
 Далее установить downstream обработку, назначение полей и связь с ресурсом.
 Новый override run20261022T161947900981Z дал ненулевые allocations и убрал
 защиту из diagnostics, но захваты1/59 draws не совпали с gameplay baseline2661.
@@ -301,7 +301,7 @@ PC TPF/BHD parsers из предложенных репозиториев нап
 и отвергает старую реализацию; отдельный плагин собран и проверен в85/110 s
 запусках. Последний содержит2661 draws/64 dispatches, но источник кадра тёмный.
 Исправление контракта не закрывает shading-проблему. Исправленный plugin включён в тестовый пакет с manifest;
-[evidence](../logs/acv-gpu-sync-20261022/verification.json).
+[evidence](tools/acv-context/docs/logs/acv-gpu-sync-20261022/verification.json).
 
 Выбрать ветку по результату этапа1. Для upload/cache проверить диапазоны,
 повторное использование адресов, invalidation, ownership и синхронизацию.
@@ -379,7 +379,7 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
   перескакивает на 0x82BB6C08. Это неполная база; использовать raw PPC/.pdata.
   Ghidra MCP в последней сессии не экспонирован; RPC подтверждён. Не выдавать
   analysis_complete или decompiler guesses за полное восстановление.
-- Прочитать применимый [360tools skill](../tools/360tools-skill/SKILL.md) при
+- Прочитать применимый [360tools skill](tools/acv-context/docs/tools/360tools-skill/SKILL.md) при
   ISO/STFS/ReXGlue/config/stubs; проверять реальные CLI arguments. Ghidra RPC
   skill: ~/.agents/skills/ghidra-rpc/SKILL.md. Vulkan skills:
   ~/.agents/skills/vulkan/SKILL.md (6 pinned Khronos references) и
@@ -395,8 +395,8 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
   Перед retry смотреть errors; использовать --retry-of EVENT_ID --action TEXT.
   verify OPERATION_ID требует фактической проверки, task хранит work item.
   Сохранённый прямой MCP result — через ingest. Существующие общие scripts
-  уже входят в logger. Политика: [TASK-SQL](../TASK-SQL.MD),
-  [SQLITE_LOGGING](SQLITE_LOGGING.md).
+  уже входят в logger. Политика: [TASK-SQL](tools/acv-context/docs/TASK-SQL.MD),
+  [SQLITE_LOGGING](tools/acv-context/docs/fine/SQLITE_LOGGING.md).
 - SQLite: logs/decomp.sqlite3 (операции/tasks/index), errors.sqlite3 (ошибки),
   output.sqlite3 (compressed streams), artifacts.sqlite3 (checksums/archive).
   Cross-file FK/atomicity не гарантируются. Невключённые в logger действия не
@@ -411,12 +411,12 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
 ## Отложенные исследования и открытые вопросы
 
 Эти ветки не блокируют упорядочивание документации; их архивирование не закрывает
-неизвестное. Короткие отчёты и полные источники: [fine/README](fine/README.md).
+неизвестное. Короткие отчёты и полные источники: [fine/README](tools/acv-context/docs/fine/fine/README.md).
 
 - **Timing:** step≈min(D/F,0.1) (integer F/60 и float order — в ACV_TIMING), перенос main→draw с двойной буферизацией и
   UI consumers прослежены по инструкциям/трассам; полная связь с физикой/боем
   не установлена. P+0x974, getter 0x82436FE0, consumer 0x82460848 и helper
-  0x8245FA20 — [ACV_TIMING](ACV_TIMING.md). Старое view/surface толкование +0x30/+0x34
+  0x8245FA20 — [ACV_TIMING](tools/acv-context/docs/fine/ACV_TIMING.md). Старое view/surface толкование +0x30/+0x34
   снято; Unity timer push/pop и gameplay wiring не переносить без evidence.
 - **FileManager.BindRead:** startup true; lookup bool/default после ${...};
   контейнер около object+0x104 глобала 0x838BB018; 14 direct setters.
@@ -426,7 +426,7 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
   0x825A6BB0 не доказывают alias/ownership. В BDT две comment-like строки
   #FileManager.BindRead=false и два BindReadCache prefixes; связь с parser
   не установлена. Другие indirect setter paths не исключены. Evidence:
-  [lookup follow-up](../logs/acv-lookup-20261020/followup-20261021.md).
+  [lookup follow-up](tools/acv-context/docs/logs/acv-lookup-20261020/followup-20261021.md).
 - **Размеры:** 0x83885E80+0x910/+0x914=1280/720; 0x82AF1D38 передаёт их как
   x1/y1 прямоугольников в 0x82AF5F50. Screen/camera смысл не доказан.
 - **Bounded C++:** 0x8245FA20 (48 instructions, без .pdata owner) сравнен с
@@ -446,8 +446,8 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
 - **Альтернативный host:** XenonRecomp commit ddd128bcca99fe8bfbb99bea583c972351fa6ace;
   switch 0x82EF87B0 исправлен, 24 frsqrte sites требуют oracle. Memory/dispatch
   41 checks и другие clock probes не являются полным host. Windows/Wine
-  evidence историческое, реальный Windows/parity открыт. См. [L3](fine/NATIVE_HOST_L3.md),
-  [XEX inventory](fine/NATIVE_XEX_RUNTIME.md), [coverage](fine/XENON_MORE_INSTRUCTIONS.md).
+  evidence историческое, реальный Windows/parity открыт. См. [L3](tools/acv-context/docs/fine/fine/NATIVE_HOST_L3.md),
+  [XEX inventory](tools/acv-context/docs/fine/fine/NATIVE_XEX_RUNTIME.md), [coverage](tools/acv-context/docs/fine/fine/XENON_MORE_INSTRUCTIONS.md).
 - **Unity:** ветка отложена; 9 прежних Editor numerical cases — отдельная
   проверка от batch EditMode AcvTimingTests: подтверждены 13 passed,0 failed,
   0 skipped (logs/timing-followup-20261019/unity-tests.xml). Это не закрывает
@@ -473,12 +473,12 @@ thunk pairs0x824FEDC8/0x829C6A98 и rejected discovery candidates исследо
 
 Здесь оставлен актуальный рабочий контекст; все исходные формулировки,
 промежуточные числа, commands, hyperlinks и противоречивые исторические статусы
-сохранены локально без потерь в `docs/fine/planning-originals-20261022.tar.gz`;
+сохранены локально без потерь в `kb-file:fine__planning-originals-20261022.tar.gz`;
 в GitHub опубликованы их Markdown-резюме и
-[manifest](fine/planning-merge.json) с SHA-256 и исходными заголовками/ссылками.
+[manifest](tools/acv-context/docs/fine/fine/planning-merge.json) с SHA-256 и исходными заголовками/ссылками.
 
 ```bash
-tar -xOf docs/fine/planning-originals-20261022.tar.gz docs/PLAN_B.md
+tar -xOf kb-file:fine__planning-originals-20261022.tar.gz tools/acv-context/docs/PLAN_B.md
 ```
 
 Это чтение полной записи без её возврата в активный набор документов.

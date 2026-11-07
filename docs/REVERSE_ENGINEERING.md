@@ -39,8 +39,8 @@ The only currently identified source is the Armored Core V Xbox 360 image at `..
 
 ## Live Ghidra RPC session (2026-10-19)
 
-- Latest continuation: managed RPC was restored after process exit. The reopened database reports 67,314 function definitions. Bounded snapshots, current section map and truncation warnings are in `decompilation/evidence/acv/timing-index.json`; `docs/GHIDRA_CAPTURE.md` documents reproduction. The `analysis_complete` flag only combines the program's analyzed marker and analyzer-idle state.
-- Instruction evidence corrects `0x822F4908` to repeated reset/start timing, paired with elapsed storage in `0x822F4ED0`. The latter has a complete 220-byte listing but an 8-byte database body. The 224 bytes including padding were unchanged by bounded disassembly. See `docs/ACV_TIMING.md` for offsets, pointer-selection conditions, and unresolved indirect dispatch.
+- Latest continuation: managed RPC was restored after process exit. The reopened database reports 67,314 function definitions. Bounded snapshots, current section map and truncation warnings are in `decompilation/evidence/acv/timing-index.json`; `kb:GHIDRA_CAPTURE` documents reproduction. The `analysis_complete` flag only combines the program's analyzed marker and analyzer-idle state.
+- Instruction evidence corrects `0x822F4908` to repeated reset/start timing, paired with elapsed storage in `0x822F4ED0`. The latter has a complete 220-byte listing but an 8-byte database body. The 224 bytes including padding were unchanged by bounded disassembly. See `kb:ACV_TIMING` for offsets, pointer-selection conditions, and unresolved indirect dispatch.
 - Started a managed GUI session on `tmp/ghidra/isolated-projects/ACV_RETRY.gpr`; the user's separate `Armoredcore.gpr` process is not the RPC-controlled session. Confirmed `/default.xex` in the expected project, PowerPC, 32-bit pointers, big-endian, XEXLoaderWV format, and 73,307 function definitions. `analysis_complete` is false.
 - `scripts/ghidra-rpc.sh` keeps RPC endpoints, state and Java/Python runtime files inside the workspace. GUI navigation to `0x82AEEF58` succeeded. While the session owns this project, use RPC rather than concurrent headless `decomp.sh` operations.
 - Exported `decompilation/pseudocode/acv-82AEEF58.c`, raw RPC JSON, outgoing xrefs, and a listing beginning at `0x82AEF0A0`. The entrypoint calls this function at `0x82B92114`.
@@ -49,7 +49,7 @@ The only currently identified source is the Armored Core V Xbox 360 image at `..
 
 ## Pending
 
-- Timing follow-up: `docs/ACV_TIMING.md` records normalizer/pacing instruction evidence, kernel-call chains, local Ghidra function repairs and the Unity reference formula. The timer and pacing functions now have validated instruction bodies; inferred ABI and subsystem meanings remain unverified.
+- Timing follow-up: `kb:ACV_TIMING` records normalizer/pacing instruction evidence, kernel-call chains, local Ghidra function repairs and the Unity reference formula. The timer and pacing functions now have validated instruction bodies; inferred ABI and subsystem meanings remain unverified.
 
 - Continue targeted decompilation and map call targets/imports before interpreting gameplay code. Whole-program analysis is still incomplete.
 - Investigate analyzer errors/warnings before treating affected code as understood.

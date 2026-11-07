@@ -6,8 +6,8 @@
 
 **Ограничения:** Имена не восстановлены. Fused/split различаются; FPSCR, исключения, полный guest ABI и Xenon parity остаются открытыми.
 
-Доказательства: [acv_830d68f0.hpp](../../tools/native-decomp/acv_830d68f0.hpp).
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Доказательства: [acv_830d68f0.hpp](tools/native-decomp/acv_830d68f0.hpp).
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/NATIVE_SCALAR_830D68F0.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/NATIVE_SCALAR_830D68F0.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

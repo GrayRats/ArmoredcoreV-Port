@@ -1,12 +1,12 @@
 # ACV timing — актуальные выводы и доказательства
 
-[English](ACV_TIMING.md)
+[English](kb:ACV_TIMING)
 
 Сводка на 2026-10-22. **[И]** инструкции/bytes; **[Т]** Xenia trace;
 **[М]** guest memory; **[H]** ограниченный host test; **[Г]** гипотеза.
 Это не спецификация Xenon и не доказательство влияния на бой/физику.
-Полный прежний текст: [архив](../logs/docs-context-20261022/originals.tar.gz),
-запись `docs/ACV_TIMING.md`; [manifest и индекс ссылок](../logs/docs-context-20261022/manifest.json).
+Полный прежний текст: [архив](logs/docs-context-20261022/originals.tar.gz),
+запись `kb:ACV_TIMING`; [manifest и индекс ссылок](logs/docs-context-20261022/manifest.json).
 
 ## Формула и ожидание
 
@@ -43,8 +43,8 @@ low32 frequency global `0x83886944`, если тот нулевой.
 не hardware Xenon specification. D/f1 логгер r3–r8 не печатает.
 Темп и запись шага наблюдались примерно раз на кадр, не доказан physics rate.
 
-Evidence: [timing-index](../decompilation/evidence/acv/timing-index.json),
-[follow-up index](../decompilation/evidence/acv/timing-followup-index.json),
+Evidence: [timing-index](decompilation/evidence/acv/timing-index.json),
+[follow-up index](decompilation/evidence/acv/timing-followup-index.json),
 `logs/acv-stdout.log`, `logs/acv-consumers-stdout.log`, `tmp/acv-timing-check`.
 
 ## Межпоточная передача: два P, не три
@@ -80,10 +80,10 @@ trace indirect call через него не снимался. Callback `0x82AEF
 `0x82AEF6D0` вызывает `0x822E5DE8`, `0x822E52D0`, `0x822B5B90`
 с сохранённым входным r4. Их прямое чтение +0x974 не найдено.
 
-Evidence: [guest samples](../logs/timing-followup-20261019/guest-samples.json),
-[summary](../logs/timing-followup-20261019/summary.json),
-[maps](../logs/timing-followup-20261019/xenia-maps.txt),
-[slot instructions](../logs/timing-followup-20261019/slot0.asm).
+Evidence: [guest samples](logs/timing-followup-20261019/guest-samples.json),
+[summary](logs/timing-followup-20261019/summary.json),
+[maps](logs/timing-followup-20261019/xenia-maps.txt),
+[slot instructions](logs/timing-followup-20261019/slot0.asm).
 
 ## Читатель шага и режимы S
 
@@ -132,11 +132,11 @@ S=0x40F73964/0x40F73B84: 0.033333134→0.502060354 и тот же сброс;
 wide-string/UI interpretation. Источник/назначение строки и влияние на бой
 не установлены; прежняя «таблица состояний» не подтверждена.
 
-Evidence: [consumer trace report](../logs/timing-followup-20261019/consumer-early-report.json),
-[samples](../logs/timing-followup-20261019/consumer-early-samples.json),
-[mode4 instructions](../logs/timing-followup-20261019/mode4-handler.asm),
-[getter](../logs/timing-followup-20261019/getter.asm),
-[update](../logs/timing-followup-20261019/8245FA20.asm).
+Evidence: [consumer trace report](logs/timing-followup-20261019/consumer-early-report.json),
+[samples](logs/timing-followup-20261019/consumer-early-samples.json),
+[mode4 instructions](logs/timing-followup-20261019/mode4-handler.asm),
+[getter](logs/timing-followup-20261019/getter.asm),
+[update](logs/timing-followup-20261019/8245FA20.asm).
 Повторный отчёт читает сохранённые данные: `tools/acv_consumer_report.py TRACE SAMPLES`.
 
 ## Start/end timer, scopes и ownership
@@ -178,9 +178,9 @@ Destination/смысл -1 и writers+0x84 не установлены.
 0x822F4BF0=256; 0x822F4A48=108; 0x82AEF208=148;
 0x82AF1BF0=328; 0x82AF1B60=140; 0x82AF2F70=132;
 0x82AF12F0=240; 0x826BC7A0=128. Не путать unwind records с call tables.
-Evidence: [follow-up index](../decompilation/evidence/acv/timing-followup-index.json),
-[integrity4950](../logs/acv-822F4950-integrity.json),
-[integrity4ED0](../logs/acv-822F4ED0-listing-integrity.json).
+Evidence: [follow-up index](decompilation/evidence/acv/timing-followup-index.json),
+[integrity4950](logs/acv-822F4950-integrity.json),
+[integrity4ED0](logs/acv-822F4ED0-listing-integrity.json).
 
 ## Rectangles и FileManager.BindRead: отдельная цепочка
 
@@ -210,21 +210,21 @@ unique pointer0x82232848 и writer0x825A6BB0 через0x82586130 остаютс
 без доказанного alias/dispatch. В BDT две #FileManager.BindRead=false
 строки и два BindReadCache prefixes; # semantics/asset-parser связь неизвестны.
 Другие indirect setters не исключены. Evidence:
-[lookup summary](../logs/acv-lookup-20261020/summary.md),
-[latest follow-up](../logs/acv-lookup-20261020/followup-20261021.md),
-[ISO hits](../logs/acv-lookup-20261020/iso-key-hits-20261021.json).
+[lookup summary](logs/acv-lookup-20261020/summary.md),
+[latest follow-up](logs/acv-lookup-20261020/followup-20261021.md),
+[ISO hits](logs/acv-lookup-20261020/iso-key-hits-20261021.json).
 
 ## Проверки, исправленные ошибки и границы
 
 - [H] Unity Editor: 9 synthetic cases. Затем отдельный Unity6000.6.6f1 batch
   EditMode AcvTimingTests: **13 passed,0 failed,0 skipped**, exit0:
-  [XML](../logs/timing-followup-20261019/unity-tests.xml),
-  [log](../logs/timing-followup-20261019/unity-tests.log).
+  [XML](logs/timing-followup-20261019/unity-tests.xml),
+  [log](logs/timing-followup-20261019/unity-tests.log).
   Нет compile/ScriptableSingleton errors именно в этом batch; прежние GUI
   ошибки этим не закрыты. Utility не подключена к gameplay; Unity отложена.
 - [H] 0x8245FA20 reconstruction:69 152 state checks+10 transitions;
   scalar0x830D68F0/0x830D69D0:80 784 finite split comparisons,
-  fused differs3825/3772; это не Xenon oracle. [Archive](fine/README.md).
+  fused differs3825/3772; это не Xenon oracle. [Archive](kb:FINE_README).
 - Ghidra save-helper noreturn/ABI guesses могут обрезать тела. Старые
   bounded repairs0x82AEF208/0x82AF1BF0 и helpers сохранены в истории,
   bytes проверены; не повторять изменения живой базы. Metadata base0
@@ -235,8 +235,8 @@ unique pointer0x82232848 и writer0x825A6BB0 через0x82586130 остаютс
 - Позднее pointer sampling, переставленные zero-active условия, slot=50%
   hypothesis, три вместо двух P и lazy-init interpretation заменены выше.
 - ptrace_scope после разрешённого sampling был возвращён1, Xenia config
-  восстановлен byte-for-byte: [cleanup](../logs/timing-followup-20261019/cleanup-and-hashes.json).
-  При более поздней установке наблюдалось0: [observation](../logs/xenonrecomp-install-20261020/ptrace-observed.txt).
+  восстановлен byte-for-byte: [cleanup](logs/timing-followup-20261019/cleanup-and-hashes.json).
+  При более поздней установке наблюдалось0: [observation](logs/xenonrecomp-install-20261020/ptrace-observed.txt).
   Это разные даты; текущее sysctl здесь не утверждается. Новых изменений нет.
 - REA6.7.0 doctor/providers: healthy=false, Ghidra provider имеется;
   штатный PowerPC profile рассчитан на BE ELF32 ET_EXEC, XEX/Xenon support
@@ -244,5 +244,5 @@ unique pointer0x82232848 и writer0x825A6BB0 через0x82586130 остаютс
 
 Открыты gameplay связь, VMX conditions, indirect scope callers, post-wait target,
 проверка прочих modes/runtime edge cases и доверенный rounding oracle.
-Очередь работ — [PLAN](PLAN.md); новые доказательства заменяют соответствующую
+Очередь работ — [PLAN](kb:PLAN); новые доказательства заменяют соответствующую
 строку/раздел здесь, а не создают ещё один хронологический пересказ.

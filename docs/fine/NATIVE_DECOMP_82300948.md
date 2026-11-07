@@ -6,8 +6,8 @@
 
 **Ограничения:** Не называть 64-байтовый блок матрицей/камерой без независимого подтверждения. Indirect callers, provenance дальнейших readers и fused/split oracle не закрыты.
 
-Доказательства: [](../../logs/acv-math-followup-20261021/).
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Доказательства: [](logs/acv-math-followup-20261021).
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/NATIVE_DECOMP_82300948.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/NATIVE_DECOMP_82300948.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

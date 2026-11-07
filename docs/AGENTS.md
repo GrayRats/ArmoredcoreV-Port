@@ -1,12 +1,12 @@
 # Active documentation rules
 
-Applies to active docs; docs/fine is preserved historical material and is
-excluded from routine rewrites/optimization. Root AGENTS.md remains authoritative.
+Applies to active docs; archived documents (`status=archived`) are preserved historical material and is
+excluded from routine rewrites/optimization. The root rules are `kb:AGENTS` and remain authoritative.
 
-- Begin with README.md and X360_PROJECT_STATE.md; choose one open PLAN_GUI.MD item.
+- Begin with README.md and kb:X360_PROJECT_STATE; choose one open item of kb:PLAN_GUI.
   Do not create another task list or chronological dump in a technical doc.
-- PLAN_GUI.MD owns priorities and acceptance for the current launcher/profile
-  implementation; docs/PLAN.md is a compact native status index. PROGRESS owns
+- kb:PLAN_GUI owns priorities and acceptance for the current launcher/profile
+  implementation; kb:PLAN is a compact native status index. PROGRESS owns
   checked milestones and limits; STATE owns only a short resume pointer. ARCHITECTURE owns boundaries,
   technical documents own detailed claims and sources. README routes readers.
 - Read the relevant Vulkan API/reference skills for GPU work and Ghidra RPC skill

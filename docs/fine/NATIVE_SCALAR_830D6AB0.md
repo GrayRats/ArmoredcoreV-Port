@@ -6,8 +6,8 @@
 
 **Ограничения:** Не верифицированная retail-реконструкция. Host-модель использует недоказанное RN-even допущение для fctid; нужны FPSCR evidence и доверенный execution oracle.
 
-Доказательства: [tan-host-probe.json](../../logs/acv-math-followup-20261021/tan-host-probe.json).
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Доказательства: [tan-host-probe.json](logs/acv-math-followup-20261021/tan-host-probe.json).
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/NATIVE_SCALAR_830D6AB0.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/NATIVE_SCALAR_830D6AB0.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

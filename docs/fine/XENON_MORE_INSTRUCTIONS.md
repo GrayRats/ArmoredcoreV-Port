@@ -6,8 +6,8 @@
 
 **Ограничения:** Покрытие генератора не доказывает численную семантику. Xenon estimate, FPSCR и сравнение с доверенным runtime остаются открытыми.
 
-Доказательства: [](../../logs/acv-dialect-audit-20261020/).
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Доказательства: [](logs/acv-dialect-audit-20261020).
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/XENON_MORE_INSTRUCTIONS.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/XENON_MORE_INSTRUCTIONS.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

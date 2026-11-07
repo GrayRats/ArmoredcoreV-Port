@@ -6,8 +6,8 @@
 
 **Ограничения:** Генерация C++ не является восстановленным исходником или доказательством исполнения. Неподдержанные инструкции и паритет рассматривать по отдельным отчётам.
 
-Доказательства: [verification.json](../../logs/xenonrecomp-install-20261020/verification.json).
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Доказательства: [verification.json](logs/xenonrecomp-install-20261020/verification.json).
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/XENONRECOMP.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/XENONRECOMP.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

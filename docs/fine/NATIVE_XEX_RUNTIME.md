@@ -6,8 +6,8 @@
 
 **Ограничения:** Поля XEX не задают политику потоков/TLS и семантику kernel services. Старые некорректные отчёты optional headers не использовать как источник.
 
-Доказательства: [runtime-inventory.json](../../logs/acv-host-20261021/runtime-inventory.json).
-Текущая работа: [PLAN](../PLAN.md). Архивирование не закрывает открытые вопросы.
+Доказательства: [runtime-inventory.json](logs/acv-host-20261021/runtime-inventory.json).
+Текущая работа: [PLAN](kb:PLAN). Архивирование не закрывает открытые вопросы.
 
-Полный текст без потерь: [originals-20261022.tar.gz](originals-20261022.tar.gz),
-запись `docs/NATIVE_XEX_RUNTIME.md`. Хеш оригинала и причина переноса: [manifest.json](manifest.json).
+Полный текст без потерь: [fine__originals-20261022.tar.gz](kb-file:fine__originals-20261022.tar.gz),
+запись `tools/acv-context/docs/NATIVE_XEX_RUNTIME.md`. Хеш оригинала и причина переноса: [FINE_MANIFEST](kb:FINE_MANIFEST).

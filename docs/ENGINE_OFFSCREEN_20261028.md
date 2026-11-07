@@ -14,8 +14,8 @@ local plane array, so it can reject points that are inside the widened image.
 The separately derived world planes use the projection; changing those alone
 would leave the local rejection in place.
 
-[Raw builder capture](../decompilation/evidence/acv/82302520-20261028T010652.093791Z/report.json),
-[raw sphere-test capture](../decompilation/evidence/acv/82300CE0-20261028T010747.112364Z/report.json).
+[Raw builder capture](decompilation/evidence/acv/82302520-20261028T010652.093791Z/report.json),
+[raw sphere-test capture](decompilation/evidence/acv/82300CE0-20261028T010747.112364Z/report.json).
 Ghidra has VMX128 gaps/truncated functions: raw bytes and the corresponding
 translated instruction sequence were inspected. No live DB repair or auto-analysis.
 
@@ -33,7 +33,7 @@ The first implementation limited outer callers to two Ghidra references.
 The180s trial exposed the rendering path returning to82303164, missing from
 that incomplete xref list. That implementation was not published. The final
 implementation follows the widened projection itself and restores nested scope
-on normal return/exception; [direct callers](../logs/acv-engine-offscreen-20261028/direct-callers.json)
+on normal return/exception; [direct callers](logs/acv-engine-offscreen-20261028/direct-callers.json)
 show13 translated call sites. ACV_NATIVE_FRUSTUM_SYNC=0 provides a diagnostic
 opt-out; the fix is otherwise active with an eligible wide_view camera.
 ACV_FRUSTUM_TRACE=1 emits bounded counters only after90s, every10s per thread.
@@ -52,7 +52,7 @@ The existing FOV/HUD ASan/UBSan regression also passes.
 
 Incremental host build passes; codegen writes0files. Candidate keeps the tested
 streaming runtime544bdaae, GPUfe4550d5 and FFX0933159a. Final host ELFefa4756c.
-[Full hashes, operations and current runtime status](../logs/acv-engine-offscreen-20261028/checkpoint.json).
+[Full hashes, operations and current runtime status](logs/acv-engine-offscreen-20261028/checkpoint.json).
 
 First180s exploratory run20261028T011815872120Z exits child0/fatal0. It confirms
 actual local-plane modification in one camera path and exposed the missed
@@ -74,18 +74,18 @@ separate engine streaming issue; no blanket refcount/destructor suppression was
 implemented. The symptom question (edge disappearance versus delayed return)
 remains unanswered. Full mission/image/long-run memory acceptance is open.
 
-[Source/document snapshots](../logs/acv-engine-offscreen-20261028/docs-before/sha256.json)
+[Source/document snapshots](logs/acv-engine-offscreen-20261028/docs-before/sha256.json)
 retain all previous active document bytes and checksums.
 
 
 ## Accepted release update
 
 The user-confirmed ELFefa4756c is now installed in
-[ACV-Linux-release-1.0](../../ACV-Linux-release-1.0/start.sh).
+[ACV-Linux-release-1.0](../ACV-Linux-release-1.0/start.sh).
 Version/folder remain1.0; patch_level2026-10-28-native-frustum identifies the
 change. All186 manifest hashes/dependencies pass, and RUNTIME_BASELINE records
 these exact artifacts and the limited acceptance scope. Previous executable and
-metadata preserved in [verified backup](../logs/acv-engine-offscreen-20261028/release-before/sha256.json).
+metadata preserved in [verified backup](logs/acv-engine-offscreen-20261028/release-before/sha256.json).
 Source repair is handwritten; generated PPC was not edited. Existing graphics
 settings and resource caches remain in the package. This acceptance addresses
 visible edge disappearance; separate engine cache/unload semantics and stable

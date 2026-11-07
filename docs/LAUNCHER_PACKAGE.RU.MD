@@ -1,6 +1,6 @@
 # Отдельный Linux-пакет ACV — 2026-10-24
 
-[English](LAUNCHER_PACKAGE.md)
+[English](kb:LAUNCHER_PACKAGE)
 
 Локальный результат: `../../ACV-Linux/`, точка входа `start.sh`.
 Это статически перекомпилированная игра с ReXGlue, а не полностью восстановленный
@@ -11,14 +11,14 @@ Linux/glibc, Python 3, X11/XWayland, Vulkan-драйвер и остальные
 
 ## Сборка и пути
 
-[standalone.py](../tools/acv-launcher/standalone.py) принимает `--out`,
+[standalone.py](tools/acv-context/tools/acv-launcher/standalone.py) принимает `--out`,
 `--runtime-dir`, `--include-game-data`. Существующий output не удаляется.
 Файлы копируются в соседний staging, проверяются хеши, зависимости и CLI,
 после чего staging переименовывается в output. Runtime, отличный от принятой
-[RUNTIME_BASELINE](../tools/native-rexglue/RUNTIME_BASELINE.json), явно помечается
+[RUNTIME_BASELINE](tools/acv-context/tools/native-rexglue/RUNTIME_BASELINE.json), явно помечается
 как кандидат; это не автоматическое принятие новой baseline.
 
-[acv_paths.py](../tools/native-rexglue/acv_paths.py) распознаёт marker
+[acv_paths.py](tools/acv-context/tools/native-rexglue/acv_paths.py) распознаёт marker
 `acv-package.json`: executable в `bin/game/`, данные в `data/game/`, профили в
 `${XDG_DATA_HOME:-~/.local/share}/DEArmoredcore/acv/`, логи в
 `${XDG_STATE_HOME:-~/.local/state}/DEArmoredcore/acv/logs/`.
@@ -28,7 +28,7 @@ Linux/glibc, Python 3, X11/XWayland, Vulkan-драйвер и остальные
 
 ## Проверено
 
-- [verification.json](../logs/acv-standalone-20261024/verification.json): 183 хеша в первой сборке,
+- [verification.json](tools/acv-context/logs/acv-standalone-20261024/verification.json): 183 хеша в первой сборке,
   видимое окно Qt/X11, запуск game из cwd `/`, runtime/GPU/FidelityFX и Qt
   загружены из отдельной папки по фактическим process maps. Symlink на исходное
   дерево нет. Длительность game probe — 20 с; swapchain и pipelines созданы.
@@ -42,7 +42,7 @@ Linux/glibc, Python 3, X11/XWayland, Vulkan-драйвер и остальные
 - Python: 15 settings, 9 profiles, 3 shm tests. Qt: ctest launcher прошёл.
   Новый regression проверяет сохранение flock дочерним процессом после закрытия
   descriptor родителем. Probe передаёт descriptor игре через pass_fds.
-- [X11 startup samples](../logs/acv-native-linux/20261024T000238328506Z/samples.json):
+- [X11 startup samples](tools/acv-context/logs/acv-native-linux/20261024T000238328506Z/samples.json):
   58 samples за 60,97 с при 0 orphan до/после, 25 139 380 224 free bytes до/после.
   Host main thread: ioctl 36/58; GPU Commands top frame libc address 41/58;
   DrawThread libc 31/58, sub_82BB58A8 9/58, __imp__sub_82AF5708 8/58.
@@ -55,11 +55,11 @@ Linux/glibc, Python 3, X11/XWayland, Vulkan-драйвер и остальные
 профилей и XUID внутри сейва; визуальный CAS/FSR; темп/звук с лимитером;
 адаптивные FOV/HUD, >60 FPS и визуальная точность 10-bit output. Патченный runtime находится в
 отдельном пакете как кандидат, принятые артефакты development-сборки не заменены.
-Текущая очередь и критерии: [PLAN_GUI](../PLAN_GUI.MD).
+Текущая очередь и критерии: [PLAN_GUI](kb:PLAN_GUI).
 
 ## Экран, цвет и подача кадров — 2026-10-24
 
-[Матрица трёх запусков](../logs/acv-display-20261024/matrix.json) фиксирует
+[Матрица трёх запусков](tools/acv-context/logs/acv-display-20261024/matrix.json) фиксирует
 35s UltraWide/Bilinear, 35s 16:10/CAS/FIFO и 35s UltraWide/FSR/10-bit request.
 Во всех трёх child exit0, без новых shm orphan; probe exit1 сохраняет известный
 optional system.properties diagnostic. Изображения не снимались.
@@ -69,7 +69,7 @@ optional system.properties diagnostic. Изображения не снимал�
 1280/720 не переопределёнными и брал ширину/высоту host-окна. Actual-source
 host test проверил defaults, независимость от host size, resolution preset и
 явный guest mode. Изменения SDK воспроизводятся последовательным применением
-прежних патчей и [launcher-display-output.patch](../tools/native-rexglue/patches/launcher-display-output.patch).
+прежних патчей и [launcher-display-output.patch](tools/acv-context/tools/native-rexglue/patches/launcher-display-output.patch).
 Предыдущие source bytes сохранены в logs/acv-display-20261024/source-before.
 
 Подтверждённая геометрия:
@@ -114,9 +114,9 @@ BGRA8 UNORM/SRGB. 10-bit запрос дал явный fallback к8. Новый
 Read-only GDB trace через `probe_linux.py --projection-trace LAYOUT_JSON`
 собрал аргументы и выходные блоки без изменения гостевых регистров/памяти.
 Layout получен компиляцией `offsetof(PPCContext, ...)` из SDK и привязан к SHA
-исполняемого файла. [Исходник/ABI](../logs/acv-ultrawide-20261024/context_layout.cpp),
-[layout](../logs/acv-ultrawide-20261024/context_layout.json),
-[трасса](../logs/acv-native-linux/20261024T115046780620Z/projection.json).
+исполняемого файла. [Исходник/ABI](tools/acv-context/logs/acv-ultrawide-20261024/context_layout.cpp),
+[layout](tools/acv-context/logs/acv-ultrawide-20261024/context_layout.json),
+[трасса](tools/acv-context/logs/acv-native-linux/20261024T115046780620Z/projection.json).
 
 Цепочка `0x82303138 → 0x82302520 → 0x82300948 → 0x82BC8980` наблюдается
 при старте. В `0x82302520` r8/r9=1280/720; в `0x82BC8980`
@@ -125,8 +125,8 @@ f1=1.04719758, f2=1.77777779, f3=1, f4=1000. Все64 возвращённых �
 последние строки `[0,0,z,1]`, `[0,0,-f3*z,0]` с максимальной нормированной
 ошибкой3.285e-7 при пороге2e-6. Это обоснование интерпретации аргументов как
 вертикальный FOV≈60°, aspect16:9 и near/far1/1000 для наблюдённых вызовов.
-[Машинная проверка](../logs/acv-ultrawide-20261024/perspective-check.json),
-[проверяющий скрипт](../tools/native-rexglue/analyze_projection_trace.py).
+[Машинная проверка](tools/acv-context/logs/acv-ultrawide-20261024/perspective-check.json),
+[проверяющий скрипт](tools/acv-context/tools/native-rexglue/analyze_projection_trace.py).
 
 Ограничение:64 samples имеют один набор входов, получены из перекомпилированного
 кода, а не оригинальной консоли. Главная gameplay-камера, HUD и culling ещё
@@ -140,21 +140,21 @@ system.properties; shm orphan0 до/после. Нативный UltraWide эт�
 ## UltraWide: эксперимент отдельного вызова — 2026-10-24
 
 Временная read-only трасса60s со стеками охватывает восемь окон по8s,
-до8 samples на entry в окне: [trace](../logs/acv-native-linux/20261024T115603115026Z/projection.json).
+до8 samples на entry в окне: [trace](tools/acv-context/logs/acv-native-linux/20261024T115603115026Z/projection.json).
 После диагностических Return/Space появились другие входы: FOV около36–55°,
 near1, far450–13000. Все64 матрицы согласованы с формулой перспективы,
 максимальная нормированная ошибка3.853e-7:
-[проверка](../logs/acv-ultrawide-20261024/temporal-perspective-check.json).
+[проверка](tools/acv-context/logs/acv-ultrawide-20261024/temporal-perspective-check.json).
 Это расширяет прежнюю стартовую выборку, но не доказывает полную игровую семантику.
 
 В retail `0x822B4428` при нулевом поле входа+0x48 берёт aspect из объекта+0x4C0,
 FOV из входа+0x40 с преобразованием единиц и вызывает `0x82BC8980` по адресу
 `0x822B450C` (LR=`0x822B4510`). Near/far берутся из объекта+0x444/+0x448.
 Ненулевая ветка вызывает другой helper `0x82BC8CC0`; она не изменена.
-[Raw PPC/.pdata](../logs/acv-ultrawide-20261024/822B4428.txt),
-[caller](../logs/acv-ultrawide-20261024/822B59C8.txt).
+[Raw PPC/.pdata](tools/acv-context/logs/acv-ultrawide-20261024/822B4428.txt),
+[caller](tools/acv-context/logs/acv-ultrawide-20261024/822B59C8.txt).
 
-Добавлен [scene_aspect_experiment.cpp](../tools/native-rexglue/scene_aspect_experiment.cpp):
+Добавлен [scene_aspect_experiment.cpp](tools/acv-context/tools/native-rexglue/scene_aspect_experiment.cpp):
 strong override `sub_82BC8980` через существующую weak-alias схему с вызовом
 оригинального `__imp__sub_82BC8980`. По умолчанию полный pass-through.
 Только явная переменная `ACV_EXPERIMENTAL_SCENE_ASPECT` (конечное число1…4)
@@ -163,7 +163,7 @@ FOV должен находиться в(0,π). Меняется только f2
 после вызова исходное f2 восстановлено. Остальные callers не изменяются.
 
 Изолированная сборка: `tmp/acv-ultrawide-test/`, host SHA`e3ab37044dc3037c9aa1ed7dae8fc13424a1e1b0e37dbae48a6a35b8b604355b`.
-[Build manifest](../tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv-test-build.json)
+[Build manifest](tools/acv-context/tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv-test-build.json)
 фиксирует выбранные display runtime/GPU и неизменный config SHA98d1c2ed….
 Прежний development host сохранён в `tmp/acv-ultrawide-before/`.
 Отдельный пользовательский `../../ACV-Linux/` не заменён этой сборкой.
@@ -173,15 +173,15 @@ aspect2.37037037; остальные58 сохранили16:9. Все64 выхо
 проверку, max error3.285e-7. Относительно16:9 коэффициент горизонтальной
 проекции уменьшается до0.75, математический горизонтальный охват растёт в4/3;
 это ещё не доказательство корректного широкого изображения на экране.
-[Трасса](../logs/acv-native-linux/20261024T120037853774Z/projection.json),
-[машинный результат](../logs/acv-ultrawide-20261024/aspect-trial-check.json).
+[Трасса](tools/acv-context/logs/acv-native-linux/20261024T120037853774Z/projection.json),
+[машинный результат](tools/acv-context/logs/acv-ultrawide-20261024/aspect-trial-check.json).
 GDB child exit0; probe exit1 сохраняет прежний optional system.properties error;
 shm orphan0 до/после. Два запуска не используются как FPS benchmark.
 
 Actual hook object прошёл30 host boundary cases: выключенная/валидная/невалидная
 переменная окружения, выбранный/посторонний caller, исходный aspect и область FOV.
 Проверены один вызов оригинала, восстановление f2 и сохранение возвращённого r3.
-[Test source](../logs/acv-ultrawide-20261024/hook_boundary_test.cpp),
+[Test source](tools/acv-context/logs/acv-ultrawide-20261024/hook_boundary_test.cpp),
 SQLite operation `d6fd7504-54ba-438a-8db6-424f891e74db`.
 Это проверка границы wrapper со stub оригинала, а не parity всей игры.
 
@@ -206,8 +206,8 @@ system.properties. Shm orphan0 до/после. Интервалы XE_SWAP да�
 стабильные60 FPS не подтверждены. Визуальная оценка пользователя пока не
 получена; HUD/прицел/culling и отсутствие искажений не приняты. ACV-Linux
 этой экспериментальной сборкой не заменён.
-[Результат](../logs/acv-ultrawide-2560x1080-20261024/result.json),
-[запуск](../logs/acv-native-linux/20261024T120920332499Z/launch.json).
+[Результат](tools/acv-context/logs/acv-ultrawide-2560x1080-20261024/result.json),
+[запуск](tools/acv-context/logs/acv-native-linux/20261024T120920332499Z/launch.json).
 
 ## TRG-кандидат — 2026-10-25
 
@@ -227,12 +227,12 @@ GUI, освобождение после выхода. Метрики подач
 счётчик fatal_error_count в наблюдателе probe; baseline тест падал, исправленный проходит.
 Пакет включает шрифты/лицензии и не зависит от дерева SDK для runtime mappings.
 
-Подробные ссылки и границы проверок: [English checkpoint](LAUNCHER_PACKAGE.md#trg-frontend-and-installation--2026-10-25).
+Подробные ссылки и границы проверок: [English checkpoint](kb:LAUNCHER_PACKAGE#trg-frontend-and-installation--2026-10-25).
 Не приняты: игровой цикл save/load, выбор другой миссии, аппаратные controller/HiDPI,
 интерактивная установка через UI, картинка CAS/FSR/10 бит, UltraWide HUD/culling,
 высокая FPS и новый RUNTIME_BASELINE. Это static recomp, не полный восстановленный source.
 
-Финальный артефакт проверен из cwd `/`: [checkpoint](../logs/acv-trg-final-20261025-r2/checkpoint.json).
+Финальный артефакт проверен из cwd `/`: [checkpoint](tools/acv-context/logs/acv-trg-final-20261025-r2/checkpoint.json).
 Child0/fatal0, один user_language, XUID совпал, новых shm-сирот нет. Закрытие окна
 через WM_DELETE_WINDOW оставляет игру и lock живыми до штатной остановки теста.
 В оконном режиме рабочая область ограничила2560×1080 до2560×1052; изображение16:9
@@ -243,4 +243,4 @@ Child0/fatal0, один user_language, XUID совпал, новых shm-сир�
 
 Новый пакет: ../ACV-Linux-TRG-WaitFix-20261025/start.sh,185 файлов. Runtimeca04c1c6 исправляет дробную паузу WaitMultiple; Audio Worker78,05%→0,56% ядра.190с child0/fatal0. Стабильные60FPS ещё открыты. Манифест/зависимости проверены, Qt/ICU нет. Старые пакеты и сейвы сохранены.
 
-WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](tools/acv-context/logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).

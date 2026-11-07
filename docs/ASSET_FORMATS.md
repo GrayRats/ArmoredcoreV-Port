@@ -183,15 +183,15 @@ validated source. No texture has been compared with the replay yet.
 ## User-supplied FromSoftware references (2026-10-22)
 
 Pinned source snapshots, commit IDs and per-file hashes are in
-[repositories.json](../logs/acv-user-references-20261022/repositories.json);
-[assessment](../logs/acv-user-references-20261022/assessment.json) separates
+[repositories.json](logs/acv-user-references-20261022/repositories.json);
+[assessment](logs/acv-user-references-20261022/assessment.json) separates
 checked applicability from future candidates. No original media was modified.
 
 - [DSEventScriptTools](https://github.com/HotPocketRemix/DSEventScriptTools):
   its dcx_handler.py was executed on ACV DCX entry f29f543a. All1,417,648
   decoded bytes match our previous extraction, SHA-256
   babd68e0e454eb0a310f910475ca3ff9e70e914dfafe2d780e8424773cd9b235.
-  [Comparison](../logs/acv-user-references-20261022/dcx-reference-comparison.json).
+  [Comparison](logs/acv-user-references-20261022/dcx-reference-comparison.json).
   EVD/ELD/EDF remain useful references; the ACV big-endian EVD variant and
   opcode definitions are not validated by this one DCX comparison.
 - [DarkSoulsTextureExtractor](https://github.com/HotPocketRemix/DarkSoulsTextureExtractor):

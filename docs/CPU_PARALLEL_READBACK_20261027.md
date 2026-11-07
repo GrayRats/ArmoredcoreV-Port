@@ -14,7 +14,7 @@ SmallJobRunner и существующие TaskRunner; Vulkan уже имеет 
 Принудительно распределять пустой цикл ожидания по ядрам не требуется.
 
 Новый sampler сохраняет last_cpu и allowed_cpus только после своего gate.
-[Анализатор](../tools/native-rexglue/analyze_cpu_parallelism.py) сохраняет
+[Анализатор](tools/native-rexglue/analyze_cpu_parallelism.py) сохраняет
 отдельные TID даже при одинаковых обрезанных именах. Последний CPU показывает
 размещение, а не доказательство одновременного выполнения или полезной работы.
 Проверки одинаковых имён, миграций и запрета ранних замеров пройдены.
@@ -26,7 +26,7 @@ Ghidra описывает только первые8байт каждой фун
 Сохранены raw bytes и LLVM-декодирование; Xenon db16cyc кодируется7FFFFB78
 (обычный LLVM показывает mr31,31),4×8 повторений. SDK codegen пропускает hints.
 
-[gpu_poll_backoff.cpp](../tools/native-rexglue/gpu_poll_backoff.cpp) оборачивает
+[gpu_poll_backoff.cpp](tools/native-rexglue/gpu_poll_backoff.cpp) оборачивает
 оригинал __imp__sub_82BAE308. Только ACV_GPU_POLL_BACKOFF=1, только caller82BAF2B0,
 только исходный return1: дополнительный host sleep50мкс. Результаты, регистры,
 timeout/cancel и последующая проверка completion сохраняются.
@@ -43,15 +43,15 @@ CPU248.947→6.377мс. В ELF проверена запись guest→strong ho
 Hotspot этой сцены не busy polling. Ускорение FPS/уменьшение CPU от backoff
 в ней не доказано. Исторические44.8→95.3% нельзя переносить на другую сцену.
 Оба запуска child0/fatal0, IP lost0; sampling после120с.
-[Потоки off](../logs/acv-poll-backoff-20261027/off-cpu-parallelism.json),
-[on](../logs/acv-poll-backoff-20261027/on-cpu-parallelism.json),
-[сессии и команды](../logs/acv-poll-backoff-20261027/comparison-state.json).
+[Потоки off](logs/acv-poll-backoff-20261027/off-cpu-parallelism.json),
+[on](logs/acv-poll-backoff-20261027/on-cpu-parallelism.json),
+[сессии и команды](logs/acv-poll-backoff-20261027/comparison-state.json).
 
 ## Реализованная параллельная работа
 
 Графический поток в этой сцене тратит≈24% inclusive wall на публикацию
 готовых readback-данных. Добавлен ограниченный persistent worker pool:
-[parallel_readback_copy.h](../tools/native-rexglue/parallel_readback_copy.h).
+[parallel_readback_copy.h](tools/native-rexglue/parallel_readback_copy.h).
 
 - Один синхронный job,1..4 суммарных потока, максимум3 постоянных workers.
 - Копии меньше1МиБ последовательные; крупные делятся на непересекающиеся части.
@@ -66,7 +66,7 @@ Hotspot этой сцены не busy polling. Ускорение FPS/умень
 - SDK private context хранит pool до уничтожения bridge.64слота/64МиБ сохранены.
   Generated PPC, схема настроек и принятый пакет не изменены.
 
-[Durable patch](../tools/native-rexglue/patches/parallel-readback-copy.patch)
+[Durable patch](tools/native-rexglue/patches/parallel-readback-copy.patch)
 воспроизводится без fuzz и совпадает с SDK sources.
 
 ## Проверки
@@ -88,8 +88,8 @@ CPU/GPU/IP после120с на35с. Никаких параллельных с�
 во время игрового сравнения.
 
 Кандидат tmp/acv-parallel-copy-fix/, ELF96c3f415/GPU8fb12565.
-[Хеши/клоны](../logs/acv-parallel-readback-copy-20261027/build-and-clones.json),
-[состояние запуска](../logs/acv-parallel-readback-copy-20261027/comparison-state.json).
+[Хеши/клоны](logs/acv-parallel-readback-copy-20261027/build-and-clones.json),
+[состояние запуска](logs/acv-parallel-readback-copy-20261027/comparison-state.json).
 Дальше: оценить late publication time, FPS, CPU workers и отсутствие регрессий;
 оставить serial default до соответствующей приёмки.
 
@@ -99,8 +99,8 @@ CPU/GPU/IP после120с на35с. Никаких параллельных с�
 Пользователь принял parallel-copy исправление. Worker TID20460 выполнял копирование:
 16.79% ядра, allowed_cpus0-11; основной GPU thread TID20406 —87.47%.
 Это доказательство распределённой работы, не ускорения FPS.
-[Off CPU](../logs/acv-parallel-readback-copy-20261027/off-cpu-parallelism.json),
-[on CPU](../logs/acv-parallel-readback-copy-20261027/on-cpu-parallelism.json).
+[Off CPU](logs/acv-parallel-readback-copy-20261027/off-cpu-parallelism.json),
+[on CPU](logs/acv-parallel-readback-copy-20261027/on-cpu-parallelism.json).
 Сравнение завершено, фоновых игр/сборок нет. Ближайшая задача — новый отдельный
 пакет с принятым режимом, затем сопоставимый gameplay-замер. Backoff отдельно не принят.
 
@@ -109,4 +109,4 @@ CPU/GPU/IP после120с на35с. Никаких параллельных с�
 в отдельный FOVHUD-пакет (`../../ACV-Linux-TRG-FOVHUD-20261027/start.sh`, исторический пакет; каталог сейчас отсутствует).
 CAS/FSR интегрированы без тестов. Другие разрешения/FPS/save/controller задачи
 пропущены; дальнейшая работа только FOV/HUD2560×1080.
-[Последняя точка продолжения](X360_PROJECT_STATE.md).
+[Последняя точка продолжения](kb:X360_PROJECT_STATE).

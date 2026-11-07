@@ -3,10 +3,10 @@
 **[I]** instructions/bytes; **[T]** Xenia trace;
 **[M]** guest memory; **[H]** limited host test; **[G]** hypothesis.
 This is not a specification of Xenon and not proof of any effect on combat or physics.
-Full earlier text: [archive](../logs/docs-context-20261022/originals.tar.gz),
-entry `docs/ACV_TIMING.md`; [manifest and link index](../logs/docs-context-20261022/manifest.json).
+Full earlier text: [archive](logs/docs-context-20261022/originals.tar.gz),
+entry `kb:ACV_TIMING`; [manifest and link index](logs/docs-context-20261022/manifest.json).
 
-[Русская версия](ACV_TIMING.RU.MD)
+[Русская версия](kb:ACV_TIMING_RU)
 
 ## Formula and expectation
 
@@ -43,8 +43,8 @@ is in [50,276,460, 50,276,519]. This is the frequency the game sees inside the e
 not a hardware Xenon specification. The D/f1 logger does not print r3–r8.
 The rate and the step write were observed roughly once per frame; the physics rate is not proven.
 
-Evidence: [timing-index](../decompilation/evidence/acv/timing-index.json),
-[follow-up index](../decompilation/evidence/acv/timing-followup-index.json),
+Evidence: [timing-index](decompilation/evidence/acv/timing-index.json),
+[follow-up index](decompilation/evidence/acv/timing-followup-index.json),
 `logs/acv-stdout.log`, `logs/acv-consumers-stdout.log`, `tmp/acv-timing-check`.
 
 ## Inter-thread handoff: two P objects, not three
@@ -80,10 +80,10 @@ trace of the indirect call through it was not captured. The callback `0x82AEF6C8
 `0x82AEF6D0` calls `0x822E5DE8`, `0x822E52D0`, `0x822B5B90`
 with the saved input r4. No direct reads of +0x974 by them were found.
 
-Evidence: [guest samples](../logs/timing-followup-20261019/guest-samples.json),
-[summary](../logs/timing-followup-20261019/summary.json),
-[maps](../logs/timing-followup-20261019/xenia-maps.txt),
-[slot instructions](../logs/timing-followup-20261019/slot0.asm).
+Evidence: [guest samples](logs/timing-followup-20261019/guest-samples.json),
+[summary](logs/timing-followup-20261019/summary.json),
+[maps](logs/timing-followup-20261019/xenia-maps.txt),
+[slot instructions](logs/timing-followup-20261019/slot0.asm).
 
 ## Step reader and S modes
 
@@ -132,11 +132,11 @@ which `0x824609E0` copies into a buffer of 1023 characters. `0x824603A8` /
 wide-string / UI interpretation. The source and destination of the string and any effect on combat
 are not established; the earlier "state table" is not confirmed.
 
-Evidence: [consumer trace report](../logs/timing-followup-20261019/consumer-early-report.json),
-[samples](../logs/timing-followup-20261019/consumer-early-samples.json),
-[mode-4 instructions](../logs/timing-followup-20261019/mode4-handler.asm),
-[getter](../logs/timing-followup-20261019/getter.asm),
-[update](../logs/timing-followup-20261019/8245FA20.asm).
+Evidence: [consumer trace report](logs/timing-followup-20261019/consumer-early-report.json),
+[samples](logs/timing-followup-20261019/consumer-early-samples.json),
+[mode-4 instructions](logs/timing-followup-20261019/mode4-handler.asm),
+[getter](logs/timing-followup-20261019/getter.asm),
+[update](logs/timing-followup-20261019/8245FA20.asm).
 A repeated report reads the saved data: `tools/acv_consumer_report.py TRACE SAMPLES`.
 
 ## Start/end timer, scopes and ownership
@@ -178,9 +178,9 @@ The destination and meaning of -1 and the writers of +0x84 are not established.
 0x822F4BF0=256; 0x822F4A48=108; 0x82AEF208=148;
 0x82AF1BF0=328; 0x82AF1B60=140; 0x82AF2F70=132;
 0x82AF12F0=240; 0x826BC7A0=128. Do not confuse unwind records with call tables.
-Evidence: [follow-up index](../decompilation/evidence/acv/timing-followup-index.json),
-[integrity 4950](../logs/acv-822F4950-integrity.json),
-[integrity 4ED0](../logs/acv-822F4ED0-listing-integrity.json).
+Evidence: [follow-up index](decompilation/evidence/acv/timing-followup-index.json),
+[integrity 4950](logs/acv-822F4950-integrity.json),
+[integrity 4ED0](logs/acv-822F4ED0-listing-integrity.json).
 
 ## Rectangles and FileManager.BindRead: a separate chain
 
@@ -210,21 +210,21 @@ unique pointer `0x82232848` and writer `0x825A6BB0` via `0x82586130` remain
 without a proven alias/dispatch. In the BDT there are two #FileManager.BindRead=false
 lines and two BindReadCache prefixes; the relation to # semantics / the asset parser is unknown.
 Other indirect setters are not excluded. Evidence:
-[lookup summary](../logs/acv-lookup-20261020/summary.md),
-[latest follow-up](../logs/acv-lookup-20261020/followup-20261021.md),
-[ISO hits](../logs/acv-lookup-20261020/iso-key-hits-20261021.json).
+[lookup summary](logs/acv-lookup-20261020/summary.md),
+[latest follow-up](logs/acv-lookup-20261020/followup-20261021.md),
+[ISO hits](logs/acv-lookup-20261020/iso-key-hits-20261021.json).
 
 ## Checks, corrected errors and limits
 
 - [H] Unity Editor: 9 synthetic cases. Then a separate Unity 6000.6.6f1 batch
   EditMode AcvTimingTests: **13 passed, 0 failed, 0 skipped**, exit 0:
-  [XML](../logs/timing-followup-20261019/unity-tests.xml),
-  [log](../logs/timing-followup-20261019/unity-tests.log).
+  [XML](logs/timing-followup-20261019/unity-tests.xml),
+  [log](logs/timing-followup-20261019/unity-tests.log).
   This batch had no compile or ScriptableSingleton errors; earlier GUI
   errors are not closed by it. The utility is not connected to gameplay; Unity is postponed.
 - [H] 0x8245FA20 reconstruction: 69,152 state checks + 10 transitions;
   scalar 0x830D68F0 / 0x830D69D0: 80,784 finite split comparisons,
-  fused differs 3825/3772; this is not a Xenon oracle. [Archive](fine/README.md).
+  fused differs 3825/3772; this is not a Xenon oracle. [Archive](kb:FINE_README).
 - Ghidra save-helper noreturn/ABI guesses may truncate bodies. Earlier
   bounded repairs of 0x82AEF208 / 0x82AF1BF0 and helpers are kept in history,
   bytes verified; do not repeat changes to the live database. Metadata base 0
@@ -235,8 +235,8 @@ Other indirect setters are not excluded. Evidence:
 - Later pointer sampling, reordered zero-active conditions, the slot=50%
   hypothesis, three instead of two P objects, and the lazy-init interpretation are replaced above.
 - ptrace_scope after the permitted sampling was restored to 1, and the Xenia config
-  was restored byte-for-byte: [cleanup](../logs/timing-followup-20261019/cleanup-and-hashes.json).
-  A later installation observed 0: [observation](../logs/xenonrecomp-install-20261020/ptrace-observed.txt).
+  was restored byte-for-byte: [cleanup](logs/timing-followup-20261019/cleanup-and-hashes.json).
+  A later installation observed 0: [observation](logs/xenonrecomp-install-20261020/ptrace-observed.txt).
   These are different dates; the current sysctl value is not asserted here. No new changes.
 - REA 6.7.0 doctor/providers: healthy=false, the Ghidra provider is present;
   the standard PowerPC profile targets BE ELF32 ET_EXEC, XEX/Xenon support
@@ -244,5 +244,5 @@ Other indirect setters are not excluded. Evidence:
 
 Still open: the gameplay link, VMX conditions, indirect scope callers, the post-wait target,
 checks of the other modes and runtime edge cases, and a trusted rounding oracle.
-The work queue is in [PLAN](PLAN.md); new evidence replaces the corresponding line or section
+The work queue is in [PLAN](kb:PLAN); new evidence replaces the corresponding line or section
 here rather than adding another chronological retelling.

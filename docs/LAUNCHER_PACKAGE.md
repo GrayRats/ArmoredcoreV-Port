@@ -1,5 +1,36 @@
 # Standalone ACV Linux package — 2026-10-25
 
+## ACV-Linux-release-2.1 — 2026-11-04
+
+Separate package: [start.sh](../ACV-Linux-release-2.1/start.sh),
+[release report](kb:ACV_LINUX_RELEASE_2_1_20261104). Runtime/GPU libraries were
+rebuilt from243 native TUs; 189 payload hashes, shell syntax and shared-library
+resolution pass. Seven Vulkan paths are enabled by the package launcher.
+The package was not launched or gameplay-tested, so image/save/load/pacing and
+performance remain unaccepted. `ACV-Linux-release-2.0` and its manifest are
+preserved; 2.1 is not promoted to the accepted runtime baseline.
+
+2026-11-03: готов отдельный ACV-Linux-release-2.0 со stencil3 и предыдущими
+Vulkan API доработками. GPU3TU и TRG пересобраны; неизменённые guest ELF/runtime/FFX
+переиспользованы. ASan/UBSan, backend, UI600frames,189hashes/loader и135s startup
+PASS (child0/fatal0/errors0). Исправлен выбор2.0 вместо сохранённого пути1.0;
+пользовательский settings/config не переписан. Версия1.0 сохранена.
+Миссия/FPS/stencil-image acceptance открыты.
+
+[Запуск2.0](../ACV-Linux-release-2.0/start.sh),
+[checkpoint/manifest hashes](logs/release2-20261103/checkpoint.json).
+Начальная UI30frame проверка завершилась до готовности backend; независимый
+snapshot прошёл, UI600frame повтор завершился backend_ready1. Это не падение
+игры. Canonical acv.config ARTEM и существующий профильный lock/backup backend
+сохранены. Startup135s выполнялся с Wayland diagnostic override; обычный start.sh
+сохраняет X11 default. Полная сборка SDK/FFX/Wine/codegen не запускалась.
+
+2026-11-03: по запросу пользователя проверенные Vulkan API доработки включены
+в ACV-Linux-release-1.0. GPU/default env и packaging baseline обновлены,
+189file manifest и release135s smoke PASS (child0/fatal0/errors0).
+Старые файлы с хешами сохранены. Три дополнительных stencil-фильтра собраны,
+host-tested,default off в отдельном кандидате; GPU render acceptance открыт.
+
 Latest TRG candidate and checks: [checkpoint](#trg-frontend-and-installation--2026-10-25).
 The Qt description below is the preserved previous package.
 
@@ -10,18 +41,18 @@ Qt platform plugins, the host ELF, the runtime, the GPU and FidelityFX. The orig
 Linux/glibc, Python 3, X11/XWayland, the Vulkan driver and the other system libraries
 are required from the OS; their list is in the manifest. Other distributions have not been tested.
 
-[Русская версия](LAUNCHER_PACKAGE.RU.MD)
+[Русская версия](kb:LAUNCHER_PACKAGE_RU)
 
 ## Build and paths
 
-[standalone.py](../tools/acv-launcher/standalone.py) accepts `--out`,
+[standalone.py](tools/acv-launcher/standalone.py) accepts `--out`,
 `--runtime-dir` and `--include-game-data`. An existing output is not deleted.
 Files are copied into a neighbouring staging directory, hashes, dependencies and the CLI are
 verified, and then the staging directory is renamed to the output. A runtime other than the accepted
-[RUNTIME_BASELINE](../tools/native-rexglue/RUNTIME_BASELINE.json) is explicitly marked
+[RUNTIME_BASELINE](tools/native-rexglue/RUNTIME_BASELINE.json) is explicitly marked
 as a candidate; this is not an automatic acceptance of a new baseline.
 
-[acv_paths.py](../tools/native-rexglue/acv_paths.py) recognises the marker
+[acv_paths.py](tools/native-rexglue/acv_paths.py) recognises the marker
 `acv-package.json`: the executable in `bin/game/`, the data in `data/game/`, profiles in
 `${XDG_DATA_HOME:-~/.local/share}/DEArmoredcore/acv/`, logs in
 `${XDG_STATE_HOME:-~/.local/state}/DEArmoredcore/acv/logs/`.
@@ -31,7 +62,7 @@ puts the directory of the selected runtime first in LD_LIBRARY_PATH. The ARTEM c
 
 ## Verified
 
-- [verification.json](../logs/acv-standalone-20261024/verification.json): 183 hashes in the first build,
+- [verification.json](logs/acv-standalone-20261024/verification.json): 183 hashes in the first build,
   a visible Qt/X11 window, the game launched from cwd `/`, runtime/GPU/FidelityFX and Qt
   loaded from a separate folder according to the actual process maps. There is no symlink
   to the source tree. The game probe ran for 20 s; the swapchain and pipelines were created.
@@ -45,7 +76,7 @@ puts the directory of the selected runtime first in LD_LIBRARY_PATH. The ARTEM c
 - Python: 15 settings, 9 profiles, 3 shm tests. Qt: the launcher ctest passed.
   A new regression test checks that the flock is kept by the child process after the parent
   closes the descriptor. The probe passes the descriptor to the game via pass_fds.
-- [X11 startup samples](../logs/acv-native-linux/20261024T000238328506Z/samples.json):
+- [X11 startup samples](logs/acv-native-linux/20261024T000238328506Z/samples.json):
   58 samples over 60.97 s with 0 orphans before/after, 25,139,380,224 free bytes before/after.
   Host main thread: ioctl 36/58; GPU Commands top frame in libc 41/58;
   DrawThread libc 31/58, sub_82BB58A8 9/58, __imp__sub_82AF5708 8/58.
@@ -57,11 +88,11 @@ puts the directory of the selected runtime first in LD_LIBRARY_PATH. The ARTEM c
 Game save/load, restoring a real save, isolation of two game profiles and the XUID inside a save;
 visual CAS/FSR; pacing/sound with the limiter; adaptive FOV/HUD, >60 FPS and visual accuracy of 10-bit output.
 The patched runtime is in a separate package as a candidate; the accepted development-build artifacts were not replaced.
-The current queue and criteria: [PLAN_GUI](../PLAN_GUI.MD).
+The current queue and criteria: [PLAN_GUI](kb:PLAN_GUI).
 
 ## Display, colour and frame pacing — 2026-10-24
 
-The [matrix of three runs](../logs/acv-display-20261024/matrix.json) records
+The [matrix of three runs](logs/acv-display-20261024/matrix.json) records
 35 s UltraWide/Bilinear, 35 s 16:10/CAS/FIFO and 35 s UltraWide/FSR/10-bit request.
 In all three the child exited with 0, with no new shm orphans; the probe exit 1 keeps the known
 optional system.properties diagnostic. No screenshots were taken.
@@ -71,7 +102,7 @@ overrides the guest video mode. The former `HasNonDefaultValue` treated an expli
 1280/720 as not overridden and took the width/height of the host window. An actual-source
 host test checked the defaults, independence from the host size, the resolution preset and
 an explicit guest mode. The SDK changes are reproduced by applying the earlier patches in sequence
-and [launcher-display-output.patch](../tools/native-rexglue/patches/launcher-display-output.patch).
+and [launcher-display-output.patch](tools/native-rexglue/patches/launcher-display-output.patch).
 The previous source bytes are kept in logs/acv-display-20261024/source-before.
 
 Confirmed geometry:
@@ -115,9 +146,9 @@ when 10 bits were requested. The package with the new iteration contains 184 fil
 A read-only GDB trace via `probe_linux.py --projection-trace LAYOUT_JSON`
 collected the arguments and output blocks without changing guest registers or memory.
 The layout was obtained by compiling `offsetof(PPCContext, ...)` from the SDK and tied to the SHA
-of the executable. [Source/ABI](../logs/acv-ultrawide-20261024/context_layout.cpp),
-[layout](../logs/acv-ultrawide-20261024/context_layout.json),
-[trace](../logs/acv-native-linux/20261024T115046780620Z/projection.json).
+of the executable. [Source/ABI](logs/acv-ultrawide-20261024/context_layout.cpp),
+[layout](logs/acv-ultrawide-20261024/context_layout.json),
+[trace](logs/acv-native-linux/20261024T115046780620Z/projection.json).
 
 The chain `0x82303138 → 0x82302520 → 0x82300948 → 0x82BC8980` is observed
 at start-up. In `0x82302520` r8/r9=1280/720; in `0x82BC8980`
@@ -126,8 +157,8 @@ matched the perspective `y=1/tan(f1/2), x=y/f2, z=f4/(f4-f3)`,
 the last rows `[0,0,z,1]`, `[0,0,-f3*z,0]`, with a maximum normalised
 error of 3.285e-7 against a threshold of 2e-6. This justifies interpreting the arguments as
 a vertical FOV ≈ 60°, aspect 16:9 and near/far 1/1000 for the observed calls.
-[Machine check](../logs/acv-ultrawide-20261024/perspective-check.json),
-[checking script](../tools/native-rexglue/analyze_projection_trace.py).
+[Machine check](logs/acv-ultrawide-20261024/perspective-check.json),
+[checking script](tools/native-rexglue/analyze_projection_trace.py).
 
 Limitation: the 64 samples have one set of inputs and come from the recompiled
 code, not from the original console. The main gameplay camera, HUD and culling are not yet tied to this
@@ -140,21 +171,21 @@ the new diagnostic option is so far only in the development tree.
 ## UltraWide: single-call experiment — 2026-10-24
 
 A temporary read-only 60 s trace with stacks covers eight 8 s windows,
-up to 8 samples per entry in each window: [trace](../logs/acv-native-linux/20261024T115603115026Z/projection.json).
+up to 8 samples per entry in each window: [trace](logs/acv-native-linux/20261024T115603115026Z/projection.json).
 After the diagnostic Return/Space presses other inputs appeared: FOV about 36–55°,
 near 1, far 450–13,000. All 64 matrices agree with the perspective formula,
 with a maximum normalised error of 3.853e-7:
-[check](../logs/acv-ultrawide-20261024/temporal-perspective-check.json).
+[check](logs/acv-ultrawide-20261024/temporal-perspective-check.json).
 This extends the earlier start-up sample, but does not prove the full gameplay semantics.
 
 In the retail `0x822B4428`, when the input field +0x48 is zero, the aspect is taken from object+0x4C0,
 the FOV from input+0x40 with a unit conversion, and it calls `0x82BC8980` at the address
 `0x822B450C` (LR=`0x822B4510`). The near/far values are taken from object+0x444/+0x448.
 The non-zero branch calls another helper `0x82BC8CC0`; it is not changed.
-[Raw PPC/.pdata](../logs/acv-ultrawide-20261024/822B4428.txt),
-[caller](../logs/acv-ultrawide-20261024/822B59C8.txt).
+[Raw PPC/.pdata](logs/acv-ultrawide-20261024/822B4428.txt),
+[caller](logs/acv-ultrawide-20261024/822B59C8.txt).
 
-Added [scene_aspect_experiment.cpp](../tools/native-rexglue/scene_aspect_experiment.cpp):
+Added [scene_aspect_experiment.cpp](tools/native-rexglue/scene_aspect_experiment.cpp):
 a strong override of `sub_82BC8980` through the existing weak-alias scheme, calling the
 original `__imp__sub_82BC8980`. By default it is a full pass-through.
 Only the explicit variable `ACV_EXPERIMENTAL_SCENE_ASPECT` (a finite number 1…4)
@@ -163,7 +194,7 @@ and the FOV must lie in (0, π). Only f2 is changed for the duration of the orig
 after the call the original f2 is restored. Other callers are not changed.
 
 Isolated build: `tmp/acv-ultrawide-test/`, host SHA `e3ab37044dc3037c9aa1ed7dae8fc13424a1e1b0e37dbae48a6a35b8b604355b`.
-[Build manifest](../tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv-test-build.json)
+[Build manifest](tmp/acv-rexglue-linux-indexed/out/build/linux-release/acv-test-build.json)
 records the selected display runtime/GPU and the unchanged config SHA 98d1c2ed….
 The previous development host is kept in `tmp/acv-ultrawide-before/`.
 The separate user-facing `../../ACV-Linux/` was not replaced by this build.
@@ -173,15 +204,15 @@ aspect 2.37037037; the other 58 kept 16:9. All 64 output matrices passed
 the check, max error 3.285e-7. Relative to 16:9, the horizontal projection factor decreases to
 0.75, and the mathematical horizontal coverage grows by 4/3;
 this is still not proof of a correct wide image on the screen.
-[Trace](../logs/acv-native-linux/20261024T120037853774Z/projection.json),
-[machine result](../logs/acv-ultrawide-20261024/aspect-trial-check.json).
+[Trace](logs/acv-native-linux/20261024T120037853774Z/projection.json),
+[machine result](logs/acv-ultrawide-20261024/aspect-trial-check.json).
 GDB child exit 0; the probe exit 1 keeps the earlier optional system.properties error;
 shm orphans 0 before/after. The two runs are not used as an FPS benchmark.
 
 The actual hook object passed 30 host boundary cases: the variable disabled/valid/invalid in the environment,
 the selected/foreign caller, the original aspect and the FOV range. A single call to the original,
 the restoration of f2 and the preservation of the returned r3 were verified.
-[Test source](../logs/acv-ultrawide-20261024/hook_boundary_test.cpp),
+[Test source](logs/acv-ultrawide-20261024/hook_boundary_test.cpp),
 SQLite operation `d6fd7504-54ba-438a-8db6-424f891e74db`.
 This is a check of the wrapper boundary with a stub of the original, not a parity check of the whole game.
 
@@ -205,8 +236,8 @@ system.properties. Shm orphans 0 before/after. The XE_SWAP intervals gave window
 and a stable 60 FPS is not confirmed. The user's visual assessment has not been received yet;
 HUD/crosshair/culling and the absence of distortion are not accepted. ACV-Linux
 was not replaced by this experimental build.
-[Result](../logs/acv-ultrawide-2560x1080-20261024/result.json),
-[run](../logs/acv-native-linux/20261024T120920332499Z/launch.json).
+[Result](logs/acv-ultrawide-2560x1080-20261024/result.json),
+[run](logs/acv-native-linux/20261024T120920332499Z/launch.json).
 
 ## TRG frontend and installation — 2026-10-25
 
@@ -215,9 +246,9 @@ The previous `../../ACV-Linux/start.sh` Qt package is unchanged. Earlier Qt evid
 document describes that checkpoint, not the current frontend. Runtimef3600aca remains a candidate;
 no RUNTIME_BASELINE promotion or full recovered-source claim is made.
 
-[Frontend source](../tools/acv-trg-launcher/main.cpp), [bridge](../tools/acv-trg-launcher/backend.py),
-[build/reproduction](../tools/acv-trg-launcher/README.md),
-[pinned dependencies](../tools/acv-trg-launcher/dependencies.json): C++17, TRG b384a28c,
+[Frontend source](tools/acv-trg-launcher/main.cpp), [bridge](tools/acv-trg-launcher/backend.py),
+[build/reproduction](tools/acv-trg-launcher/README.md),
+[pinned dependencies](tools/acv-trg-launcher/dependencies.json): C++17, TRG b384a28c,
 Dear ImGui1.92.9b, SDL2 release2.32.10, standalone target and OpenGL3.3.
 The six Ember pages retain the existing Python schema, typed values, UUID/XUID,
 profiles/backup/restore, presets, capability restrictions and atomic writes. Unsupported high FPS,
@@ -231,7 +262,7 @@ Checks:
 
 - Real SDL/X11 smoke renders all six pages with a resize and a Cyrillic glyph availability assertion;
   host and relocated package/font smokes pass. Physical controller/HiDPI remain untested.
-- [Development GUI integration](../logs/acv-trg-integration-20261025-r2/verification.json): selected
+- [Development GUI integration](logs/acv-trg-integration-20261025-r2/verification.json): selected
   executable/runtime/GPU/FidelityFX mappings, --session without --seconds, profile writer rejection,
   normal GUI exit while game stays alive and keeps its inherited lock, release after game exit.
   The first test asserted lock release before the supervisor finished draining logs; the test now
@@ -240,9 +271,9 @@ Checks:
   large streams/stdin, EPIPE, missing executable, timeout and game survival after owner destruction.
   Backend tests cover typed save/rejection, unchanged prior file on failure, reset preserving data,
   backup/restore. Native tests include fatal-log accounting and live/completed session telemetry.
-- [Actual ISO import](../logs/acv-trg-disc-import-20261025/verification.json): production TRG reader
+- [Actual ISO import](logs/acv-trg-disc-import-20261025/verification.json): production TRG reader
   and install boundary, title4E4D0853, all26 payload hashes match
-  [game manifest](../tools/native-rexglue/game_data_manifest.json), original ISO SHA unchanged,
+  [game manifest](tools/native-rexglue/game_data_manifest.json), original ISO SHA unchanged,
   existing install rejected and cancelled staging removed. Synthetic XDVDFS tests cover exact
   extraction bytes and wrong title; Python tests cover mismatch, symlink rejection and no-replace.
   Publication calls renameat2(NOREPLACE), so an existing installation is preserved. A silent nonzero
@@ -258,8 +289,8 @@ supervisor log is a regular file, so GUI closure cannot SIGPIPE the session. The
 own supervisor; normal PLAY is unbounded. Raw reports remain under logs/acv-trg-*.
 Earlier candidates ACV-Linux-TRG-candidate and ACV-Linux-TRG are superseded local checkpoints.
 
-Final artifact checkpoint: [checkpoint.json](../logs/acv-trg-final-20261025-r2/checkpoint.json),
-[verification.json](../logs/acv-trg-final-20261025-r2/verification.json), operation
+Final artifact checkpoint: [checkpoint.json](logs/acv-trg-final-20261025-r2/checkpoint.json),
+[verification.json](logs/acv-trg-final-20261025-r2/verification.json), operation
 9a0da1c6-e609-43f1-aa98-7767debec825. Launcher SHA526269c5…, runtimef3600aca…;
 manifest SHA c397227d734217dfe0f3d02580944cf66f5cac010f4cb013c0ffb96d027d1077.
 This exact package ran from `/`, closed by WM_DELETE_WINDOW while its game retained the profile lock,
@@ -282,7 +313,7 @@ accepted for personal data. No gameplay or runtime-baseline acceptance follows f
 
 New package: ../ACV-Linux-TRG-WaitFix-20261025/start.sh,185 files. Runtimeca04c1c6 fixes fractional WaitMultiple sleep; Audio Worker78.05%→0.56% of one core.190s child0/fatal0. Stable60FPS remains open. Manifest/dependencies verified, no Qt/ICU. Earlier packages and saves retained.
 
-WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](../logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
+WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, no Qt/ICU, game and writer lock survive GUI exit, lock releases after game exit; child0/fatal0. [Checkpoint](logs/acv-waitfix-package-smoke-20261025-r2/checkpoint.json).
 
 ## TRG package with wide_view and the refreshed runtime — 2026-10-27
 
@@ -309,7 +340,7 @@ WaitFix package X11 frontend/probe smoke PASS: cwd /, selected local libraries, 
 Accepted FOV/HUD package: ACV-Linux-TRG-FOVHUD-20261027 (`../../ACV-Linux-TRG-FOVHUD-20261027/start.sh`, исторический пакет; каталог сейчас отсутствует),
 185 manifest files, TRG without Qt/ICU. Prior WideView and Integrated packages
 are preserved. Exact hashes and evidence:
-[checkpoint](../logs/acv-fov-hud-refine-20261027/checkpoint.json).
+[checkpoint](logs/acv-fov-hud-refine-20261027/checkpoint.json).
 ELF6c02660d/runtimeebf338a1/GPU8fb12565/FFX0933159a.
 
 The user accepted parallel readback copying. start.sh now reproducibly exports
@@ -344,7 +375,7 @@ No gameplay FPS conclusion. Package manifest/dependencies PASS185files.
 Earlier same-pipeline Integrated package frontend check confirms launch from cwd/,
 correct library mappings and inherited accepted environment, game survival and
 profile lock after GUI exit, release after shutdown; child0/fatal0.
-[Frontend evidence](../logs/acv-selected-package-20261027/frontend/verification.json).
+[Frontend evidence](logs/acv-selected-package-20261027/frontend/verification.json).
 
 Colour integration remains RGB application output with actual surface reporting.
 The separate2560x1080 RGB10-bit request20261027T145115528083Z offered only
@@ -363,7 +394,7 @@ Protected config/save hashes unchanged; all owned game/build/test runs ended.
 
 New separate package (`../../ACV-Linux-TRG-Streaming-20261027-r2/start.sh`, исторический пакет; каталог сейчас отсутствует),185files,
 TRG without Qt/ICU, runtime544bdaae/GPUfe4550d5, unchanged ELF6c02660d and
-FFX0933159a. Full hashes in [checkpoint](../logs/acv-resource-streaming-20261027/checkpoint.json).
+FFX0933159a. Full hashes in [checkpoint](logs/acv-resource-streaming-20261027/checkpoint.json).
 Includes cache soft/hard/retention and archive preloading controls, streaming
 preset, custom resolution, observed modes and recovery validation.
 Accepted FOVHUD and RUNTIME_BASELINE unchanged. Candidate environment is explicitly
@@ -375,12 +406,12 @@ Manifest185 hashes/dependencies, six-page UI smoke and45s frontend proof from cw
 pass: local libraries, inherited environment, game/profile lock after GUI exit,
 second writer rejection, orderly shutdown and lock release. CAS/FSR suite skipped
 as requested. Two210s isolated probes pass; loading-time gain/model lifetime
-correction remain open. [Details](RESOURCE_STREAMING_20261027.md).
+correction remain open. [Details](kb:RESOURCE_STREAMING_20261027).
 
 
 ## ACV-Linux-release-1.0 — 2026-10-27
 
-User-requested release folder: [ACV-Linux-release-1.0/start.sh](../../ACV-Linux-release-1.0/start.sh).186 manifest files,
+User-requested release folder: [ACV-Linux-release-1.0/start.sh](../ACV-Linux-release-1.0/start.sh).186 manifest files,
 4163370903 bytes (~3.88GiB), current TRG launcher, copied game data and libraries,
 version1.0 in acv-package.json/manifest.json; RELEASE_NOTES.md records scope/limits.
 Based on the verified Streaming-r2 runtime544bdaae/GPUfe4550d5,
@@ -390,7 +421,7 @@ assembly. Previous packages, accepted baseline and original user data preserved.
 
 Manifest/dependency verification passes186files, no Qt/ICU or build-tree links.
 Real relocated launcher/startup evidence and final hashes:
-[release checkpoint](../logs/acv-release-1.0-20261027/checkpoint.json).
+[release checkpoint](logs/acv-release-1.0-20261027/checkpoint.json).
 CAS/FSR tests skipped as requested. Release naming does not establish new
 mission/FPS/image/loading-time acceptance; previous documented limits remain.
 
@@ -403,22 +434,22 @@ startup integration only. Gameplay FPS and resource-lifetime acceptance unchange
 
 ### User-confirmed native-frustum patch — 2026-10-28
 
-Existing [release1.0](../../ACV-Linux-release-1.0/start.sh) now contains
+Existing [release1.0](../ACV-Linux-release-1.0/start.sh) now contains
 ELFefa4756c; runtime544bdaae/GPUfe4550d5/FFX0933159a retained.
 patch_level2026-10-28-native-frustum,186 manifest hashes/dependencies pass.
 User confirmed the UltraWide edge fix;160s final runtime child0/fatal0 and both
 camera paths eligible=patched. Previous ELF/metadata have a checksum-verified
 backup; baseline records exact accepted artifacts and limited scope.
-[Checkpoint and scope](../logs/acv-engine-offscreen-20261028/checkpoint.json),
-[engine explanation](ENGINE_OFFSCREEN_20261028.md). CAS/FSR effects untested.
+[Checkpoint and scope](logs/acv-engine-offscreen-20261028/checkpoint.json),
+[engine explanation](kb:ENGINE_OFFSCREEN_20261028). CAS/FSR effects untested.
 
 ## Interface polish — 2026-10-28
 
-The current release entry is [start.sh](../../ACV-Linux-release-1.0/start.sh).
+The current release entry is [start.sh](../ACV-Linux-release-1.0/start.sh).
 Patch level is `2026-10-28-native-frustum-ui`; this updates the launcher and its
 Python bridge/schema messages, keeping the accepted ELF/runtime/GPU/FidelityFX.
-[Publication and hashes](../logs/acv-launcher-polish-20261028/publication.json),
-[previous files and hashes](../logs/acv-launcher-polish-20261028/release-before/sha256.json).
+[Publication and hashes](logs/acv-launcher-polish-20261028/publication.json),
+[previous files and hashes](logs/acv-launcher-polish-20261028/release-before/sha256.json).
 
 - `preview` uses the existing schema without saving. The UI submits it after
   400 ms without changes, ignores stale results and refreshes available options
@@ -462,8 +493,8 @@ were checked again after the test.
 ## Launcher options — 2026-10-28
 
 Current patch: `2026-10-28-launcher-options` in the existing release1.0.
-[Publication hashes](../logs/acv-launcher-options-20261028/publication.json),
-[previous files](../logs/acv-launcher-options-20261028/release-before/sha256.json).
+[Publication hashes](logs/acv-launcher-options-20261028/publication.json),
+[previous files](logs/acv-launcher-options-20261028/release-before/sha256.json).
 
 - The process now initializes UTF-8 LC_CTYPE before SDL creates the window.
   SDL X11 calls XmbTextListToTextProperty: the previous C locale produced a
@@ -509,7 +540,7 @@ startup pass (`dca190cb-4ae8-4031-9b0f-1eb952b7901d`, child0/fatal0), with exist
 profile-lock lifecycle retained. This is title/startup verification, not gameplay.
 The same tested ELF is installed in release1.0; runtime/GPU/FFX and protected
 config/save/settings hashes are preserved. Previous ELF/metadata have verified
-backups. [Checkpoint](../logs/acv-game-window-title-20261028/checkpoint.json).
+backups. [Checkpoint](logs/acv-game-window-title-20261028/checkpoint.json).
 
 ## Visible guidance and resolution groups — 2026-10-28
 
@@ -534,8 +565,8 @@ FPS remains30/60/120, default60. Accepted game ELF/runtime/GPU/FFX are preserved
 Build, three focused backend checks and actual App regression pass, alongside
 exact-package six-page rendering with Cyrillic and nonempty draw data. Package
 hash/dependency verification and compact-document link checks pass.
-[Checkpoint](../logs/acv-launcher-guidance-20261028/checkpoint.json),
-[publication/rollback hashes](../logs/acv-launcher-guidance-20261028/publication.json).
+[Checkpoint](logs/acv-launcher-guidance-20261028/checkpoint.json),
+[publication/rollback hashes](logs/acv-launcher-guidance-20261028/publication.json).
 No game session or CAS/FSR effect test was needed for these interface changes.
 
 ## Resolution picker ID conflict — 2026-10-28
@@ -561,4 +592,54 @@ Fixed actual-page regression passes with1 matching item per ID
 warning remains enabled. Updated release1.0 launcher only; game artifacts unchanged.
 User's live launcher/game processes were not stopped. Existing launcher instances
 need a restart to use the replacement binary.
-[Checkpoint and rollback hashes](../logs/acv-launcher-id-conflict-20261028/checkpoint.json).
+[Checkpoint and rollback hashes](logs/acv-launcher-id-conflict-20261028/checkpoint.json).
+
+## MangoHud toggle — 2026-10-30
+
+Added a persisted `launcher.mangohud` boolean to the existing settings backend and a TRG switch labeled “MangoHud в игре”. It applies to the Vulkan game child process on its next launch. The Linux probe supports `--mangohud` and `--no-mangohud`; an enabled request fails clearly if the host `mangohud` command is absent. The child environment is copied, preserving user MangoHud config, Vulkan layer settings and `LD_PRELOAD`. The default remains off. The switch does not inject MangoHud into the launcher's OpenGL window.
+
+The local release package now has patch level `2026-10-30-settings-review`,189manifest-checked files and validated adaptive presets. Source/settings/interface tests, isolated package UI smoke and the capped startup check pass. Replaced files and protected hashes are recorded in `logs/acv-settings-review-20261030/`. [Current evidence and limits](kb:LAUNCHER_SETTINGS_20261030).
+
+The initial dry-run only proved environment forwarding. The later112s startup check confirmed actual MangoHud loading and Guest row consumption, with Host30.0FPS versus Guest30.0002swaps/s. Current patch is `2026-10-30-settings-review` (189manifest files); mission mismatch remains unreproduced. [Current presets, counters and limits](kb:LAUNCHER_SETTINGS_20261030).
+
+## Профили графики и подсказка дизеринга — 2026-10-30
+
+Профили переименованы в интерфейсе (id в `settings.json`/`GRAPHICS_PRESETS` не менялись): `compatibility` → «Производительность», `quality` → «Графика», `streaming` («Плавная загрузка») → «Плавность». Для дизеринга добавлена подсказка в TRG и Qt лаунчерах.
+
+| Профиль | Анизотропия | Эффект вывода | Кэш soft/hard МиБ | Удержание, с | Подгрузка, МиБ |
+|---|---|---|---|---|---|
+| Производительность | 2x | bilinear, без AA и дизеринга | 768 / 1536 | 120 | 16 |
+| Графика | 2x | FSR 1 (экспериментально, нужен FidelityFX и «Экспериментальные настройки») | По VRAM/RAM; здесь4096 / 4608, с резервом | 800 | 64 |
+| Плавность | 4x | bilinear, дизеринг вкл. | 1536 / 2048 | 300 | 32 |
+
+В схему добавлено значение `texture_cache_retention_s=800`. Значения профилей подобраны по логике и не измерялись на FPS. `test_streaming_settings` проверяет, что каждый профиль проходит валидацию и даёт ожидаемые cvar.
+
+## MangoHud и RenderDoc — 2026-10-30
+
+Причина неверного FPS в MangoHud подтверждена только частично: рабочий каталог `tmp/acv-rexglue-linux-indexed/out/build/linux-release` содержал `librexruntime.so` без opt-in защиты `renderdoc-opt-in.patch`, и игра подгружала `/usr/lib/librenderdoc.so` в каждый запуск (LD_DEBUG: сразу после init `librexgpu-xenos.so`; в `/proc/PID/maps` 5 записей RenderDoc без `--renderdoc`). Хуки RenderDoc и слой MangoHud одновременно перехватывали present. В каталог поставлены `librexruntime.so`, `librexgpu-xenos.so`, `libamd_fidelityfx_vk.so` из релизного пакета (`tmp/acv-install-package-check/bin/game`); после замены RenderDoc в процессе не загружен, MangoHud загружен. Прежние файлы: `logs/acv-renderdoc-gate-20261030/live-before/`. Ранее helper снимал унаследованный `ENABLE_VULKAN_RENDERDOC_CAPTURE`. После текущей проверки это поведение убрано: переменная захвата сохраняется, поскольку причинная связь со счётчиком не доказана, а явный запрос пользователя должен соблюдаться. [Текущая проверка Host/Guest](kb:LAUNCHER_SETTINGS_20261030).
+
+Не проверено: исправление счётчика FPS в геймплее (игра в этих запусках оставалась на загрузке) и чёрные текстуры при запущенном RenderDoc.
+
+## Лимит FPS: 120 и «Без лимита» — 2026-10-30
+
+`fps_limit` теперь принимает 30, 60, 120 и 0 («Без лимита»; `--frame_limit_fps=0` отключает пейсинг в `command_processor.cpp`). Проверено без запуска игры: для всех значений и обоих состояний VSync генерируется ожидаемый `--frame_limit_fps`; рантайм без `frame_limit_fps` отклоняет значения не 60; недопустимые (-1, 144, bool, строки) отклоняются. При VSync=вкл. частоту ограничивает монитор (FIFO), поэтому для 120 и «Без лимита» нужно выключить VSync; темп игровой логики выше 60 не проверен.
+
+Замер (VSync выкл., 90 с на значение, `pacing` из runtime.log, загрузка/меню/начало игры, сцена не геймплейная): лимит 30 → p95 33,4–33,7 мс (≈30/с) в стабильных окнах, провалы в других окнах вызваны паузами загрузки (до 7,7 с); лимит 120 → стабильные окна 61–70/с (p95 17–18 мс); «Без лимита» → те же ≈61/с (единственный всплеск 736/с в первом окне запуска, до первого кадра игры). Вывод: лимит 30 работает; 120 и «Без лимита» значения принимают и передают в рантайм, но игра сама подаёт ≈60 кадров/с, поэтому выигрыша выше 60 нет. Причина (guest vblank/внутренний лимитер игры) не установлена; геймплей не проверялся.
+
+## Управление: клавиатура и мышь / клавиатура / геймпад — 2026-10-30
+
+- **Конфиг:** `launcher.input_mode` в `settings.json` — `keyboard_mouse` (по умолчанию, прежнее поведение), `keyboard`, `gamepad`; проверяется `acv_settings.launcher_input_mode`, неверное значение отклоняется при сохранении и запуске. Три значения вместо двух из задачи: интерфейс предлагает «Клавиатура и мышь / Клавиатура / Геймпад».
+- **Раскладки:** `input_keyboard.ini` (прежний `input-profile.json`, перенесён) и `input_gamepad.ini`; `[input]` — cvar SDK, `[env]` — переменные окружения (`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1` для геймпада; значение пользователя не перезаписывается). Режим «Клавиатура» берёт тот же ini, ставит `mnk_mouse=false` и убирает LMB/RMB/MMB из назначений. Загрузка раскладок и поиск контроллеров — `acv_input.py`.
+- **Запуск:** лаунчер передаёт `--settings`; `probe_linux.py` берёт режим из них, `--controls keyboard-mouse|keyboard|gamepad` переопределяет на один запуск; в `launch.json` записаны `controls` и `input_layout` (опции, найденные контроллеры, статус).
+- **Интерфейс (TRG):** переключатель «Управление» и строка «Контроллер» с кнопкой «Обновить»; статус берётся из `/proc/bus/input/devices` (устройства `js*`) и обновляется при каждом снимке состояния.
+- **Проверено:** `test_input_modes.py` (раскладки, детект на фикстуре, валидация, обмен через backend, сухой запуск probe для трёх режимов и неверного значения). **Не проверено:** подхват раскладок самой игрой с реальным геймпадом и клавиатурой, горячее подключение контроллера, сопоставление кнопок для нестандартных геймпадов.
+
+## Пересборка рантайма и GPU-плагина — 2026-10-30
+
+`librexruntime.so` (исправление тоста достижений: UI-поток больше не перерисовывает кадр постоянно) и `librexgpu-xenos.so` пересобраны из `tools/rexglue-sdk` (`tmp/acv-sdk-ffx-build`, Release) и установлены в `ACV-Linux-release-1.0/bin/game`; манифест и `runtime_hashes` обновлены, `verify_package.py` проходит. GPU-плагин ранее не собирался из-за `submission_fence_wait.h`: он включал `vulkan_core.h` раньше `VK_ENABLE_BETA_EXTENSIONS`; в обе копии заголовка добавлен тот же define, что в `rex/ui/vulkan/api.h`. Новый плагин включает неопубликованные патчи (fence, readback, swap-trace) на момент установки не проверялся в игре. Позже112s startup с MangoHud прошёл child0/fatal0; это не приёмка миссий или readback-оптимизаций, см. [проверку счётчиков](kb:LAUNCHER_SETTINGS_20261030). Откат: файлы из `logs/acv-gpu-plugin-20261030/release-before/` и `logs/acv-toast-fix-20261030/release-before/`, затем пересчёт хешей в `manifest.json`.
+
+## Исправление падения лаунчера на страницах «Экран»/«Цвет» — 2026-10-30
+
+Лаунчер завершался с `json.exception.type_error.306 (cannot use value() with null)`, когда в `display_info` лежали `null` вместо данных последней сессии (`applied`, элементы `monitors`/`display_modes`). Воспроизведено `acv-launcher --smoke-frames 300` (падал и прежний бинарник), место найдено через `catch throw` в gdb: `App::ColorPage`. Проверки `is_object()` добавлены в `ColorPage` и `ScreenPage`; `interface_test` теперь рисует страницы Экран/Цвет/Графика с null-данными. Исправленный `acv-launcher` установлен в `ACV-Linux-release-1.0` и `-rebuild`, манифесты обновлены.
+
+Текущая проверка наборов идёт через общий backend: применяются к черновику без записи, сохраняют геометрию, отключают дизеринг для10bit и проверяют FidelityFX перед FSR1. Видимое описание дизеринга, расширенные пределы кэша в границах SDK и причины fallback описаны в [актуальном отчёте](kb:LAUNCHER_SETTINGS_20261030).

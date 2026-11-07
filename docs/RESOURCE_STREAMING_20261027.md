@@ -9,7 +9,7 @@ remain untested by user instruction; game tests request only2560×1080.
 Separate candidate: start.sh (`../../ACV-Linux-TRG-Streaming-20261027-r2/start.sh`, исторический пакет; каталог сейчас отсутствует).
 185 files, TRG without Qt/ICU; prior accepted FOVHUD package and baseline unchanged.
 Full artifact hashes, operation IDs, protected-data hashes and comparison:
-[checkpoint](../logs/acv-resource-streaming-20261027/checkpoint.json).
+[checkpoint](logs/acv-resource-streaming-20261027/checkpoint.json).
 
 Shared settings/backend now expose target/hard texture-cache limits, retention
 and archive readahead. Defaults:1024/1536MiB,180s, auto16MiB on capable runtimes.
@@ -91,7 +91,7 @@ Retail script registration Scr_UnloadInGameResource points through82589490 to
 82A0E748 is a virtual dispatch through vtable+4, not evidence of a fixed unload
 interval.829F1838 calls829F1678 and829F13F8. Ghidra body boundaries/gaps are
 recorded; snapshots are evidence, not recovered C++ ownership semantics.
-[Root listing](../decompilation/evidence/acv/82586050-20261027T155029.640765Z/listing.txt).
+[Root listing](decompilation/evidence/acv/82586050-20261027T155029.640765Z/listing.txt).
 
 SDK src/kernel/xboxkrnl/xboxkrnl_io.cpp:213 forces NtReadFile through the
 synchronous branch even for asynchronous handles;244 converts the already
@@ -111,4 +111,4 @@ skip scripted cleanup. A representative return-to-area/mission cycle and a longe
 memory plateau check are needed before claiming this part complete.
 
 Previous active documents preserved byte-for-byte with SHA-256 in
-[docs snapshot](../logs/acv-resource-streaming-20261027/docs-before/sha256.json).
+[docs snapshot](logs/acv-resource-streaming-20261027/docs-before/sha256.json).

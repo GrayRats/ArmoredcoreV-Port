@@ -11,10 +11,14 @@ node tools/decomp-logging/cli.mjs run --stage linux_play --timeout-ms 130000 -- 
 ```
 
 The probe deliberately stops after the requested duration (maximum 300 seconds).
-Use `--controls gamepad` to disable the synthetic controller. The optional
-`--user-root` preserves setup/profile/cache between probes. Controls are stored
-in `tools/native-rexglue/input-profile.json`; additional SDK cvars passed with
-`--extra=--mnk_sensitivity=0.5` override the profile for one run.
+Input mode comes from `launcher.input_mode` in `settings.json` (`keyboard_mouse`, `keyboard`, `gamepad`;
+default `keyboard_mouse`) or from `--controls keyboard-mouse|keyboard|gamepad` for one run. `keyboard`
+turns mouse look off and drops mouse-button bindings; `gamepad` disables the synthetic controller and sets
+`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1` (a value already in the environment wins). The optional
+`--user-root` preserves setup/profile/cache between probes. Layouts live in
+`tools/native-rexglue/input_keyboard.ini` and `input_gamepad.ini` (`[input]` = SDK cvars, `[env]` =
+environment); additional SDK cvars passed with `--extra=--mnk_sensitivity=0.5` override the layout for one run.
+The launcher lists connected controllers (kernel `js*` devices from `/proc/bus/input/devices`) next to the switch.
 
 | Input | Controller input |
 |---|---|
@@ -45,7 +49,7 @@ mouse look when its overlay captures the mouse. Focus loss clears held inputs.
   checked by SQLite operation `54777d79-d5df-4a12-9785-128bdb841c12`.
 - **Not verified:** gameplay camera response, sensitivity parity and complete
   controller action coverage in a playable scene. Frontend/setup and runtime
-  blockers in [PLAN_B.md](PLAN.md) remain.
+  blockers in [PLAN](kb:PLAN) remain.
 - This run also records repeated guest NULL writes on thread `0xF800152C`;
   no guest PC or causal connection to input has been established. Earlier probes
   observed the same message during shutdown. SDK source of the diagnostic:

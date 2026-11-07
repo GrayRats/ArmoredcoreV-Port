@@ -1,11 +1,11 @@
 {
-  "canonical": "docs/PLAN.md",
+  "canonical": "tools/acv-context/docs/PLAN.md",
   "date": "2026-10-22",
-  "archive": "docs/fine/planning-originals-20261022.tar.gz",
+  "archive": "tools/acv-context/docs/fine/planning-originals-20261022.tar.gz",
   "archive_sha256": "258e7a5a3d3b0d90985ba661e1942796e8493b56caa3622cda973c9ad5e428ed",
   "originals": [
     {
-      "path": "docs/PLAN.md",
+      "path": "tools/acv-context/docs/PLAN.md",
       "bytes": 55791,
       "sha256": "bb8978378dccd66b519b00a0b01c6455785d3f7d57ed6a75a46593068be5e2b2",
       "headings": [
@@ -210,7 +210,7 @@
       ]
     },
     {
-      "path": "docs/PLAN_B.md",
+      "path": "tools/acv-context/docs/PLAN_B.md",
       "bytes": 30615,
       "sha256": "85cf0bc7ee1ef777da929b2a351737ac0b4459f9aa44c0031081e7798b545039",
       "headings": [
@@ -375,11 +375,11 @@
       "links": [
         {
           "line": 3,
-          "target": "docs/PLAN_B.md"
+          "target": "tools/acv-context/docs/PLAN_B.md"
         },
         {
           "line": 4,
-          "target": "docs/LINUX_INPUT.md"
+          "target": "tools/acv-context/docs/LINUX_INPUT.md"
         },
         {
           "line": 20,
@@ -387,11 +387,11 @@
         },
         {
           "line": 26,
-          "target": "docs/fine/NATIVE_HOST_L3.md"
+          "target": "tools/acv-context/docs/fine/NATIVE_HOST_L3.md"
         },
         {
           "line": 27,
-          "target": "docs/ACV_TIMING.md"
+          "target": "tools/acv-context/docs/ACV_TIMING.md"
         },
         {
           "line": 27,
@@ -399,11 +399,11 @@
         },
         {
           "line": 30,
-          "target": "docs/fine/NATIVE_DECOMP_82303138.md"
+          "target": "tools/acv-context/docs/fine/NATIVE_DECOMP_82303138.md"
         },
         {
           "line": 31,
-          "target": "docs/fine/NATIVE_SCALAR_830D68F0.md"
+          "target": "tools/acv-context/docs/fine/NATIVE_SCALAR_830D68F0.md"
         },
         {
           "line": 32,
@@ -411,15 +411,15 @@
         },
         {
           "line": 33,
-          "target": "docs/fine/NATIVE_DECOMP_82300948.md"
+          "target": "tools/acv-context/docs/fine/NATIVE_DECOMP_82300948.md"
         },
         {
           "line": 37,
-          "target": "docs/fine/NATIVE_DECOMP_82300948.md"
+          "target": "tools/acv-context/docs/fine/NATIVE_DECOMP_82300948.md"
         },
         {
           "line": 38,
-          "target": "docs/fine/NATIVE_DECOMP_82300948.md"
+          "target": "tools/acv-context/docs/fine/NATIVE_DECOMP_82300948.md"
         },
         {
           "line": 39,
@@ -431,23 +431,23 @@
         },
         {
           "line": 44,
-          "target": "docs/PLAN.md"
+          "target": "tools/acv-context/docs/PLAN.md"
         },
         {
           "line": 44,
-          "target": "docs/PROGRESS.md"
+          "target": "tools/acv-context/docs/PROGRESS.md"
         },
         {
           "line": 44,
-          "target": "docs/ARCHITECTURE.md"
+          "target": "tools/acv-context/docs/ARCHITECTURE.md"
         },
         {
           "line": 70,
-          "target": "docs/NATIVE_REXGLUE_LINUX.md"
+          "target": "tools/acv-context/docs/NATIVE_REXGLUE_LINUX.md"
         },
         {
           "line": 71,
-          "target": "docs/PLAN.md"
+          "target": "tools/acv-context/docs/PLAN.md"
         }
       ]
     }
@@ -458,20 +458,20 @@
   "updated_references": [
     "X360_PROJECT_STATE.md",
     "AGENTS.md",
-    "docs/PROGRESS.md",
-    "docs/LINUX_INPUT.md",
-    "docs/fine/REXGLUE_INSTALL.md",
-    "docs/fine/UNITY_ARCHITECTURE.md",
-    "docs/fine/XENONRECOMP.md",
-    "docs/fine/XENON_MORE_INSTRUCTIONS.md",
-    "docs/fine/NATIVE_HOST_L3.md",
-    "docs/fine/NATIVE_XEX_RUNTIME.md",
-    "docs/fine/NATIVE_DECOMP_82300948.md",
-    "docs/fine/NATIVE_DECOMP_82303138.md",
-    "docs/fine/NATIVE_DECOMP_8245FA20.md",
-    "docs/fine/NATIVE_SCALAR_830D68F0.md",
-    "docs/fine/NATIVE_SCALAR_830D6AB0.md",
-    "docs/fine/README.md"
+    "tools/acv-context/docs/PROGRESS.md",
+    "tools/acv-context/docs/LINUX_INPUT.md",
+    "tools/acv-context/docs/fine/REXGLUE_INSTALL.md",
+    "tools/acv-context/docs/fine/UNITY_ARCHITECTURE.md",
+    "tools/acv-context/docs/fine/XENONRECOMP.md",
+    "tools/acv-context/docs/fine/XENON_MORE_INSTRUCTIONS.md",
+    "tools/acv-context/docs/fine/NATIVE_HOST_L3.md",
+    "tools/acv-context/docs/fine/NATIVE_XEX_RUNTIME.md",
+    "tools/acv-context/docs/fine/NATIVE_DECOMP_82300948.md",
+    "tools/acv-context/docs/fine/NATIVE_DECOMP_82303138.md",
+    "tools/acv-context/docs/fine/NATIVE_DECOMP_8245FA20.md",
+    "tools/acv-context/docs/fine/NATIVE_SCALAR_830D68F0.md",
+    "tools/acv-context/docs/fine/NATIVE_SCALAR_830D6AB0.md",
+    "tools/acv-context/docs/fine/README.md"
   ],
   "runtime_started": false
 }

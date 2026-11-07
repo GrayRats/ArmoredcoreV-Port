@@ -1,6 +1,6 @@
 # Прогресс игры, лаунчера и FPS — 2026-10-27
 
-Актуальная работа: [CPU parallel/readback](CPU_PARALLEL_READBACK_20261027.md) — параллельная копия принята пользователем; игровые запуски завершены, перенос в пакет открыт.
+Актуальная работа: [CPU parallel/readback](kb:CPU_PARALLEL_READBACK_20261027) — параллельная копия принята пользователем; игровые запуски завершены, перенос в пакет открыт.
 
 Оценка плана A–F: **около65% выполнено,35% осталось, погрешность ±10п.п.**
 Это оценка функций и приёмки; процент восстановления оригинального retail source
@@ -10,7 +10,7 @@
 
 - Игра и TRG-лаунчер упакованы отдельно. Актуальная экспериментальная линия
   WideView-пакета (`../../ACV-Linux-TRG-WideView-20261027/start.sh`, исторический пакет; каталог сейчас отсутствует) описана в
-  [LAUNCHER_PACKAGE](LAUNCHER_PACKAGE.md); запуск и работу подтвердил пользователь.
+  [LAUNCHER_PACKAGE](kb:LAUNCHER_PACKAGE); запуск и работу подтвердил пользователь.
   Настройки/профили, UUID/XUID, блокировка записи, backup/restore используют общий
   Python backend. Контроллер/HiDPI и полный игровой save/load ещё требуют приёмки.
 - Стабилизирован запуск: повторный user_language, shm-файлы, зависшее/невидимое
@@ -19,7 +19,7 @@
 - Исправлялись зависания миссий/потоков, ложная нехватка6МБ, Unicode/имя ARTEM
   и ожидания таймеров. Пользователь подтвердил работающую миссию; это не проверка
   всех миссий/переходов/сохранений. Детали и границы — в
-  [NATIVE_REXGLUE_LINUX](NATIVE_REXGLUE_LINUX.md).
+  [NATIVE_REXGLUE_LINUX](kb:NATIVE_REXGLUE_LINUX).
 - FSI/full сохраняет рабочую картинку; чёрный gameplay в FBO остаётся отклонённым
   вариантом. Переключение на него ради FPS не принималось.
 - В отдельной линии wide_view реализованы экспериментальные расширение обзора
@@ -59,13 +59,13 @@
 
 Воспроизводимый тест восстанавливает базовый алгоритм обратным zero-fuzz patch;
 отдельные проверки сверяют байты, границы и время жизни ресурсов.
-[Минимальный префикс и первый benchmark](../logs/acv-readback-minimal-admission-20261026/checkpoint.json),
-[выбор слота и mixed-size benchmark](../logs/acv-readback-fitting-slot-20261027/checkpoint.json).
+[Минимальный префикс и первый benchmark](logs/acv-readback-minimal-admission-20261026/checkpoint.json),
+[выбор слота и mixed-size benchmark](logs/acv-readback-fitting-slot-20261027/checkpoint.json).
 
 ## Последняя подготовленная сборка
 
 Каталог: `tmp/acv-fitting-slot-fix/`. Полные SHA256 — в
-[build.json](../tmp/acv-fitting-slot-fix/build.json).
+[build.json](tmp/acv-fitting-slot-fix/build.json).
 
 - ELF08045fae, runtimeebf338a1, GPUf1ccdfb9, сохранённый FFX0933159a.
 - SDK-сборка, selector/teardown ASan/UBSan, реальный Vulkan/SDK и проверка90с
@@ -83,7 +83,7 @@
 
 UUID/XUID сохранены. Перед копированием создан проверенный backup исходного
 тестового профиля. Основной save и canonical acv.config сверены с прежними SHA256.
-[План, манифесты и backup](../logs/acv-readback-fitting-slot-20261027/scripted-comparison-plan.json).
+[План, манифесты и backup](logs/acv-readback-fitting-slot-20261027/scripted-comparison-plan.json).
 
 Найдена ранее рабочая последовательность SDK-ввода: Return на12с, Space каждые8с
 от20 до100с. Её источник — запуски20261026T193756597623Z и
@@ -108,8 +108,8 @@ UUID/XUID сохранены. Перед копированием создан �
 
 Bulk SDK Memory Reset/Save/Restore остаются непроверенными (текущих callers не
 найдено); это отличается от игровых save-файлов, чей XFile-путь проверен.
-Полная очередь приёмки — [PLAN_GUI](../PLAN_GUI.MD), краткая точка продолжения —
-[STATE](X360_PROJECT_STATE.md).
+Полная очередь приёмки — [PLAN_GUI](kb:PLAN_GUI), краткая точка продолжения —
+[STATE](kb:X360_PROJECT_STATE).
 
 ## Runtime-проверка и следующий барьер — 2026-10-27
 
@@ -149,8 +149,8 @@ frame-identical oracle. Фактический fullscreen после фокус�
 всего прироста CPU. Свежая retail-дизассемблировка и корректная стратегия
 ожидания ещё нужны; generated code не изменён, fence не обходился.
 
-[Полные метрики и сохранность config/save](../logs/acv-readback-fitting-slot-20261027/runtime-comparison.json),
-[исследование polling](../logs/acv-readback-fitting-slot-20261027/spin-investigation.json).
+[Полные метрики и сохранность config/save](logs/acv-readback-fitting-slot-20261027/runtime-comparison.json),
+[исследование polling](logs/acv-readback-fitting-slot-20261027/spin-investigation.json).
 Все запуски и профилировщики завершены; основной пакет не заменён.
 Следующий шаг: идентифицировать игровой участок и проверить корректное ожидание
 guest completion без изменения семантики fence. Вопрос об экране отправлен
@@ -161,4 +161,4 @@ guest completion без изменения семантики fence. Вопро�
 в отдельный FOVHUD-пакет (`../../ACV-Linux-TRG-FOVHUD-20261027/start.sh`, исторический пакет; каталог сейчас отсутствует).
 CAS/FSR интегрированы без тестов. Другие разрешения/FPS/save/controller задачи
 пропущены; дальнейшая работа только FOV/HUD2560×1080.
-[Последняя точка продолжения](X360_PROJECT_STATE.md).
+[Последняя точка продолжения](kb:X360_PROJECT_STATE).
