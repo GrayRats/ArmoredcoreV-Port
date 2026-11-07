@@ -1,0 +1,186 @@
+--- a/src/graphics/vulkan/readback_pool_selection.h
++++ b/src/graphics/vulkan/readback_pool_selection.h
+@@ -4,6 +4,8 @@
+ // The retirement callback must not remove or destroy the pool slot.
+ #include <cstdint>
+ #include <memory>
++#include <type_traits>
++#include <algorithm>
+ #include <vector>
+ namespace acv {
+ template<class Slot,class Retire>
+@@ -23,4 +25,50 @@
+   selected=oldest;
+   return true;
+ }
++
++// Allocation pressure can coexist with idle small slots that are unusable for
++// the new payload. Plan using the exact VkMemoryRequirements::size, not payload
++// length. Never partially trim when the complete plan cannot satisfy both caps.
++enum class IdleReclaimResult { kNotPossible, kReclaimed, kFailed };
++template<class Slot, class Retire, class Release>
++IdleReclaimResult ReclaimIdleUndersizedSlots(
++    std::vector<std::unique_ptr<Slot>>& slots, uint64_t& allocated,
++    uint64_t payload_bytes, uint64_t allocation_bytes, size_t max_slots,
++    uint64_t budget, Retire&& retire, Release&& release) {
++  static_assert(std::is_nothrow_invocable_v<Release, Slot&>);
++  if (!payload_bytes || allocation_bytes < payload_bytes || !max_slots ||
++      allocation_bytes > budget || allocated > budget)
++    return IdleReclaimResult::kNotPossible;
++  const auto fits = [&](uint64_t freed, size_t count) {
++    return slots.size() - count < max_slots &&
++           allocated - freed <= budget - allocation_bytes;
++  };
++  if (fits(0, 0)) return IdleReclaimResult::kNotPossible; // No pressure to repair.
++  std::vector<Slot*> reclaim;
++  try { reclaim.reserve(slots.size()); }
++  catch (...) { return IdleReclaimResult::kFailed; }
++  uint64_t freed = 0;
++  for (const auto& slot : slots) {
++    if (slot->occupied || !slot->id || slot->capacity >= payload_bytes) continue;
++    if (!slot->allocation || slot->allocation > allocated - freed)
++      return IdleReclaimResult::kFailed; // Inconsistent accounting, never wrap.
++    reclaim.push_back(slot.get()); freed += slot->allocation;
++    if (fits(freed, reclaim.size())) break;
++  }
++  if (!fits(freed, reclaim.size())) return IdleReclaimResult::kNotPossible;
++  // Publication callbacks hold raw Slot pointers. Retire/collect EVERY selected
++  // ID before freeing ANY slot, even though occupied=false means published.
++  // Neither callback may add, remove or replace slots. Only release destroys Vk
++  // resources; owner-thread slot removal happens here after the queue is safe.
++  try {
++    for (auto* slot : reclaim) if (!retire(slot->id)) return IdleReclaimResult::kFailed;
++  } catch (...) { return IdleReclaimResult::kFailed; }
++  for (auto* slot : reclaim) if (slot->occupied) return IdleReclaimResult::kFailed;
++  for (auto* slot : reclaim) release(*slot);
++  slots.erase(std::remove_if(slots.begin(), slots.end(), [&](const auto& slot) {
++    return std::find(reclaim.begin(), reclaim.end(), slot.get()) != reclaim.end();
++  }), slots.end());
++  allocated -= freed;
++  return IdleReclaimResult::kReclaimed;
++}
+ } // namespace acv
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -605,6 +605,9 @@
+                          : acv::gpu_profile::Stage::kGeneralPoolWait);
+                  return cp.AwaitReadbackSubmission(ticket);
+                }) {
++    const char* reclaim = std::getenv("ACV_GENERAL_READBACK_RECLAIM_IDLE");
++    reclaim_idle = reclaim && std::strcmp(reclaim, "1") == 0;
++    if (reclaim_idle) REXGPU_INFO("ACV idle undersized readback slot reclamation experiment enabled");
+     // Explicit experiment only; default producer keeps the serial publication.
+     const char* threads = std::getenv("ACV_PARALLEL_READBACK_COPY");
+     if (threads && (std::strcmp(threads, "2") == 0 || std::strcmp(threads, "4") == 0)) {
+@@ -624,6 +627,9 @@
+   Bridge bridge;
+   std::vector<std::unique_ptr<Slot>> slots;
+   VkDeviceSize allocated = 0;
++  bool reclaim_idle = false;
++  uint64_t count_pressure = 0, byte_pressure = 0, reclaimed_slots = 0;
++  double last_pressure_trace = -1;
+   uint64_t next_slot = 1;
+   Bridge::StatePtr prepared;
+   memory::Memory::PhysicalGpuWriteScope* scope = nullptr;
+@@ -4651,7 +4657,84 @@
+     if (!candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
+   }
+   constexpr VkDeviceSize budget = 64ULL << 20;
++  std::unique_ptr<GeneralReadbackContext::Slot> fresh;
+   if (!slot && (context.slots.size() >= 64 || context.allocated + length > budget)) {
++    context.count_pressure += context.slots.size() >= 64;
++    context.byte_pressure += context.allocated + length > budget;
++    const auto& trace = acv::gpu_profile::configuration();
++    if (trace.path && *trace.path) {
++      const double age = trace.age();
++      if (age >= 90 && age - context.last_pressure_trace >= 5) {
++        VkDeviceSize idle_small_bytes = 0; size_t idle_small_slots = 0;
++        for (const auto& candidate : context.slots) {
++          if (!candidate->occupied && candidate->capacity < length) {
++            idle_small_bytes += candidate->allocation; ++idle_small_slots;
++          }
++        }
++        REXGPU_INFO("ACV readback pool pressure age={} slots={} allocated={} pending_jobs={} "
++                    "pending_bytes={} requested={} idle_small_slots={} idle_small_bytes={} "
++                    "count_pressure_total={} byte_pressure_total={} reclaimed_slots_total={}",
++                    age, context.slots.size(), context.allocated, context.bridge.pending(),
++                    context.bridge.pending_bytes(), length, idle_small_slots, idle_small_bytes,
++                    context.count_pressure, context.byte_pressure, context.reclaimed_slots);
++        context.last_pressure_trace = age;
++      }
++    }
++    if (context.reclaim_idle) {
++      // Query the exact buffer that will be bound. Payload length alone does not
++      // include Vulkan allocation rounding and cannot authorize reclamation.
++      fresh = std::make_unique<GeneralReadbackContext::Slot>();
++      VkBufferCreateInfo ci = {};
++      ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
++      ci.size = length;
++      ci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++      ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++      if (dfn.vkCreateBuffer(device, &ci, nullptr, &fresh->buffer) != VK_SUCCESS) {
++        fresh.reset(); // Optional attempt failed; original fitting-slot path remains.
++      } else {
++        VkMemoryRequirements requirements = {};
++        dfn.vkGetBufferMemoryRequirements(device, fresh->buffer, &requirements);
++        const uint32_t type = ui::vulkan::util::ChooseMemoryType(
++            vd->memory_types(), requirements.memoryTypeBits, ui::vulkan::util::MemoryPurpose::kReadback);
++        const size_t old_count = context.slots.size();
++        const auto reclaimed = type == UINT32_MAX ? acv::IdleReclaimResult::kNotPossible :
++            acv::ReclaimIdleUndersizedSlots(context.slots, context.allocated,
++                length, requirements.size, 64, budget,
++                [&](uint64_t id) { return context.bridge.RetireSlot(id); },
++                [&](GeneralReadbackContext::Slot& old) noexcept {
++                  dfn.vkUnmapMemory(device, old.memory);
++                  dfn.vkDestroyBuffer(device, old.buffer, nullptr);
++                  dfn.vkFreeMemory(device, old.memory, nullptr);
++                });
++        context.reclaimed_slots += old_count - context.slots.size();
++        if (reclaimed != acv::IdleReclaimResult::kReclaimed) {
++          dfn.vkDestroyBuffer(device, fresh->buffer, nullptr);
++          fresh.reset();
++          if (reclaimed == acv::IdleReclaimResult::kFailed) return false;
++        } else {
++          VkMemoryAllocateInfo ai = {};
++          ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
++          ai.allocationSize = requirements.size; ai.memoryTypeIndex = type;
++          VkMemoryDedicatedAllocateInfo dedicated = {};
++          if (vd->extensions().ext_1_1_KHR_dedicated_allocation) {
++            dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
++            dedicated.buffer = fresh->buffer; ai.pNext = &dedicated;
++          }
++          if (dfn.vkAllocateMemory(device, &ai, nullptr, &fresh->memory) != VK_SUCCESS) {
++            dfn.vkDestroyBuffer(device, fresh->buffer, nullptr);
++            return false;
++          }
++          if (dfn.vkBindBufferMemory(device, fresh->buffer, fresh->memory, 0) != VK_SUCCESS) {
++            dfn.vkDestroyBuffer(device, fresh->buffer, nullptr);
++            dfn.vkFreeMemory(device, fresh->memory, nullptr);
++            return false;
++          }
++          fresh->allocation = requirements.size;
++        }
++      }
++    }
++  }
++  if (!slot && !fresh && (context.slots.size() >= 64 || context.allocated + length > budget)) {
+     {
+       acv::gpu_profile::Scope reuse(acv::gpu_profile::Stage::kGeneralFittingSlot);
+       if (!acv::RetireOldestFittingSlot(context.slots, length,
+@@ -4681,10 +4764,12 @@
+     }
+   }
+   if (!slot) {
+-    auto fresh = std::make_unique<GeneralReadbackContext::Slot>();
+-    if (!ui::vulkan::util::CreateDedicatedAllocationBuffer(vd, length,
+-          VK_BUFFER_USAGE_TRANSFER_DST_BIT, ui::vulkan::util::MemoryPurpose::kReadback,
+-          fresh->buffer, fresh->memory, nullptr, &fresh->allocation)) return false;
++    if (!fresh) {
++      fresh = std::make_unique<GeneralReadbackContext::Slot>();
++      if (!ui::vulkan::util::CreateDedicatedAllocationBuffer(vd, length,
++            VK_BUFFER_USAGE_TRANSFER_DST_BIT, ui::vulkan::util::MemoryPurpose::kReadback,
++            fresh->buffer, fresh->memory, nullptr, &fresh->allocation)) return false;
++    }
+     if (context.allocated + fresh->allocation > budget ||
+         dfn.vkMapMemory(device, fresh->memory, 0, VK_WHOLE_SIZE, 0, &fresh->mapping) != VK_SUCCESS) {
+       dfn.vkDestroyBuffer(device, fresh->buffer, nullptr);

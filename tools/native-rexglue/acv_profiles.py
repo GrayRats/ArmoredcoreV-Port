@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Persistent profile store: per-profile user_data_root, lock, backup/restore, import (PLAN_GUI.MD stage B).
+"""Persistent profile store: per-profile user_data_root, lock, backup/restore, import (kb:PLAN_GUI stage B).
 
 Layout under <root>/profiles/<uuid>/:
   profile.json   identity (acv_settings.Profile)
@@ -9,7 +9,11 @@ Layout under <root>/profiles/<uuid>/:
   quarantine/    originals replaced by a restore/import, kept for recovery
   .lock          flock target; the kernel releases it if the owner dies
 """
-import datetime, fcntl, hashlib, json, os, shutil, uuid
+import ctypes, datetime, errno, hashlib, json, os, shutil, uuid
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 from pathlib import Path
 import acv_settings as s
 
@@ -41,11 +45,30 @@ def tree_manifest(directory):
 
 
 def _fsync_dir(path):
+    if os.name == "nt":
+        # Windows directory handles do not provide POSIX-style fsync. Critical
+        # directory moves use MOVEFILE_WRITE_THROUGH in _rename_durable().
+        return
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _rename_durable(source, destination):
+    if os.name != "nt":
+        os.rename(source, destination)
+        return
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    move = kernel32.MoveFileExW
+    move.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong]
+    move.restype = ctypes.c_int
+    if not move(str(source), str(destination), 0x00000008):  # MOVEFILE_WRITE_THROUGH, no replace.
+        code = ctypes.get_last_error()
+        if code in (80, 183):
+            raise FileExistsError(code, ctypes.FormatError(code), str(destination))
+        raise OSError(code, ctypes.FormatError(code), str(destination))
 
 
 class ProfileLock:
@@ -59,9 +82,20 @@ class ProfileLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            if os.name == "nt":
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, b"\0")
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
             os.close(fd)
+            busy = (error.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK)
+                    if os.name == "nt" else
+                    isinstance(error, BlockingIOError) or error.errno in (errno.EAGAIN, errno.EWOULDBLOCK))
+            if not busy:
+                raise
             raise ProfileBusy(f"profile is in use: {self.path.parent.name}") from None
         self.fd = fd
         return self
@@ -151,7 +185,7 @@ class ProfileStore:
                 {"schema_version": s.SCHEMA_VERSION, "files": expected}, indent=2, sort_keys=True))
             _fsync_dir(staging)
             final = pdir / "backups" / name
-            os.rename(staging, final)
+            _rename_durable(staging, final)
             _fsync_dir(final.parent)
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
@@ -178,11 +212,11 @@ class ProfileStore:
             if current.exists():
                 quarantined = pdir / "quarantine" / _stamp()
                 quarantined.parent.mkdir(exist_ok=True)
-                os.rename(current, quarantined)
-            os.rename(staged, current)
+                _rename_durable(current, quarantined)
+            _rename_durable(staged, current)
         except BaseException:
             if quarantined is not None and not current.exists():
-                os.rename(quarantined, current)
+                _rename_durable(quarantined, current)
             shutil.rmtree(staged, ignore_errors=True)
             raise
         _fsync_dir(pdir)

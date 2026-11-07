@@ -1,0 +1,87 @@
+--- a/src/graphics/vulkan/deferred_command_buffer.cpp
++++ b/src/graphics/vulkan/deferred_command_buffer.cpp
+@@ -21,6 +21,7 @@
+ #include <rex/graphics/vulkan/deferred_command_buffer.h>
+ #include <rex/math.h>
+ #include "buffer_bind_cache.h"
++#include "acv_gpu_stage_profile.h"
+ 
+ namespace rex::graphics::vulkan {
+ 
+@@ -48,6 +49,15 @@
+   static const bool dedup_dynamic = [] { const char* v = std::getenv("ACV_VULKAN_DEDUP_DYNAMIC_CONSTANTS"); return v && std::strcmp(v, "1") == 0; }();
+   acv::DynamicConstantCache<4> blend_cache;
+   acv::DynamicConstantCache<3> depth_bias_cache;
++  struct Counters { uint64_t in[5]{}, out[5]{}; double since=-1; };
++  static thread_local Counters counters;
++  const auto& profile = acv::gpu_profile::configuration();
++  const double age = profile.path && *profile.path ? profile.age() : -1;
++  const bool count = age >= 90;
++  auto emit = [&](size_t kind, bool needed) {
++    if (count) { ++counters.in[kind]; counters.out[kind] += needed; }
++    return needed;
++  };
+   const uintmax_t* stream = command_stream_.data();
+   size_t stream_remaining = command_stream_.size();
+   while (stream_remaining) {
+@@ -103,7 +113,7 @@
+ 
+       case Command::kVkBindIndexBuffer: {
+         auto& args = *reinterpret_cast<const ArgsVkBindIndexBuffer*>(stream);
+-        if (!dedup || bind_cache.Index(args.buffer, args.offset, args.index_type))
++        if (emit(0, !dedup || bind_cache.Index(args.buffer, args.offset, args.index_type)))
+           dfn.vkCmdBindIndexBuffer(command_buffer, args.buffer, args.offset, args.index_type);
+       } break;
+ 
+@@ -122,7 +132,7 @@
+             rex::align(offset_bytes + sizeof(VkBuffer) * args.binding_count, alignof(VkDeviceSize));
+         const VkDeviceSize* offsets = reinterpret_cast<const VkDeviceSize*>(
+             reinterpret_cast<const uint8_t*>(stream) + offset_bytes);
+-        if (!dedup || bind_cache.Vertices(args.first_binding, args.binding_count, buffers, offsets))
++        if (emit(1, !dedup || bind_cache.Vertices(args.first_binding, args.binding_count, buffers, offsets)))
+         dfn.vkCmdBindVertexBuffers(command_buffer, args.first_binding, args.binding_count, buffers,
+                                    offsets);
+       } break;
+@@ -273,8 +283,8 @@
+ 
+       case Command::kVkPushConstants: {
+         auto& args = *reinterpret_cast<const ArgsVkPushConstants*>(stream);
+-        if (!dedup_push || push_cache.Update(args.layout, args.stage_flags, args.offset, args.size,
+-            reinterpret_cast<const uint8_t*>(stream) + sizeof(ArgsVkPushConstants)))
++        if (emit(2, !dedup_push || push_cache.Update(args.layout, args.stage_flags, args.offset, args.size,
++            reinterpret_cast<const uint8_t*>(stream) + sizeof(ArgsVkPushConstants))))
+         dfn.vkCmdPushConstants(
+             command_buffer, args.layout, args.stage_flags, args.offset, args.size,
+             reinterpret_cast<const uint8_t*>(stream) + sizeof(ArgsVkPushConstants));
+@@ -293,14 +303,14 @@
+ 
+       case Command::kVkSetBlendConstants: {
+         auto& args = *reinterpret_cast<const ArgsVkSetBlendConstants*>(stream);
+-        if (!dedup_dynamic || blend_cache.Update(args.blend_constants))
++        if (emit(3, !dedup_dynamic || blend_cache.Update(args.blend_constants)))
+           dfn.vkCmdSetBlendConstants(command_buffer, args.blend_constants);
+       } break;
+ 
+       case Command::kVkSetDepthBias: {
+         auto& args = *reinterpret_cast<const ArgsVkSetDepthBias*>(stream);
+         const float values[] = {args.depth_bias_constant_factor, args.depth_bias_clamp, args.depth_bias_slope_factor};
+-        if (!dedup_dynamic || depth_bias_cache.Update(values))
++        if (emit(4, !dedup_dynamic || depth_bias_cache.Update(values)))
+           dfn.vkCmdSetDepthBias(command_buffer, args.depth_bias_constant_factor,
+                               args.depth_bias_clamp, args.depth_bias_slope_factor);
+       } break;
+@@ -343,6 +353,14 @@
+ 
+     stream += header.arguments_size_elements;
+     stream_remaining -= header.arguments_size_elements;
++  }
++  if (count) {
++    if (counters.since < 0) counters.since = age;
++    if (age - counters.since >= 5) {
++      REXGPU_INFO("ACV API dedup age={} window={} index_in={} index_out={} vertex_in={} vertex_out={} push_in={} push_out={} blend_in={} blend_out={} depth_in={} depth_out={}",
++          age, age-counters.since, counters.in[0], counters.out[0], counters.in[1], counters.out[1], counters.in[2], counters.out[2], counters.in[3], counters.out[3], counters.in[4], counters.out[4]);
++      counters = {}; counters.since = age;
++    }
+   }
+ }
+ 

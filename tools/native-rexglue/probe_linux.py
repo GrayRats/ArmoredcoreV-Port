@@ -4,7 +4,7 @@ import argparse, collections, configparser, datetime, hashlib, json, os, re, sig
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import acv_profiles, acv_settings, acv_shm, acv_paths, acv_display
+import acv_profiles, acv_settings, acv_shm, acv_paths, acv_display, acv_mangohud, acv_input
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--executable", type=Path, default=acv_paths.EXECUTABLE)
 parser.add_argument("--seconds", type=int, default=60)
@@ -27,8 +27,9 @@ parser.add_argument("--renderdoc-window-ms", type=int, default=0,
 parser.add_argument("--log-level", choices=("info", "debug", "trace"), default="info")
 parser.add_argument("--video-driver", choices=("auto", "x11", "wayland"), default="auto",
                     help="child-only SDL backend; auto uses X11 for RenderDoc capture")
-parser.add_argument("--controls", choices=("keyboard-mouse", "gamepad"), default="keyboard-mouse",
-                    help="keyboard/mouse emulates player-one controller; F8 toggles mouse look")
+parser.add_argument("--controls", choices=("keyboard-mouse", "keyboard", "gamepad"), default=None,
+                    help="input mode for this launch; default is launcher.input_mode from --settings (keyboard_mouse). "
+                         "Layouts: input_keyboard.ini / input_gamepad.ini. Keyboard emulates player one; F8 toggles mouse look")
 parser.add_argument("--graphics-profile", choices=("acv-fsi", "sdk"), default="acv-fsi",
                     help="ACV compatibility defaults (FSI, protect_zero=false), or unmodified SDK defaults; --extra overrides")
 parser.add_argument("--user-root", type=Path,
@@ -41,6 +42,8 @@ parser.add_argument("--settings", type=Path,
                     help="launcher settings JSON (schema_version 1, \"graphics\" object); validated by acv_settings.py")
 parser.add_argument("--allow-experimental", action="store_true",
                     help="permit settings marked experimental in acv_settings.capabilities()")
+parser.add_argument("--mangohud", action=argparse.BooleanOptionalAction, default=None,
+                    help="enable/disable MangoHud for the Vulkan game; overrides saved launcher preference")
 parser.add_argument("--startup-profile", action="store_true",
                     help="sample startup with GDB on X11 using this same launch configuration")
 parser.add_argument("--projection-trace", type=Path, metavar="LAYOUT_JSON",
@@ -118,11 +121,6 @@ if args.profile:
 else:
     user = args.user_root.resolve() if args.user_root else acv_paths.PROFILES / "diagnostics" / run_id
 user.mkdir(parents=True, exist_ok=bool(args.user_root or args.profile))
-profile = json.loads((ROOT / "tools/native-rexglue/input-profile.json").read_text())
-if args.controls == "gamepad":
-    profile = {"mnk_mode": False, "mnk_mouse": False}
-input_options = ["--"+name+"="+(str(value).lower() if isinstance(value, bool) else str(value))
-                 for name, value in profile.items()]
 # ACV bakes textures on the GPU, then reads their pixels for CPU compression.
 # Without full resolve readback the original RGBA allocation stays zero.
 # Explicit [sdk] config entries and --extra options below may override this.
@@ -132,13 +130,25 @@ compatibility_options = (["--protect_zero=false", "--render_target_path_vulkan=f
 features = acv_settings.runtime_features(exe.parent)
 settings_options = []
 settings_env = {}
+mangohud_enabled = acv_settings.launcher_mangohud(override=args.mangohud)
+mangohud_host_fps = False
+input_mode = acv_settings.launcher_input_mode(override=args.controls.replace("-", "_") if args.controls else None)
 if args.settings:
     try:
         saved = acv_settings.load_json(args.settings, "settings")
         settings_options = acv_settings.graphics_to_cvars(saved.get("graphics", {}), args.allow_experimental, features)
         settings_env = acv_settings.graphics_to_env(saved.get("graphics", {}), features)
+        mangohud_enabled = acv_settings.launcher_mangohud(saved.get("launcher", {}), args.mangohud)
+        mangohud_host_fps = acv_settings.launcher_mangohud_host_fps(saved.get("launcher", {}))
+        input_mode = acv_settings.launcher_input_mode(saved.get("launcher", {}),
+                                                      args.controls.replace("-", "_") if args.controls else None)
     except (acv_settings.SettingsError, OSError, ValueError) as error:
         parser.error(f"--settings: {error}")
+try:
+    input_options = acv_input.cvar_options(input_mode)
+except (OSError, ValueError, KeyError) as error:
+    parser.error(f"input layout {input_mode}: {error}")
+controllers = acv_input.detect_controllers()
 profile_options = [f"--user_language={selected_profile.language}"] if selected_profile else []
 command = [str(exe), "--game_data_root="+str(game), "--user_data_root="+str(user),
            "--cache_root="+str(cache_dir or user / "cache"), "--gpu_plugin=xenos",
@@ -150,10 +160,24 @@ report["runtime_features"] = sorted(features)
 report["settings_file"] = str(args.settings) if args.settings else None
 report["settings_cvars"] = settings_options
 report["settings_env"] = settings_env
-report["controls"] = args.controls
+report["controls"] = input_mode
+report["input_layout"] = {"mode": input_mode, "options": input_options, "controllers": controllers,
+                          "status": acv_input.status(input_mode, controllers)}
 report["graphics_profile"] = args.graphics_profile
 env = dict(os.environ)
 env.update(settings_env)  # wide-view hooks of the host (not SDK cvars)
+env = acv_input.mode_environment(input_mode, env)  # SDL variables of the selected layout (user values win)
+env["ACV_MANGOHUD_HOST_FPS"] = "1" if mangohud_host_fps else "0"  # read by acv_mangohud.guest_overlay
+try:
+    env, report["mangohud"] = acv_mangohud.game_environment(mangohud_enabled, env)
+    hud_cadence = None
+    if mangohud_enabled:
+        env, hud_cadence = acv_mangohud.guest_overlay(env, output)
+        report['mangohud'].update(guest_stats_file=str(hud_cadence.path),
+                                 guest_source='XE_SWAP CPU cadence, average of 300 intervals; not unique-image/simulation FPS',
+                                 host_source='MangoHud host Vulkan presents, may repeat the latest guest image')
+except ValueError as error:
+    parser.error(str(error))
 # Prefer the selected build over absolute SDK RUNPATHs and inherited library search paths.
 env["LD_LIBRARY_PATH"] = str(exe.parent) + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
 display_gamma = args.display_gamma_type or config.get("compat", "display_gamma_type", fallback=None)
@@ -285,8 +309,10 @@ def follow_runtime():
             return
     with runtime_path.open("rb") as stream:
         while True:
+            if hud_cadence is not None: hud_cadence.refresh()
             line = stream.readline()
             if line:
+                if hud_cadence is not None: hud_cadence.consume(line)
                 is_error = any(marker in line.lower() for marker in (b"[critical]", b"[error]", b"[fatal]"))
                 forward = True
                 if is_error:
@@ -320,6 +346,7 @@ def follow_runtime():
             elif runtime_stop.is_set():
                 break
             else:
+                if hud_cadence is not None: hud_cadence.refresh()
                 runtime_stop.wait(0.05)
 runtime_thread = threading.Thread(target=follow_runtime)
 runtime_thread.start()
@@ -340,6 +367,9 @@ for t in threads:
     t.join()
 runtime_stop.set()
 runtime_thread.join()
+if hud_cadence is not None:
+    report['mangohud']['guest_last_sample'] = hud_cadence.sample
+    hud_cadence.refresh(stopped=True)
 if kill_timer is not None:
     kill_timer.cancel()
 report["abort_reason"] = abort_reason

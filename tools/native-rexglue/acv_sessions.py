@@ -28,4 +28,5 @@ def latest(logs):
             "fallbacks":display.get("fallbacks",[]),
             "monitors":display.get("monitors",[]),"display_modes":display.get("display_modes",[]),
             "pacing_last":pacing[-1] if pacing else None,
+            "mangohud":launch.get("mangohud"),
             "idle_seconds":activity,"limit_reached":launch.get("limit_reached")}

@@ -1,0 +1,379 @@
+--- a/src/graphics/vulkan/general_readback_bridge.h
++++ b/src/graphics/vulkan/general_readback_bridge.h
+@@ -14,7 +14,11 @@
+  public:
+   using Range=DeferredReadbackQueue::Range;
+   using Dispatch=std::function<void(std::function<void()>)>;
++  enum class Phase { Preparing, Recorded, Submitted, Published, Failed };
++  enum class FlushReason { Capacity, Slot, Cpu, Drain, Limit, Count };
+   struct State {
++    std::atomic<Phase> phase{Phase::Preparing};
++    uint64_t recording_ticket=0;
+     Range range;
+     uint64_t slot;
+     const void* owner=nullptr;
+@@ -33,10 +37,23 @@
+   GeneralReadbackBridge(const GeneralReadbackBridge&)=delete;
+   GeneralReadbackBridge& operator=(const GeneralReadbackBridge&)=delete;
+   bool Prepare(uint32_t bytes) {
+-    return IsOwner() && queue_.PrepareForEnqueue(bytes) && memory_.CollectPublishedPhysicalReadbacks();
++    if(!IsOwner() || closed_ || batch_failed_) return false;
++    if(!recorded_.empty() && (recorded_.size()>=kBatchJobs ||
++        bytes>kBatchBytes || recorded_bytes_>kBatchBytes-bytes ||
++        !queue_.CanAdmit(recorded_.size()+1,recorded_bytes_+bytes))) {
++      if(!FlushRecorded(FlushReason::Capacity)) return false;
++    }
++    return (recorded_.empty() ? queue_.PrepareForEnqueue(bytes) :
++            queue_.CanAdmit(recorded_.size()+1,recorded_bytes_+bytes)) &&
++        memory_.CollectPublishedPhysicalReadbacks();
+   }
+   bool RetireSlot(uint64_t slot) {
+-    return IsOwner() && queue_.BeforeSlotReuse(slot) && memory_.CollectPublishedPhysicalReadbacks();
++    if(!IsOwner() || closed_ || batch_failed_) return false;
++    for(const auto& job:recorded_) if(job.slot==slot) {
++      if(!FlushRecorded(FlushReason::Slot)) return false;
++      break;
++    }
++    return queue_.BeforeSlotReuse(slot) && memory_.CollectPublishedPhysicalReadbacks();
+   }
+   StatePtr MakeState(Range range,uint64_t slot) {
+     if(!IsOwner() || !range.valid() || !slot || closed_) return {};
+@@ -59,27 +76,97 @@
+     }
+     state->registered.store(true,std::memory_order_release);return true;
+   }
++  static constexpr size_t kBatchJobs=4;
++  static constexpr uint64_t kBatchBytes=16ULL<<20;
++  using Submit=std::function<bool(uint64_t)>;
++  void EnableBatching(Submit submit) {
++    if(!IsOwner() || !states_.empty() || !submit) std::terminate();
++    submit_=std::move(submit);
++  }
++  bool batching() const {return bool(submit_);}
++  size_t recorded() const {return recorded_.size();}
++  uint64_t recorded_bytes() const {return recorded_bytes_;}
++  struct Statistics {
++    uint64_t submissions=0,jobs=0,max_jobs=0;
++    uint64_t flushes[size_t(FlushReason::Count)]={};
++  };
++  const Statistics& statistics() const {return statistics_;}
++  void EnableStatistics() {statistics_enabled_=true;}
++  // Called only after copy + HOST_READ barrier recording and memory unlock.
++  bool Record(const StatePtr& state,uint64_t ticket,std::function<bool()> publish) {
++    if(!IsOwner() || closed_ || batch_failed_ || !submit_ || !state ||
++       state->owner!=this || !state->registered.load() || state->failed.load() ||
++       state->phase.load()!=Phase::Preparing || !ticket || !publish ||
++       (!recorded_.empty() && (recorded_.front().ticket!=ticket ||
++         state->range.bytes>kBatchBytes || recorded_bytes_>kBatchBytes-state->range.bytes)) ||
++       !queue_.CanAdmit(recorded_.size()+1,recorded_bytes_+state->range.bytes)) return false;
++    try {recorded_.push_back({state->range,state->slot,ticket,Publisher(state,std::move(publish))});}
++    catch(...) {Fail(state);batch_failed_=true;return false;}
++    state->recording_ticket=ticket;
++    state->phase.store(Phase::Recorded,std::memory_order_release);
++    recorded_bytes_+=state->range.bytes;
++    if(recorded_.size()>=kBatchJobs || recorded_bytes_>=kBatchBytes)
++      return FlushRecorded(FlushReason::Limit);
++    return true;
++  }
++  bool FlushRecorded(FlushReason reason) {
++    if(!IsOwner() || closed_ || batch_failed_) return false;
++    if(recorded_.empty()) return true;
++    if(flushing_) {SubmissionFailed(recorded_.front().ticket);return false;}
++    const uint64_t ticket=recorded_.front().ticket;
++    flushing_=true;
++    if(statistics_enabled_) ++statistics_.flushes[size_t(reason)];
++    bool ok=false;
++    try {ok=submit_(ticket);} catch(...) {}
++    flushing_=false;
++    if(!ok || !recorded_.empty()) {SubmissionFailed(ticket);return false;}
++    return !batch_failed_;
++  }
++  // Every actual EndSubmission path settles ONLY recorded jobs, never preparing
++  // providers. Preallocated no-wait append cannot recursively enter EndSubmission.
++  bool SubmissionSucceeded(uint64_t ticket) {
++    if(recorded_.empty()) return !batch_failed_;
++    if(!IsOwner() || closed_ || batch_failed_ || recorded_.front().ticket!=ticket ||
++       !queue_.AppendSubmittedNoWait(recorded_)) {
++      SubmissionFailed(ticket);return false;
++    }
++    size_t count=0;
++    for(const auto& weak:states_) if(auto state=weak.lock()) {
++      if(state->recording_ticket==ticket && state->phase.load()==Phase::Recorded) {
++        state->queued.store(true,std::memory_order_release);
++        state->phase.store(Phase::Submitted,std::memory_order_release);++count;
++      }
++    }
++    recorded_bytes_=0;
++    if(statistics_enabled_) {
++      ++statistics_.submissions;statistics_.jobs+=count;
++      statistics_.max_jobs=std::max<uint64_t>(statistics_.max_jobs,count);
++    }
++    return true;
++  }
++  void SubmissionFailed(uint64_t ticket) {
++    if(recorded_.empty()) return;
++    // A wrong-ticket completion is an invariant failure, not permission to keep
++    // accepting work. Preserve every recorded lease, exclude preparing states.
++    (void)ticket;
++    batch_failed_=true;
++    for(const auto& weak:states_) if(auto state=weak.lock())
++      if(state->phase.load()==Phase::Recorded) Fail(state);
++  }
+   // The transfer and HOST_READ barrier must already be successfully submitted.
+   bool Commit(const StatePtr& state,uint64_t ticket,std::function<bool()> publish) {
+     if(!IsOwner() || closed_ || !state || state->owner!=this || !state->registered.load() || state->queued.load() || !ticket || !publish || state->failed.load()) return false;
+-    const bool ok=queue_.Enqueue({state->range,state->slot,ticket,[this,state,publish=std::move(publish)] {
+-      if(state->ready()) return true;
+-      if(state->failed.load(std::memory_order_acquire)) return false;
+-      std::lock_guard<std::recursive_mutex> lock(memory_mutex_);
+-      bool copied=false;
+-      try {copied=publish();} catch(...) {}
+-      if(!copied) {state->failed.store(true,std::memory_order_release);return false;}
+-      state->published.store(true,std::memory_order_release);return true;
+-    }});
++    const bool ok=queue_.Enqueue({state->range,state->slot,ticket,Publisher(state,std::move(publish))});
++    state->phase.store(ok ? Phase::Submitted : Phase::Failed,std::memory_order_release);
+     state->queued.store(ok,std::memory_order_release);
+     if(!ok) state->failed.store(true,std::memory_order_release);
+     return ok;
+   }
+   void Fail(const StatePtr& state) {
+-    if(state) state->failed.store(true,std::memory_order_release);
++    if(state) {state->failed.store(true,std::memory_order_release);state->phase.store(Phase::Failed,std::memory_order_release);}
+   }
+   bool Drain() {
+-    return IsOwner() && queue_.Drain() && memory_.CollectPublishedPhysicalReadbacks();
++    return IsOwner() && FlushRecorded(FlushReason::Drain) && queue_.Drain() && memory_.CollectPublishedPhysicalReadbacks();
+   }
+   // Normal shutdown drains first. Closing wakes all CPU awaiters, even if owner
+   // callbacks will never run. A queued callback holds no raw owner after close.
+@@ -89,19 +176,32 @@
+     if(!IsOwner()) std::terminate();
+     closed_=true;control_->bridge=nullptr;control_->dispatch={};
+     for(const auto& weak:states_) if(auto state=weak.lock())
+-      if(!state->published.load(std::memory_order_acquire)) state->failed.store(true,std::memory_order_release);
++      if(!state->published.load(std::memory_order_acquire)) Fail(state);
+     for(const auto& weak:control_->requests) if(auto request=weak.lock()) request->Complete(request->state->ready());
+     control_->requests.clear();
+   }
+   bool CancelAfterDeviceStopped() {
+     if(!IsOwner()) return false;
+-    Close();return queue_.CancelAfterDeviceStopped();
++    Close();
++    if(!queue_.CancelAfterDeviceStopped()) return false;
++    recorded_.clear();recorded_bytes_=0;return true;
+   }
+   // GPU-owner-only diagnostic classification; never changes queue policy.
+   bool servicing_cpu_access() const {return cpu_access_;}
+-  size_t pending() const {return queue_.pending();}
+-  uint64_t pending_bytes() const {return queue_.pending_bytes();}
++  size_t pending() const {return queue_.pending()+recorded_.size();}
++  uint64_t pending_bytes() const {return queue_.pending_bytes()+recorded_bytes_;}
+  private:
++  std::function<bool()> Publisher(StatePtr state,std::function<bool()> publish) {
++    return [this,state=std::move(state),publish=std::move(publish)] {
++      if(state->ready()) return true;
++      if(state->failed.load(std::memory_order_acquire)) return false;
++      std::lock_guard<std::recursive_mutex> lock(memory_mutex_);
++      bool copied=false;try {copied=publish();} catch(...) {}
++      if(!copied) {Fail(state);return false;}
++      state->phase.store(Phase::Published,std::memory_order_release);
++      state->published.store(true,std::memory_order_release);return true;
++    };
++  }
+   struct Request {
+     StatePtr state;
+     std::promise<bool> promise;
+@@ -122,7 +222,11 @@
+       explicit Guard(bool& value):flag(value),previous(value){flag=true;}
+       ~Guard(){flag=previous;}
+     } guard(cpu_access_);
+-    return queue_.BeforeCpuAccess(range) && memory_.CollectPublishedPhysicalReadbacks();
++    for(const auto& job:recorded_) if(job.range.overlaps(range)) {
++      if(!FlushRecorded(FlushReason::Cpu)) return false;
++      break;
++    }
++    return !batch_failed_ && queue_.BeforeCpuAccess(range) && memory_.CollectPublishedPhysicalReadbacks();
+   }
+   static bool Await(const std::shared_ptr<Control>& control,const StatePtr& state) {
+     if(state->ready()) return true;
+@@ -144,7 +248,8 @@
+           bool ok=request->state->ready();
+           if(!ok) {
+             std::lock_guard<std::recursive_mutex> owner_lock(control->mutex);
+-            if(control->bridge && request->state->queued.load(std::memory_order_acquire) &&
++            if(control->bridge && (request->state->queued.load(std::memory_order_acquire) ||
++                request->state->phase.load(std::memory_order_acquire)==Phase::Recorded) &&
+                !request->state->failed.load(std::memory_order_acquire)) {
+               ok=control->bridge->ForCpu(request->state->range) && request->state->ready();
+             }
+@@ -167,6 +272,11 @@
+   const std::thread::id owner_;
+   std::shared_ptr<Control> control_;
+   std::vector<std::weak_ptr<State>> states_;
++  Submit submit_;
++  std::list<DeferredReadbackQueue::Job> recorded_;
++  uint64_t recorded_bytes_=0;
++  bool flushing_=false,batch_failed_=false,statistics_enabled_=false;
++  Statistics statistics_;
+   bool closed_=false;
+   bool cpu_access_=false;
+ };
+--- a/src/graphics/vulkan/deferred_readback_queue.h
++++ b/src/graphics/vulkan/deferred_readback_queue.h
+@@ -63,6 +63,29 @@
+     catch(...) { failed_ = true; return false; }
+     last_ticket_ = ticket;
+     bytes_ += bytes;
++    return true;
++  }
++  // Combined recorded + submitted admission is checked BEFORE recording.
++  // Settlement only splices preallocated nodes: no await, callback or allocation.
++  bool CanAdmit(size_t jobs, uint64_t bytes) const {
++    return std::this_thread::get_id()==owner_ && !busy_ && !failed_ &&
++        jobs<=max_jobs_ && jobs_.size()<=max_jobs_-jobs &&
++        bytes<=max_bytes_ && bytes_<=max_bytes_-bytes;
++  }
++  bool AppendSubmittedNoWait(std::list<Job>& prepared) {
++    if(!Enter()) return false;
++    uint64_t bytes=0, ticket=last_ticket_;
++    for(auto it=prepared.begin();it!=prepared.end();++it) {
++      const auto& job=*it;
++      if(!job.range.valid() || !job.slot || !job.ticket || !job.publish ||
++         job.ticket<ticket || job.range.bytes>max_bytes_-bytes) return false;
++      for(const auto& old:jobs_) if(old.slot==job.slot) return false;
++      for(auto prior=prepared.begin();prior!=it;++prior) if(prior->slot==job.slot) return false;
++      bytes+=job.range.bytes;ticket=job.ticket;
++    }
++    if(!CanAdmit(prepared.size(),bytes)) return false;
++    jobs_.splice(jobs_.end(),prepared);
++    bytes_+=bytes;last_ticket_=ticket;
+     return true;
+   }
+   bool BeforeSlotReuse(uint64_t slot) {
+--- /dev/null
++++ b/src/graphics/vulkan/readback_submission_scope.h
+@@ -0,0 +1,18 @@
++#pragma once
++#include <cstdint>
++namespace acv {
++// Shared production/test boundary: all early exits fail pending recorded jobs.
++// Successful GPU submission must explicitly propagate append failure to caller.
++template<class Bridge> class ReadbackSubmissionScope {
++ public:
++  ReadbackSubmissionScope(Bridge* bridge,uint64_t ticket):bridge_(bridge),ticket_(ticket) {}
++  ~ReadbackSubmissionScope() {if(bridge_ && !settled_) bridge_->SubmissionFailed(ticket_);}
++  bool Submitted() {
++    if(settled_) return false;
++    settled_=true;
++    return !bridge_ || bridge_->SubmissionSucceeded(ticket_);
++  }
++ private:
++  Bridge* bridge_;uint64_t ticket_;bool settled_=false;
++};
++} // namespace acv
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include "acv_gpu_stage_profile.h"
+ #include "general_readback_bridge.h"
++#include "readback_submission_scope.h"
+ #include "readback_pool_selection.h"
+ #include "parallel_readback_copy.h"
+ #include <cstdlib>
+@@ -606,6 +607,16 @@
+                          : acv::gpu_profile::Stage::kGeneralPoolWait);
+                  return cp.AwaitReadbackSubmission(ticket);
+                }) {
++    const char* batch = std::getenv("ACV_GENERAL_READBACK_BATCH");
++    if (batch && std::strcmp(batch, "1") == 0) {
++      bridge.EnableBatching([&cp](uint64_t ticket) {
++        if (!cp.submission_open_ || cp.GetCurrentSubmission() != ticket || cp.device_lost_)
++          return false;
++        acv::gpu_profile::Scope profile(acv::gpu_profile::Stage::kGeneralSubmit);
++        return cp.EndSubmission(false);
++      });
++      REXGPU_INFO("ACV Resolve submission batching enabled: 4 jobs / 16 MiB");
++    }
+     const char* reclaim = std::getenv("ACV_GENERAL_READBACK_RECLAIM_IDLE");
+     reclaim_idle = reclaim && std::strcmp(reclaim, "1") == 0;
+     if (reclaim_idle) REXGPU_INFO("ACV idle undersized readback slot reclamation experiment enabled");
+@@ -623,6 +634,20 @@
+       }
+     }
+   }
++  void TraceBatch() {
++    const auto& trace = acv::gpu_profile::configuration();
++    if (!trace.path || !*trace.path || trace.age() < 90) return;
++    bridge.EnableStatistics();
++    const double age = trace.age();
++    if (age - last_batch_trace < 5) return;
++    const auto& stats = bridge.statistics();
++    REXGPU_INFO("ACV readback batch age={} submissions={} jobs={} max_jobs={} "
++                "capacity_flush={} slot_flush={} cpu_flush={} drain_flush={} limit_flush={}",
++                age, stats.submissions, stats.jobs, stats.max_jobs, stats.flushes[0],
++                stats.flushes[1], stats.flushes[2], stats.flushes[3], stats.flushes[4]);
++    last_batch_trace = age;
++  }
++  double last_batch_trace = -1;
+   // Outlive the bridge and its publication callbacks.
+   std::unique_ptr<acv::ParallelReadbackCopy> parallel_copy;
+   Bridge bridge;
+@@ -4814,11 +4839,7 @@
+   slot->submission = ticket;
+   // Never submit or await a GPU fence under the memory-system mutex.
+   scope.Unlock();
+-  {
+-    acv::gpu_profile::Scope submit_profile(acv::gpu_profile::Stage::kGeneralSubmit);
+-    if (!EndSubmission(false)) { context.bridge.Fail(state); return false; }
+-  }
+-  if (!context.bridge.Commit(state, ticket, [this, slot, address, length] {
++  auto publish = [this, slot, address, length] {
+         acv::gpu_profile::Scope publish_profile(acv::gpu_profile::Stage::kGeneralPublish);
+         const auto* vd = GetVulkanDevice();
+         VkMappedMemoryRange range = {};
+@@ -4840,7 +4861,21 @@
+         // Publication and reuse become visible only after every worker joins.
+         slot->occupied = false;
+         return true;
+-      })) { context.bridge.Fail(state); return false; }
++      };
++  if (context.bridge.batching()) {
++    context.TraceBatch();
++    if (!context.bridge.Record(state, ticket, std::move(publish))) {
++      context.bridge.Fail(state); return false;
++    }
++    return true;
++  }
++  {
++    acv::gpu_profile::Scope submit_profile(acv::gpu_profile::Stage::kGeneralSubmit);
++    if (!EndSubmission(false)) { context.bridge.Fail(state); return false; }
++  }
++  if (!context.bridge.Commit(state, ticket, std::move(publish))) {
++    context.bridge.Fail(state); return false;
++  }
+   return true;
+ }
+ 
+@@ -5773,6 +5808,9 @@
+ }
+ 
+ bool VulkanCommandProcessor::EndSubmission(bool is_swap) {
++  acv::ReadbackSubmissionScope<GeneralReadbackContext::Bridge> readback_submission(
++      general_readback_ && general_readback_->bridge.batching() ? &general_readback_->bridge : nullptr,
++      GetCurrentSubmission());
+   acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kSubmit);
+   const ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+@@ -5986,6 +6024,10 @@
+     fences_free_.pop_back();
+ 
+     submission_open_ = false;
++    // The fence is now tracked. No allocation, wait or callbacks while admitting
++    // preallocated recorded jobs; a failed commit is an explicit submission error.
++    if (!readback_submission.Submitted()) return false;
++    if (general_readback_ && general_readback_->bridge.batching()) general_readback_->TraceBatch();
+   }
+ 
+   if (is_closing_frame) {

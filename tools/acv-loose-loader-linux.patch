@@ -1,0 +1,50 @@
+diff --git a/ACVLooseLoader/Program.cs b/ACVLooseLoader/Program.cs
+index 0742922..40e173d 100644
+--- a/ACVLooseLoader/Program.cs
++++ b/ACVLooseLoader/Program.cs
+@@ -690,6 +690,7 @@ namespace ACVLooseLoader
+                 binder.BitBigEndian = true;
+                 binder.BigEndian = true;
+                 binder.Unk18 = 0;
++                binder.WriteFileHeadersEnd = true;
+ 
+                 for (int i = 0; i < binder.Files.Count; i++)
+                 {
+diff --git a/ACVLooseLoader/Utilities/BinderHelper.cs b/ACVLooseLoader/Utilities/BinderHelper.cs
+index fa564e0..538f466 100644
+--- a/ACVLooseLoader/Utilities/BinderHelper.cs
++++ b/ACVLooseLoader/Utilities/BinderHelper.cs
+@@ -31,7 +31,7 @@ namespace ACVLooseLoader
+         {
+             foreach (var file in binder.Files)
+             {
+-                string name = file.Name;
++                string name = file.Name.Replace('\\', '/');
+                 if (lowerCaseName)
+                 {
+                     name = name.ToLowerInvariant();
+diff --git a/ACVLooseLoader/Utilities/Console/ConsoleModeManager.cs b/ACVLooseLoader/Utilities/Console/ConsoleModeManager.cs
+index 4c34bb8..5f4c305 100644
+--- a/ACVLooseLoader/Utilities/Console/ConsoleModeManager.cs
++++ b/ACVLooseLoader/Utilities/Console/ConsoleModeManager.cs
+@@ -34,6 +34,7 @@ namespace ACVLooseLoader
+         /// </summary>
+         public void LockConsole()
+         {
++            if (!OperatingSystem.IsWindows()) return;
+             PreviousModeRetrieved = GetConsoleMode(out PreviousMode);
+             if (PreviousModeRetrieved)
+             {
+diff --git a/ACVLooseLoader/Utilities/PathHelper.cs b/ACVLooseLoader/Utilities/PathHelper.cs
+index 22bf93c..1200242 100644
+--- a/ACVLooseLoader/Utilities/PathHelper.cs
++++ b/ACVLooseLoader/Utilities/PathHelper.cs
+@@ -16,7 +16,7 @@
+         internal static string TrimLeadingDirectorySeparators(string path) => path.TrimStart('\\', '/', Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+         internal static string TrimTrailingDirectorySeparators(string path) => path.TrimEnd('\\', '/', Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+         internal static string TrimDirectorySeparators(string path) => path.Trim('\\', '/', Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+-        internal static string CleanPath(string path) => CorrectDirectorySeparatorChar(TrimDirectorySeparators(path));
++        internal static string CleanPath(string path) => CorrectDirectorySeparatorChar(OperatingSystem.IsWindows() ? TrimDirectorySeparators(path) : TrimTrailingDirectorySeparators(path.Trim()));
+         internal static string[] CleanPaths(string[] paths)
+         {
+             string[] cleanedPaths = new string[paths.Length];

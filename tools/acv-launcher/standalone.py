@@ -39,6 +39,7 @@ def candidate_environment(items):
     permitted = {"ACV_GENERAL_DEFERRED_READBACK": {"0", "1"},
                  "ACV_PARALLEL_READBACK_COPY": {"0", "2", "4"},
                  "ACV_GPU_POLL_BACKOFF": {"0", "1"}}
+    permitted.update({key: {"0", "1"} for key in ['ACV_GENERAL_READBACK_BATCH', 'ACV_RESOLVE_DESCRIPTOR_CACHE', 'ACV_READBACK_SKIP_COHERENT_INVALIDATE', 'ACV_VULKAN_FENCE_STATUS_POLL', 'ACV_VULKAN_DEDUP_BUFFER_BINDS', 'ACV_VULKAN_DEDUP_PUSH_CONSTANTS', 'ACV_VULKAN_DEDUP_DYNAMIC_CONSTANTS', 'ACV_VULKAN_DEDUP_STENCIL_CONSTANTS']})
     result = {}
     for item in items:
         key, separator, value = item.partition("=")
@@ -76,6 +77,7 @@ def main():
                    for name, record in baseline['runtime_artifacts'].items())
     launch_environment = baseline.get('launch_environment', {}) if accepted else {}
     permitted = {'ACV_GENERAL_DEFERRED_READBACK': {'0', '1'}, 'ACV_PARALLEL_READBACK_COPY': {'0', '2', '4'}, 'ACV_GPU_POLL_BACKOFF': {'0', '1'}}
+    permitted.update({key: {"0", "1"} for key in ['ACV_GENERAL_READBACK_BATCH', 'ACV_RESOLVE_DESCRIPTOR_CACHE', 'ACV_READBACK_SKIP_COHERENT_INVALIDATE', 'ACV_VULKAN_FENCE_STATUS_POLL', 'ACV_VULKAN_DEDUP_BUFFER_BINDS', 'ACV_VULKAN_DEDUP_PUSH_CONSTANTS', 'ACV_VULKAN_DEDUP_DYNAMIC_CONSTANTS', 'ACV_VULKAN_DEDUP_STENCIL_CONSTANTS']})
     if any(key not in permitted or value not in permitted[key] for key, value in launch_environment.items()):
         raise RuntimeError('Invalid baseline launch environment')
     if args.candidate_env:
@@ -124,9 +126,9 @@ def main():
                 if not (ROOT / source).is_file():
                     raise RuntimeError(f'Missing dependency license: {source}')
                 put(ROOT / source, 'licenses/' + name + '.txt')
-        for name in ['acv_paths.py', 'acv_display.py', 'acv_sessions.py', 'acv_install.py', 'game_data_manifest.json', 'acv_shm.py', 'acv_settings.py', 'acv_profiles.py',
+        for name in ['acv_paths.py', 'acv_display.py', 'acv_sessions.py', 'acv_install.py', 'acv_mangohud.py', 'acv_input.py', 'game_data_manifest.json', 'acv_shm.py', 'acv_settings.py', 'acv_profiles.py',
                      'acv_profile_cli.py', 'probe_linux.py', 'profile_startup.py', 'trace_projection.py',
-                     'acv.config', 'input-profile.json', 'RUNTIME_BASELINE.json']:
+                     'acv.config', 'input_keyboard.ini', 'input_gamepad.ini', 'RUNTIME_BASELINE.json']:
             put(NATIVE / name, 'tools/native-rexglue/' + name)
         for name, source in artifacts.items():
             put(source, 'bin/game/' + name)

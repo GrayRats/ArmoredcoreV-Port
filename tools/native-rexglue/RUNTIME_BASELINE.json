@@ -1,6 +1,6 @@
 {
   "recorded_utc": "2026-10-27T14:59:20.169986+00:00",
-  "note": "Accepted parallel copy retained; viewport-derived main HUD bounds and FOV hook restoration refined. Host2560x1080 math/ABI regression passes. CAS/FSR1 integrated without new effect tests, per user. Other resolutions/FPS/save/controller work skipped.",
+  "note": "Accepted parallel copy retained; viewport-derived main HUD bounds and FOV hook restoration refined. Host2560x1080 math/ABI regression passes. CAS/FSR1 integrated without new effect tests, per user. Other resolutions/FPS/save/controller work skipped. User-authorized2026-11-03 Vulkan API integration: bounded240s/counters135s and final-release135s clean. Index6.54%/push4.15% API calls omitted; full image/gameplay parity and FPS gain unverified. Stencil candidate is separate/defaultoff. Release2.0 stencil reference/compare/write enabled by user request; full image parity remains unverified.",
   "project": {
     "branch": "acv-profiles-launcher",
     "head": "043b34d750294f33165517f0c2fffc3685fff997",
@@ -75,19 +75,19 @@
   },
   "runtime_artifacts": {
     "acv_linux_probe": {
-      "source": "tmp/acv-game-window-title-20261028/acv_linux_probe",
+      "source": "tmp/acv-release2-build-20261103/acv_linux_probe",
       "sha256": "2fc173a9e81a60c5130da0501e47a7d4ce3df722780e348ee55f85d36788652b"
     },
     "librexruntime.so": {
-      "source": "tmp/acv-engine-offscreen-fix-r2/librexruntime.so",
-      "sha256": "544bdaae0e54c52fc10a60cacdf4a4973841a2ba02e2c9579a54f062fc6ad084"
+      "source": "tmp/acv-release2-build-20261103/librexruntime.so",
+      "sha256": "8e2bae6150ad5b334c0b617b513205ba84bf18fa99e554e285cb4d5809f45353"
     },
     "librexgpu-xenos.so": {
-      "source": "tmp/acv-engine-offscreen-fix-r2/librexgpu-xenos.so",
-      "sha256": "fe4550d59b4f1522e0794e19c659cc5dc016477e0fec8967b4caadfd17b248b6"
+      "source": "tmp/acv-release2-build-20261103/librexgpu-xenos.so",
+      "sha256": "17d02b21324ffd43f6aaabb6bc9104de700b26fb5f64fa6ac5756edb7588529c"
     },
     "libamd_fidelityfx_vk.so": {
-      "source": "tmp/acv-engine-offscreen-fix-r2/libamd_fidelityfx_vk.so",
+      "source": "tmp/acv-release2-build-20261103/libamd_fidelityfx_vk.so",
       "sha256": "0933159a2f30c101a53d48509a7606a5dbdecaae53e5b6218c0a7ca2e4474069"
     }
   },
@@ -253,7 +253,15 @@
   "launch_environment": {
     "ACV_GENERAL_DEFERRED_READBACK": "1",
     "ACV_PARALLEL_READBACK_COPY": "2",
-    "ACV_GPU_POLL_BACKOFF": "0"
+    "ACV_GPU_POLL_BACKOFF": "0",
+    "ACV_GENERAL_READBACK_BATCH": "1",
+    "ACV_RESOLVE_DESCRIPTOR_CACHE": "1",
+    "ACV_READBACK_SKIP_COHERENT_INVALIDATE": "1",
+    "ACV_VULKAN_FENCE_STATUS_POLL": "1",
+    "ACV_VULKAN_DEDUP_BUFFER_BINDS": "1",
+    "ACV_VULKAN_DEDUP_PUSH_CONSTANTS": "1",
+    "ACV_VULKAN_DEDUP_DYNAMIC_CONSTANTS": "1",
+    "ACV_VULKAN_DEDUP_STENCIL_CONSTANTS": "1"
   },
   "host_sources": {
     "scene_aspect_experiment.cpp": "60d3bdb793d6ec59d9396670bb5a507a779da14d606fde4f42f779827752b348",
@@ -262,7 +270,7 @@
     "acv_linux_probe_app.h": "7c7b61ec81b4940fe9877b80ca40c5f547733328f472c40649a73482612f764e"
   },
   "acceptance": {
-    "user_confirmation": "Да, помогло",
+    "user_confirmation": "\u0414\u0430, \u043f\u043e\u043c\u043e\u0433\u043b\u043e",
     "scope": "UltraWide native local-frustum synchronization; no new global FPS or all-mission acceptance",
     "checkpoint": "logs/acv-engine-offscreen-20261028/checkpoint.json"
   },
@@ -271,5 +279,14 @@
     "text": "ARMORE CORE V [Rexglue]",
     "validation": "dca190cb-4ae8-4031-9b0f-1eb952b7901d",
     "scope": "actual X11 game title and startup35s, no new gameplay acceptance"
+  },
+  "vulkan_api_integration": {
+    "publication": "logs/vulkan-finalize-20261103/publication.json",
+    "release_smoke_operation": "80963621-04ec-4c95-8824-c45ab335aec7",
+    "sdk_source_snapshot": "tmp/acv-vulkan-api-counts-20261103/build.json"
+  },
+  "release2_verification": {
+    "scope": "GPU3TU+launcher rebuild, startup/UI135s pass; unchanged guest ELF/runtime/FFX reused; no mission/stencil-image acceptance",
+    "evidence": "logs/release2-20261103"
   }
 }

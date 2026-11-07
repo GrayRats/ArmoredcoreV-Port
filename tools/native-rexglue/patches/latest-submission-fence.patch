@@ -1,0 +1,231 @@
+--- /dev/null
++++ b/src/graphics/vulkan/submission_fence_wait.h
+@@ -0,0 +1,78 @@
++#pragma once
++// Completion core shared by the SDK and host/real-GPU oracles. Every tracked
++// fence MUST come from successful vkQueueSubmit calls on the SAME VkQueue in
++// vector order, without reset/reuse until removed here. Other queues require a
++// different proof and must not use latest_only.
++// Vulkan-Docs090f1b190d60ced4a1d198fd3747d071cc271b1c synchronization.adoc:
++// signal-operation-order and synchronization-fences-signaling include earlier
++// same-queue fence signal operations in the later fence signal's first scope.
++#include <cstddef>
++#include <cstdint>
++#include <limits>
++#include <vector>
++// SDK callers include this AFTER rex/ui/vulkan/api.h so platform/beta feature
++// macros are established before Vulkan headers. Standalone tests use system Vulkan.
++#include <vulkan/vulkan_core.h>
++
++namespace acv {
++// Shared caller boundary: EndSubmission may report device loss itself. Never
++// enter the retirement helper after that loss, even if older fences can still
++// report success. The notifier remains owned by EndSubmission in that case.
++template<class Current, class End>
++bool PrepareSubmissionFenceWait(uint64_t& await_submission, const bool& device_lost,
++                                bool submission_open, Current&& current, End&& end) {
++  if (device_lost) return false;
++  if (await_submission >= current()) {
++    if (submission_open) (void)end();
++    // An unsuccessful EndSubmission leaves its ticket unsubmitted. Clamping
++    // preserves waits on earlier successfully submitted tickets in that case.
++    await_submission = current() - 1;
++  }
++  return !device_lost;
++}
++struct SubmissionFenceCompletion {
++  bool valid_range=true, device_lost=false;
++  size_t requested_prefix=0, blocking_fences=0, poll_calls=0, retired=0;
++  VkResult blocking_result=VK_SUCCESS, poll_result=VK_SUCCESS;
++};
++template<class Fence, class Wait>
++SubmissionFenceCompletion CompleteSubmissionFences(
++    std::vector<Fence>& in_flight, std::vector<Fence>& free,
++    uint64_t& completed, uint64_t await_submission, bool latest_only, Wait&& wait) {
++  SubmissionFenceCompletion result;
++  const uint64_t required = await_submission > completed ? await_submission-completed : 0;
++  if (required > in_flight.size() || required > std::numeric_limits<uint32_t>::max()) {
++    result.valid_range=false;return result; // Never index an absent/unsubmitted ticket.
++  }
++  result.requested_prefix=static_cast<size_t>(required);
++  size_t ready=0;
++  if (required) {
++    result.blocking_fences=latest_only ? 1 : static_cast<size_t>(required);
++    const Fence* selected=in_flight.data()+(latest_only ? required-1 : 0);
++    result.blocking_result=wait(static_cast<uint32_t>(result.blocking_fences),selected,UINT64_MAX);
++    if (result.blocking_result==VK_SUCCESS) ready=static_cast<size_t>(required);
++    else if (result.blocking_result==VK_ERROR_DEVICE_LOST) result.device_lost=true;
++  }
++  // Preserve the existing zero-timeout ordered polling after either a successful
++  // blocking wait or a failure. A failed blocking wait itself proves NOTHING;
++  // only individually successful polls can advance its earlier prefix.
++  while (ready<in_flight.size()) {
++    ++result.poll_calls;
++    result.poll_result=wait(1,&in_flight[ready],0);
++    if (result.poll_result!=VK_SUCCESS) {
++      if (result.poll_result==VK_ERROR_DEVICE_LOST) result.device_lost=true;
++      break;
++    }
++    ++ready;
++  }
++  // Device loss retains all fences and does not advance resource completion,
++  // including when earlier polls succeeded. Teardown owns those handles.
++  if (result.device_lost || !ready) return result;
++  free.reserve(free.size()+ready);
++  const auto end=in_flight.cbegin()+ready;
++  free.insert(free.cend(),in_flight.cbegin(),end);
++  in_flight.erase(in_flight.cbegin(),end);
++  completed+=ready;result.retired=ready;
++  return result;
++}
++} // namespace acv
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -51,6 +51,7 @@
+ #include <rex/ui/flags.h>
+ #include <rex/ui/vulkan/presenter.h>
+ #include <rex/ui/vulkan/util.h>
++#include "submission_fence_wait.h"
+ 
+ // Legacy backend compatibility aliases for shared readback controls.
+ REXCVAR_DEFINE_BOOL(vulkan_readback_resolve, false, "GPU/Vulkan",
+@@ -5484,77 +5485,79 @@
+ 
+ void VulkanCommandProcessor::CheckSubmissionFenceAndDeviceLoss(uint64_t await_submission) {
+   acv::gpu_profile::Scope acv_stage_scope(acv::gpu_profile::Stage::kFence);
+-  // Only report once, no need to retry a wait that won't succeed anyway.
+-  if (device_lost_) {
+-    return;
+-  }
+-
+-  if (await_submission >= GetCurrentSubmission()) {
+-    if (submission_open_) {
+-      EndSubmission(false);
+-    }
+-    // A submission won't be ended if it hasn't been started, or if ending
+-    // has failed - clamp the index.
+-    await_submission = GetCurrentSubmission() - 1;
++  if (!acv::PrepareSubmissionFenceWait(await_submission, device_lost_, submission_open_,
++          [this] { return GetCurrentSubmission(); }, [this] { return EndSubmission(false); })) {
++    return; // EndSubmission already reports device loss; never retire or notify twice.
+   }
+ 
+   const ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+ 
+-  size_t fences_total = submissions_in_flight_fences_.size();
+-  size_t fences_awaited = 0;
+-  if (await_submission > submission_completed_) {
+-    // Await in a blocking way if requested.
+-    // TODO(Triang3l): Await only one fence. "Fence signal operations that are
+-    // defined by vkQueueSubmit additionally include in the first
+-    // synchronization scope all commands that occur earlier in submission
+-    // order."
+-    VkResult wait_result =
+-        dfn.vkWaitForFences(device, uint32_t(await_submission - submission_completed_),
+-                            submissions_in_flight_fences_.data(), VK_TRUE, UINT64_MAX);
+-    if (wait_result == VK_SUCCESS) {
+-      fences_awaited += await_submission - submission_completed_;
+-    } else {
+-      REXGPU_ERROR("Failed to await submission completion Vulkan fences");
+-      if (wait_result == VK_ERROR_DEVICE_LOST) {
+-        device_lost_ = true;
+-      }
+-    }
+-  }
+-  // Check how far into the submissions the GPU currently is, in order because
+-  // submission themselves can be executed out of order, but Xenia serializes
+-  // that for simplicity.
+-  while (fences_awaited < fences_total) {
+-    VkResult fence_status =
+-        dfn.vkWaitForFences(device, 1, &submissions_in_flight_fences_[fences_awaited], VK_TRUE, 0);
+-    if (fence_status != VK_SUCCESS) {
+-      if (fence_status == VK_ERROR_DEVICE_LOST) {
+-        device_lost_ = true;
+-      }
+-      break;
+-    }
+-    ++fences_awaited;
+-  }
+-  if (device_lost_) {
+-    if (graphics_system_) {
+-      graphics_system_->OnHostGpuLossFromAnyThread(true);
+-    }
++  static const bool latest_fence = [] {
++    const char* value = std::getenv("ACV_VULKAN_WAIT_LATEST_FENCE");
++    return value && std::strcmp(value, "1") == 0;
++  }();
++  const auto& profile = acv::gpu_profile::configuration();
++  const double age = profile.path && *profile.path ? profile.age() : -1;
++  const bool trace = age >= 90;
++  uint64_t blocking_ns = 0;
++  // EndSubmission appends only successful submissions on graphics/compute
++  // queue index0. No other VkQueue contributes fences to this vector. Waiting
++  // for its last required signal therefore proves the whole requested prefix.
++  const auto completion = acv::CompleteSubmissionFences(
++      submissions_in_flight_fences_, fences_free_, submission_completed_, await_submission,
++      latest_fence, [&](uint32_t count, const VkFence* fences, uint64_t timeout) {
++        std::chrono::steady_clock::time_point start;
++        if (trace && timeout) start = std::chrono::steady_clock::now();
++        const VkResult result = dfn.vkWaitForFences(device, count, fences, VK_TRUE, timeout);
++        if (trace && timeout) blocking_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::steady_clock::now() - start).count());
++        return result;
++      });
++  if (!completion.valid_range) {
++    REXGPU_ERROR("Requested Vulkan fence prefix is outside submitted tickets");
+     return;
+   }
+-  if (!fences_awaited) {
++  if (completion.blocking_result != VK_SUCCESS) {
++    REXGPU_ERROR("Failed to await submission completion Vulkan fences: {}", int32_t(completion.blocking_result));
++  }
++  if (completion.poll_result != VK_SUCCESS && completion.poll_result != VK_TIMEOUT &&
++      completion.poll_result != VK_ERROR_DEVICE_LOST) {
++    REXGPU_ERROR("Failed to poll submission completion Vulkan fence: {}", int32_t(completion.poll_result));
++  }
++  if (trace) {
++    struct WaitTrace {
++      double since = -1;
++      uint64_t blocking_calls = 0, requested_fences = 0, passed_fences = 0;
++      uint64_t prefix_gt1 = 0, max_prefix = 0, polls = 0, blocking_ns = 0;
++    };
++    static thread_local WaitTrace stats;
++    if (stats.since < 0) stats.since = age;
++    stats.blocking_calls += completion.requested_prefix != 0;
++    stats.requested_fences += completion.requested_prefix;
++    stats.passed_fences += completion.blocking_fences;
++    stats.prefix_gt1 += completion.requested_prefix > 1;
++    stats.max_prefix = std::max(stats.max_prefix, uint64_t(completion.requested_prefix));
++    stats.polls += completion.poll_calls; stats.blocking_ns += blocking_ns;
++    if (age - stats.since >= 5) {
++      REXGPU_INFO("ACV submission fence waits age={} window={} latest={} blocking_calls={} "
++                  "original_prefix_fences={} passed_fences={} prefix_gt1_calls={} max_prefix={} "
++                  "poll_calls={} blocking_ms={}", age, age - stats.since, latest_fence,
++                  stats.blocking_calls, stats.requested_fences, stats.passed_fences,
++                  stats.prefix_gt1, stats.max_prefix, stats.polls, stats.blocking_ns / 1e6);
++      stats = {}; stats.since = age;
++    }
++  }
++  if (completion.device_lost) {
++    device_lost_ = true;
++    if (graphics_system_) graphics_system_->OnHostGpuLossFromAnyThread(true);
++    return;
++  }
++  if (!completion.retired) {
+     // Not updated - no need to reclaim or download things.
+     return;
+   }
+-  // Reclaim fences.
+-  fences_free_.reserve(fences_free_.size() + fences_awaited);
+-  auto submissions_in_flight_fences_awaited_end = submissions_in_flight_fences_.cbegin();
+-  std::advance(submissions_in_flight_fences_awaited_end, fences_awaited);
+-  fences_free_.insert(fences_free_.cend(), submissions_in_flight_fences_.cbegin(),
+-                      submissions_in_flight_fences_awaited_end);
+-  submissions_in_flight_fences_.erase(submissions_in_flight_fences_.cbegin(),
+-                                      submissions_in_flight_fences_awaited_end);
+-  submission_completed_ += fences_awaited;
+ 
+   // Reclaim semaphores.
+   while (!submissions_in_flight_semaphores_.empty()) {

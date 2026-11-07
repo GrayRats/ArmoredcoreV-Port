@@ -11,8 +11,21 @@
 #include <fcntl.h>
 #include <mutex>
 #include <string>
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <sys/syscall.h>
+#endif
 #include <unistd.h>
+#ifndef O_CLOEXEC  // Windows CRT has no close-on-exec open flag; Linux defines it.
+#define O_CLOEXEC 0
+#endif
+
+#if defined(_WIN32)
+static long TraceThreadId() { return static_cast<long>(GetCurrentThreadId()); }
+#else
+static long TraceThreadId() { return ::syscall(SYS_gettid); }
+#endif
 
 namespace {
 class AcvBakeChainTrace {
@@ -42,7 +55,7 @@ class AcvBakeChainTrace {
     auto us=std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     std::fprintf(file_,"{\"sequence\":%u,\"time_us\":%llu,\"host_tid\":%ld,",
-        ++sequence_,(unsigned long long)us,::syscall(SYS_gettid));
+        ++sequence_,(unsigned long long)us,TraceThreadId());
     va_list args;va_start(args,format);std::vfprintf(file_,format,args);va_end(args);
     std::fputs("}\n",file_);
     if(std::fflush(file_)!=0) {

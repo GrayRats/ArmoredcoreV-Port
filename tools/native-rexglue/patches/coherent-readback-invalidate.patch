@@ -1,0 +1,114 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -53,6 +53,7 @@
+ #include <rex/ui/vulkan/presenter.h>
+ #include <rex/ui/vulkan/util.h>
+ #include "resolve_descriptor_cache.h"
++#include "coherent_readback_publication.h"
+ #include "submission_fence_wait.h"
+ 
+ // Legacy backend compatibility aliases for shared readback controls.
+@@ -595,6 +596,9 @@
+     void* mapping = nullptr;
+     VkDeviceSize capacity = 0, allocation = 0;
+     uint64_t id = 0, submission = 0;
++    uint32_t memory_type = UINT32_MAX;
++    VkMemoryPropertyFlags memory_flags = 0;
++    bool memory_flags_known = false;
+     bool occupied = false;
+   };
+   explicit GeneralReadbackContext(VulkanCommandProcessor& cp)
+@@ -608,6 +612,12 @@
+                          : acv::gpu_profile::Stage::kGeneralPoolWait);
+                  return cp.AwaitReadbackSubmission(ticket);
+                }) {
++    const auto* memory_device = cp.GetVulkanDevice();
++    memory_device->vulkan_instance()->functions().vkGetPhysicalDeviceMemoryProperties(
++        memory_device->physical_device(), &memory_properties);
++    const char* coherent = std::getenv("ACV_READBACK_SKIP_COHERENT_INVALIDATE");
++    skip_coherent_invalidate = coherent && std::strcmp(coherent, "1") == 0;
++    if (skip_coherent_invalidate) REXGPU_INFO("ACV coherent GeneralReadback invalidate skip enabled");
+     const char* descriptor_cache = std::getenv("ACV_RESOLVE_DESCRIPTOR_CACHE");
+     if (descriptor_cache && std::strcmp(descriptor_cache, "1") == 0) {
+       const auto* vd = cp.GetVulkanDevice();
+@@ -649,6 +659,13 @@
+       }
+     }
+   }
++  void SetMemoryType(Slot& slot, uint32_t type) const {
++    slot.memory_type = type;
++    slot.memory_flags_known = type < memory_properties.memoryTypeCount;
++    slot.memory_flags = slot.memory_flags_known ? memory_properties.memoryTypes[type].propertyFlags : 0;
++  }
++  VkPhysicalDeviceMemoryProperties memory_properties = {};
++  bool skip_coherent_invalidate = false;
+   void TraceBatch() {
+     const auto& trace = acv::gpu_profile::configuration();
+     if (!trace.path || !*trace.path || trace.age() < 90) return;
+@@ -4815,6 +4832,7 @@
+             return false;
+           }
+           fresh->allocation = requirements.size;
++          context.SetMemoryType(*fresh, type);
+         }
+       }
+     }
+@@ -4851,9 +4869,11 @@
+   if (!slot) {
+     if (!fresh) {
+       fresh = std::make_unique<GeneralReadbackContext::Slot>();
++      uint32_t memory_type = UINT32_MAX;
+       if (!ui::vulkan::util::CreateDedicatedAllocationBuffer(vd, length,
+             VK_BUFFER_USAGE_TRANSFER_DST_BIT, ui::vulkan::util::MemoryPurpose::kReadback,
+-            fresh->buffer, fresh->memory, nullptr, &fresh->allocation)) return false;
++            fresh->buffer, fresh->memory, &memory_type, &fresh->allocation)) return false;
++      context.SetMemoryType(*fresh, memory_type);
+     }
+     if (context.allocated + fresh->allocation > budget ||
+         dfn.vkMapMemory(device, fresh->memory, 0, VK_WHOLE_SIZE, 0, &fresh->mapping) != VK_SUCCESS) {
+@@ -4905,8 +4925,12 @@
+         range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+         range.memory = slot->memory;
+         range.size = VK_WHOLE_SIZE;
+-        if (vd->functions().vkInvalidateMappedMemoryRanges(vd->device(), 1, &range) != VK_SUCCESS)
+-          return false;
++        return acv::PublishCompletedReadback(
++            !device_lost_ && submission_completed_ >= slot->submission,
++            general_readback_->skip_coherent_invalidate, slot->memory_flags_known, slot->memory_flags,
++            [&] { return vd->functions().vkInvalidateMappedMemoryRanges(vd->device(), 1, &range); },
++            [&] {
++
+         // Already under the global memory lock, and the ticket has completed.
+         // Avoid CPU-write helpers: they would recursively await this provider.
+         void* destination = memory_->TranslatePhysical(address);
+@@ -4920,6 +4944,7 @@
+         // Publication and reuse become visible only after every worker joins.
+         slot->occupied = false;
+         return true;
++            });
+       };
+   if (context.bridge.batching()) {
+     context.TraceBatch();
+--- /dev/null
++++ b/src/graphics/vulkan/coherent_readback_publication.h
+@@ -0,0 +1,20 @@
++#pragma once
++// Include after the embedding SDK's Vulkan API/platform configuration.
++#include <vulkan/vulkan_core.h>
++namespace acv {
++// Completion and a device->HOST_READ barrier remain mandatory even for coherent
++// memory. Flags must be the actual allocated memory type, never its purpose.
++// Unknown flags take the unconditional-invalidation path. No wait happens here.
++template<class Invalidate,class Publish>
++bool PublishCompletedReadback(bool completed,bool skip_coherent,bool flags_known,
++    VkMemoryPropertyFlags flags,Invalidate&& invalidate,Publish&& publish) noexcept {
++  if(!completed) return false;
++  constexpr VkMemoryPropertyFlags coherent_host=
++      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
++  const bool skip=skip_coherent && flags_known && (flags&coherent_host)==coherent_host;
++  try {
++    if(!skip && invalidate()!=VK_SUCCESS) return false;
++    return publish();
++  } catch(...) {return false;}
++}
++} // namespace acv

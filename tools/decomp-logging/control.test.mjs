@@ -115,7 +115,7 @@ test('existing logs archive losslessly, deduplicate, protect references, restore
  const f=fixture();try {
   const content='WARNING: legacy diagnostic\r\n'+'UTF8 Ж🙂 preserved\n'.repeat(12000),old=new Date(Date.now()-600000);
   for(const name of ['keep.log','duplicate.log','registry.log']){writeFileSync(path.join(f.workspace,'logs',name),content);utimesSync(path.join(f.workspace,'logs',name),old,old);}
-  writeFileSync(path.join(f.workspace,'docs/refs.md'),'Evidence: logs/keep.log\n');
+  writeFileSync(path.join(f.workspace,'tools/acv-context/docs/refs.md'),'Evidence: logs/keep.log\n');
   const registry=new Store(f.workspace);const sid=registry.session();registry.db.prepare('INSERT INTO artifacts(id,session_id,path,kind,created_at) VALUES(?,?,?,?,?)').run('registered-log',sid,'logs/registry.log','evidence','2026-01-01');registry.endSession(sid,'succeeded');registry.close();
   writeFileSync(path.join(f.workspace,'logs/secret.log'),'token=do_not_store_this\n');
   writeFileSync(path.join(f.workspace,'logs/tool-error.json'),JSON.stringify({ok:false,error:'failed parse'}));

@@ -8,6 +8,23 @@ sys.path.insert(0,str(ROOT/"tools/acv-trg-launcher"))
 import acv_settings as S
 import backend
 class StreamingSettings(unittest.TestCase):
+    def test_adaptive_presets_and_color_compatibility(self):
+        for vram,ram in [(2048,8192),(6144,32768),(24576,65536),(6144,8192)]:
+            soft,hard=S.quality_cache_budget(vram,ram)
+            self.assertLessEqual(soft,4096);self.assertLessEqual(hard,8192)
+            self.assertLessEqual(hard,vram-max(1024,vram//4))
+            self.assertLessEqual(hard,ram//4)
+            memory={'quality_soft_mb':soft,'quality_hard_mb':hard}
+            doc={'schema_version':1,'graphics':{'color_depth':10,'resolution':'2560x1080'},'launcher':{'profile':'unchanged','allow_experimental':True}}
+            original=copy.deepcopy(doc)
+            for name in S.GRAPHICS_PRESETS:
+                result=S.apply_graphics_preset(doc,name,{'fidelityfx','asset_read_ahead_mb','present_output_bits','frame_limit_fps'},memory)
+                self.assertEqual(result['graphics']['resolution'],'2560x1080')
+                self.assertFalse(result['graphics']['dither'])
+                self.assertEqual(result['launcher']['profile'],'unchanged')
+            self.assertEqual(doc,original)
+            with self.assertRaises(S.SettingsError):S.apply_graphics_preset(doc,'quality',set(),memory)
+
     def test_budget_and_auto_read_ahead(self):
         values=S.resolve_graphics()
         self.assertEqual((values["texture_cache_soft_mb"],values["texture_cache_hard_mb"],values["texture_cache_retention_s"]),(1024,1536,180))
@@ -23,8 +40,19 @@ class StreamingSettings(unittest.TestCase):
                        {"texture_cache_retention_s":0}]:
             with self.assertRaises(S.SettingsError):S.resolve_graphics(values)
         self.assertEqual(S.resolve_graphics({"texture_cache_hard_mb":3072},{"texture_cache_soft_mb":2048})["texture_cache_soft_mb"],2048)
+        with self.assertRaises(S.SettingsError):S.resolve_graphics({'resolution':'10000x1080'})
     def test_presets_and_saved_atomicity(self):
-        for values in S.GRAPHICS_PRESETS.values():S.graphics_to_cvars(values,features={"asset_read_ahead_mb"})
+        for name,values in S.GRAPHICS_PRESETS.items():
+            if name=="quality":  # FSR 1 is requested for this preset: experimental, needs FidelityFX
+                with self.assertRaises(S.SettingsError):S.graphics_to_cvars(values,features={"asset_read_ahead_mb"})
+                args=S.graphics_to_cvars(values,True,{"asset_read_ahead_mb","fidelityfx"})
+                self.assertIn("--texture_cache_memory_limit_soft_lifetime=800",args)
+                self.assertIn("--anisotropic_override=2",args)
+                self.assertIn("--present_effect=fsr",args)
+            else:S.graphics_to_cvars(values,features={"asset_read_ahead_mb"})
+            S.validate_graphics(values)
+            self.assertEqual(values["render_scale"],1)
+        self.assertEqual(S.GRAPHICS_PRESETS["compatibility"]["anisotropy"],2)
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             doc={"schema_version":1,"graphics":{},"launcher":{}}

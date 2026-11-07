@@ -1,0 +1,279 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -52,6 +52,7 @@
+ #include <rex/ui/flags.h>
+ #include <rex/ui/vulkan/presenter.h>
+ #include <rex/ui/vulkan/util.h>
++#include "resolve_descriptor_cache.h"
+ #include "submission_fence_wait.h"
+ 
+ // Legacy backend compatibility aliases for shared readback controls.
+@@ -607,6 +608,20 @@
+                          : acv::gpu_profile::Stage::kGeneralPoolWait);
+                  return cp.AwaitReadbackSubmission(ticket);
+                }) {
++    const char* descriptor_cache = std::getenv("ACV_RESOLVE_DESCRIPTOR_CACHE");
++    if (descriptor_cache && std::strcmp(descriptor_cache, "1") == 0) {
++      const auto* vd = cp.GetVulkanDevice();
++      const auto& f = vd->functions();
++      resolve_descriptors = std::make_unique<acv::ResolveDescriptorCache>(
++          acv::ResolveDescriptorCache::Api{f.vkCreateDescriptorPool, f.vkAllocateDescriptorSets,
++                                           f.vkUpdateDescriptorSets, f.vkDestroyDescriptorPool},
++          vd->device(), cp.GetSingleTransientDescriptorLayout(
++              SingleTransientDescriptorLayout::kStorageBufferCompute),
++          cp.shared_memory_->buffer(), VulkanSharedMemory::kBufferSize,
++          vd->properties().maxStorageBufferRange,
++          vd->properties().minStorageBufferOffsetAlignment);
++      REXGPU_INFO("ACV immutable Resolve destination descriptor cache enabled: 64 entries");
++    }
+     const char* batch = std::getenv("ACV_GENERAL_READBACK_BATCH");
+     if (batch && std::strcmp(batch, "1") == 0) {
+       bridge.EnableBatching([&cp](uint64_t ticket) {
+@@ -647,7 +662,9 @@
+                 stats.flushes[1], stats.flushes[2], stats.flushes[3], stats.flushes[4]);
+     last_batch_trace = age;
+   }
+-  double last_batch_trace = -1;
++  double last_batch_trace = -1, last_descriptor_trace = -1;
++  std::unique_ptr<acv::ResolveDescriptorCache> resolve_descriptors;
++  bool descriptor_resource_warning = false;
+   // Outlive the bridge and its publication callbacks.
+   std::unique_ptr<acv::ParallelReadbackCopy> parallel_copy;
+   Bridge bridge;
+@@ -1991,6 +2008,9 @@
+       rex::FatalError("Cannot complete Vulkan submissions before readback teardown");
+     }
+     context.bridge.CancelAfterDeviceStopped();
++    // This stable-buffer cache survives ordinary ClearCache, which does not
++    // replace the shared buffer or descriptor layout. Destroy only after stop.
++    if (context.resolve_descriptors) context.resolve_descriptors->DestroyAfterDeviceStopped(true);
+     for (auto& slot : context.slots) {
+       vd->functions().vkUnmapMemory(vd->device(), slot->memory);
+       vd->functions().vkDestroyBuffer(vd->device(), slot->buffer, nullptr);
+@@ -3409,6 +3429,45 @@
+   return descriptor_set;
+ }
+ 
++bool VulkanCommandProcessor::GetCachedResolveDestinationDescriptor(
++    const VkDescriptorBufferInfo& info, VkDescriptorSet& descriptor) {
++  descriptor = VK_NULL_HANDLE;
++  if (!general_readback_ || !general_readback_->resolve_descriptors) return true;
++  auto& context = *general_readback_;
++  auto& cache = *context.resolve_descriptors;
++  const auto& profile = acv::gpu_profile::configuration();
++  const bool trace = profile.path && *profile.path && profile.age() >= 90;
++  if (trace) cache.EnableStatistics();
++  const auto result = cache.Get(info);
++  if (trace && profile.age() - context.last_descriptor_trace >= 5) {
++    const auto& stats = cache.statistics();
++    REXGPU_INFO("ACV resolve descriptors age={} entries={} lookups={} hits={} updates={} "
++                "allocations={} fallback={} failures={}", profile.age(), cache.size(),
++                stats.lookups, stats.hits, stats.updates, stats.allocations, stats.fallbacks, stats.failures);
++    context.last_descriptor_trace = profile.age();
++  }
++  if (result.status == acv::ResolveDescriptorCache::Status::Ready) {
++    descriptor = result.set; return true;
++  }
++  if (result.status == acv::ResolveDescriptorCache::Status::Full) return true;
++  if (result.status == acv::ResolveDescriptorCache::Status::ApiFailure &&
++      acv::ResolveDescriptorCache::ResourceExhaustion(result.vk_result)) {
++    if (!context.descriptor_resource_warning) {
++      REXGPU_WARN("Resolve descriptor cache allocation unavailable ({}); using transient descriptors",
++                  int(result.vk_result));
++      context.descriptor_resource_warning = true;
++    }
++    return true;
++  }
++  REXGPU_ERROR("Resolve descriptor cache rejected binding or Vulkan call (status={}, VkResult={})",
++               int(result.status), int(result.vk_result));
++  if (result.vk_result == VK_ERROR_DEVICE_LOST && !device_lost_) {
++    device_lost_ = true;
++    if (graphics_system_) graphics_system_->OnHostGpuLossFromAnyThread(true);
++  }
++  return false;
++}
++
+ VkDescriptorSetLayout VulkanCommandProcessor::GetTextureDescriptorSetLayout(bool is_vertex,
+                                                                             size_t texture_count,
+                                                                             size_t sampler_count) {
+--- a/src/graphics/vulkan/render_target_cache.cpp
++++ b/src/graphics/vulkan/render_target_cache.cpp
+@@ -1233,32 +1233,37 @@
+         // maxStorageBufferRange.
+         // TODO(Triang3l): Use a single 512 MB shared memory binding if
+         // possible.
+-        VkDescriptorSet descriptor_set_dest = command_processor_.AllocateSingleTransientDescriptor(
+-            VulkanCommandProcessor::SingleTransientDescriptorLayout ::kStorageBufferCompute);
++        VkDescriptorBufferInfo write_descriptor_set_dest_buffer_info;
++        write_descriptor_set_dest_buffer_info.buffer = draw_resolution_scaled
++            ? texture_cache.scaled_resolve_buffer() : shared_memory.buffer();
++        write_descriptor_set_dest_buffer_info.offset = copy_dest_base;
++        write_descriptor_set_dest_buffer_info.range = copy_dest_range_length;
++        VkDescriptorSet descriptor_set_dest = VK_NULL_HANDLE;
++        if (!draw_resolution_scaled && !command_processor_.GetCachedResolveDestinationDescriptor(
++                write_descriptor_set_dest_buffer_info, descriptor_set_dest)) return false;
++        const bool immutable_descriptor = descriptor_set_dest != VK_NULL_HANDLE;
++        if (!immutable_descriptor) descriptor_set_dest = command_processor_.AllocateSingleTransientDescriptor(
++            VulkanCommandProcessor::SingleTransientDescriptorLayout::kStorageBufferCompute);
+         if (descriptor_set_dest != VK_NULL_HANDLE) {
+           if (!command_processor_.RegisterGeneralResolveWrite(
+                   resolve_info.copy_dest_extent_start, resolve_info.copy_dest_extent_length)) {
+             return false;
+           }
+-          // Write the destination descriptor.
+-          VkDescriptorBufferInfo write_descriptor_set_dest_buffer_info;
+-          write_descriptor_set_dest_buffer_info.buffer = draw_resolution_scaled
+-                                                             ? texture_cache.scaled_resolve_buffer()
+-                                                             : shared_memory.buffer();
+-          write_descriptor_set_dest_buffer_info.offset = copy_dest_base;
+-          write_descriptor_set_dest_buffer_info.range = copy_dest_range_length;
+-          VkWriteDescriptorSet write_descriptor_set_dest;
+-          write_descriptor_set_dest.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+-          write_descriptor_set_dest.pNext = nullptr;
+-          write_descriptor_set_dest.dstSet = descriptor_set_dest;
+-          write_descriptor_set_dest.dstBinding = 0;
+-          write_descriptor_set_dest.dstArrayElement = 0;
+-          write_descriptor_set_dest.descriptorCount = 1;
+-          write_descriptor_set_dest.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+-          write_descriptor_set_dest.pImageInfo = nullptr;
+-          write_descriptor_set_dest.pBufferInfo = &write_descriptor_set_dest_buffer_info;
+-          write_descriptor_set_dest.pTexelBufferView = nullptr;
+-          dfn.vkUpdateDescriptorSets(device, 1, &write_descriptor_set_dest, 0, nullptr);
++          // Cached sets are immutable, including while earlier dispatches run.
++          if (!immutable_descriptor) {
++            VkWriteDescriptorSet write_descriptor_set_dest;
++            write_descriptor_set_dest.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
++            write_descriptor_set_dest.pNext = nullptr;
++            write_descriptor_set_dest.dstSet = descriptor_set_dest;
++            write_descriptor_set_dest.dstBinding = 0;
++            write_descriptor_set_dest.dstArrayElement = 0;
++            write_descriptor_set_dest.descriptorCount = 1;
++            write_descriptor_set_dest.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
++            write_descriptor_set_dest.pImageInfo = nullptr;
++            write_descriptor_set_dest.pBufferInfo = &write_descriptor_set_dest_buffer_info;
++            write_descriptor_set_dest.pTexelBufferView = nullptr;
++            dfn.vkUpdateDescriptorSets(device, 1, &write_descriptor_set_dest, 0, nullptr);
++          }
+ 
+           // Submit the resolve.
+           if (draw_resolution_scaled) {
+--- /dev/null
++++ b/src/graphics/vulkan/resolve_descriptor_cache.h
+@@ -0,0 +1,103 @@
++#pragma once
++// Include after the embedding SDK's Vulkan API/platform configuration.
++#include <vulkan/vulkan_core.h>
++#include <array>
++#include <cstdint>
++#include <exception>
++namespace acv {
++// Immutable storage-buffer binding0 descriptors for ONE stable buffer lifetime.
++// The owner must outlive pending command buffers and explicitly stop the GPU
++// before destroying this pool. A new buffer lifetime requires a new cache even
++// if Vulkan recycles the same handle. No in-flight eviction/reset/update exists.
++class ResolveDescriptorCache {
++ public:
++  static constexpr uint32_t kCapacity=64;
++  struct Api {
++    PFN_vkCreateDescriptorPool create_pool;
++    PFN_vkAllocateDescriptorSets allocate_sets;
++    PFN_vkUpdateDescriptorSets update_sets;
++    PFN_vkDestroyDescriptorPool destroy_pool;
++  };
++  enum class Status { Ready, Full, Invalid, ApiFailure };
++  struct Result {
++    Status status;VkDescriptorSet set=VK_NULL_HANDLE;
++    VkResult vk_result=VK_SUCCESS;bool hit=false;
++  };
++  struct Statistics {uint64_t lookups=0,hits=0,updates=0,allocations=0,fallbacks=0,failures=0;};
++  ResolveDescriptorCache(Api api,VkDevice device,VkDescriptorSetLayout layout,
++      VkBuffer buffer,VkDeviceSize buffer_bytes,VkDeviceSize max_range,VkDeviceSize alignment)
++      :api_(api),device_(device),layout_(layout),buffer_(buffer),buffer_bytes_(buffer_bytes),
++       max_range_(max_range),alignment_(alignment) {}
++  ~ResolveDescriptorCache() {if(pool_) std::terminate();}
++  ResolveDescriptorCache(const ResolveDescriptorCache&)=delete;
++  ResolveDescriptorCache& operator=(const ResolveDescriptorCache&)=delete;
++  static bool ResourceExhaustion(VkResult result) {
++    return result==VK_ERROR_OUT_OF_HOST_MEMORY || result==VK_ERROR_OUT_OF_DEVICE_MEMORY ||
++        result==VK_ERROR_OUT_OF_POOL_MEMORY || result==VK_ERROR_FRAGMENTED_POOL;
++  }
++  Result Get(const VkDescriptorBufferInfo& key) {
++    if(statistics_enabled_) ++statistics_.lookups;
++    if(stopped_ || !device_ || !layout_ || !buffer_ || key.buffer!=buffer_ ||
++       !alignment_ || key.offset%alignment_ || !key.range || key.range==VK_WHOLE_SIZE ||
++       key.range>max_range_ || key.offset>=buffer_bytes_ || key.range>buffer_bytes_-key.offset)
++      return {Status::Invalid};
++    if(terminal_result_!=VK_SUCCESS) return {Status::ApiFailure,VK_NULL_HANDLE,terminal_result_};
++    for(uint32_t i=0;i<count_;++i) {
++      const auto& entry=entries_[i];
++      if(entry.offset==key.offset && entry.range==key.range) {
++        if(statistics_enabled_) ++statistics_.hits;
++        return {Status::Ready,entry.set,VK_SUCCESS,true};
++      }
++    }
++    if(count_==kCapacity || allocation_disabled_) {
++      if(statistics_enabled_) ++statistics_.fallbacks;
++      return {Status::Full};
++    }
++    if(!pool_) {
++      VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,kCapacity};
++      VkDescriptorPoolCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
++      info.maxSets=kCapacity;info.poolSizeCount=1;info.pPoolSizes=&size;
++      VkDescriptorPool created=VK_NULL_HANDLE;
++      const VkResult result=api_.create_pool(device_,&info,nullptr,&created);
++      if(result!=VK_SUCCESS) return Failed(result);
++      pool_=created;
++    }
++    VkDescriptorSetAllocateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
++    info.descriptorPool=pool_;info.descriptorSetCount=1;info.pSetLayouts=&layout_;
++    VkDescriptorSet set=VK_NULL_HANDLE;
++    if(statistics_enabled_) ++statistics_.allocations;
++    const VkResult result=api_.allocate_sets(device_,&info,&set);
++    if(result!=VK_SUCCESS) return Failed(result);
++    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
++    write.dstSet=set;write.dstBinding=0;write.descriptorCount=1;
++    write.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;write.pBufferInfo=&key;
++    api_.update_sets(device_,1,&write,0,nullptr);
++    if(statistics_enabled_) ++statistics_.updates;
++    entries_[count_++]={key.offset,key.range,set};
++    return {Status::Ready,set};
++  }
++  // The boolean is an explicit owner proof, not a fence query. No Vulkan calls
++  // or releases on false. Production calls only after queue completion/loss.
++  bool DestroyAfterDeviceStopped(bool stopped) {
++    if(!stopped) return false;
++    if(pool_) api_.destroy_pool(device_,pool_,nullptr);
++    pool_=VK_NULL_HANDLE;count_=0;stopped_=true;return true;
++  }
++  uint32_t size() const {return count_;}
++  void EnableStatistics() {statistics_enabled_=true;}
++  const Statistics& statistics() const {return statistics_;}
++ private:
++  Result Failed(VkResult result) {
++    if(statistics_enabled_) ++statistics_.failures;
++    if(ResourceExhaustion(result)) allocation_disabled_=true;
++    else terminal_result_=result;
++    return {Status::ApiFailure,VK_NULL_HANDLE,result};
++  }
++  struct Entry {VkDeviceSize offset{},range{};VkDescriptorSet set{};};
++  Api api_;VkDevice device_;VkDescriptorSetLayout layout_;VkBuffer buffer_;
++  VkDeviceSize buffer_bytes_,max_range_,alignment_;VkDescriptorPool pool_=VK_NULL_HANDLE;
++  std::array<Entry,kCapacity> entries_{};uint32_t count_=0;
++  bool stopped_=false,allocation_disabled_=false,statistics_enabled_=false;
++  VkResult terminal_result_=VK_SUCCESS;Statistics statistics_;
++};
++} // namespace acv
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -216,6 +216,11 @@
+   // A frame must be open.
+   VkDescriptorSet AllocateSingleTransientDescriptor(
+       SingleTransientDescriptorLayout transient_descriptor_layout);
++
++  // Unscaled stable shared buffer only. Null on disabled/full cache requests the
++  // original transient path; false denotes invalid input or a fatal Vulkan error.
++  bool GetCachedResolveDestinationDescriptor(const VkDescriptorBufferInfo& info,
++                                             VkDescriptorSet& descriptor);
+ 
+   // The returned reference is valid until a cache clear.
+   VkDescriptorSetLayout GetTextureDescriptorSetLayout(bool is_vertex, size_t texture_count,

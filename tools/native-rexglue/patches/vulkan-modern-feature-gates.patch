@@ -1,0 +1,44 @@
+--- a/include/rex/ui/vulkan/device.h
++++ b/include/rex/ui/vulkan/device.h
+@@ -154,6 +154,9 @@
+     // VK_KHR_dynamic_rendering (#55, promoted to 1.3)
+ 
+     bool dynamicRendering = false;
++    // Optional new scheduler paths; true only when explicitly enabled at creation.
++    bool synchronization2 = false;
++    bool timelineSemaphore = false;
+ 
+     // VK_EXT_non_seamless_cube_map (#423)
+ 
+--- a/src/ui/vulkan/vulkan_device.cpp
++++ b/src/ui/vulkan/vulkan_device.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <algorithm>
+ #include <cstring>
++#include <cstdlib>
+ #include <string>
+ #include <unordered_map>
+ #include <vector>
+@@ -647,6 +648,10 @@
+ 
+   if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 2, 0)) {
+     if (with_gpu_emulation) {
++      const char* timeline = std::getenv("ACV_VULKAN_TIMELINE_SUBMISSIONS");
++      if (timeline && std::strcmp(timeline, "1") == 0) {
++        XE_UI_VULKAN_FEATURE_2(features_1_2, timelineSemaphore);
++      }
+       XE_UI_VULKAN_FEATURE_2(features_1_2, samplerMirrorClampToEdge);
+       XE_UI_VULKAN_FEATURE_2(features_1_2, uniformBufferStandardLayout);
+       XE_UI_VULKAN_FEATURE_2(features_1_2, scalarBlockLayout);
+@@ -659,6 +664,10 @@
+ 
+   if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 3, 0)) {
+     if (with_gpu_emulation) {
++      const char* sync2 = std::getenv("ACV_VULKAN_SYNCHRONIZATION2");
++      if (sync2 && std::strcmp(sync2, "1") == 0) {
++        XE_UI_VULKAN_FEATURE_2(features_1_3, synchronization2);
++      }
+       XE_UI_VULKAN_FEATURE_2(features_1_3, shaderDemoteToHelperInvocation);
+       XE_UI_VULKAN_FEATURE_2(features_1_3, dynamicRendering);
+     }

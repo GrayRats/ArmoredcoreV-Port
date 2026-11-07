@@ -37,9 +37,9 @@ constexpr int kSchemaVersion = 1;
 const QStringList kResolutionPresets{"auto",      "1280x720",  "1920x1080", "2560x1440", "3840x2160",
                                      "1920x1200", "2560x1600", "2560x1080", "3440x1440"};
 // Presets contain only settings that are available (not experimental) in the pinned runtime.
-const QJsonObject kCompatibility{{"render_scale", 1}, {"anisotropy", "game"}, {"antialiasing", "off"},
+const QJsonObject kCompatibility{{"render_scale", 1}, {"anisotropy", 2}, {"antialiasing", "off"},
                                  {"dither", false},   {"output_effect", "bilinear"}, {"vsync", true}};
-const QJsonObject kQuality{{"render_scale", 1}, {"anisotropy", 16}, {"antialiasing", "off"},
+const QJsonObject kQuality{{"render_scale", 1}, {"anisotropy", 2}, {"antialiasing", "off"},
                            {"dither", true},    {"output_effect", "bilinear"}, {"vsync", true}};
 
 QString describe(const QJsonValue &v) {
@@ -347,8 +347,9 @@ QComboBox *MainWindow::optionCombo(const QString &key, bool editable) {
     } else {
         for (const auto &o : cap.value("options").toArray()) {
             const QJsonObject opt = o.toObject();
+            const bool unlimited = key == "fps_limit" && opt.value("value").toInt(-1) == 0;
             addItem(opt.value("value"), opt.value("status").toString(), opt.value("reason").toString(),
-                    describe(opt.value("value")));
+                    unlimited ? tr("Без лимита") : describe(opt.value("value")));
         }
     }
     m_combos.insert(key, combo);
@@ -389,8 +390,8 @@ QWidget *MainWindow::buildGraphicsTab() {
     auto *presetRow = new QHBoxLayout;
     m_presetCombo = new QComboBox;
     m_presetCombo->setObjectName("preset");
-    m_presetCombo->addItem(tr("Совместимость"), "compat");
-    m_presetCombo->addItem(tr("Качество"), "quality");
+    m_presetCombo->addItem(tr("Производительность"), "compat");
+    m_presetCombo->addItem(tr("Графика"), "quality");
     m_presetCombo->addItem(tr("Пользовательский"), "custom");
     m_presetCombo->setCurrentIndex(2);
     connect(m_presetCombo, &QComboBox::activated, this, [this](int i) {
@@ -408,7 +409,13 @@ QWidget *MainWindow::buildGraphicsTab() {
         {"render_scale", tr("Масштаб внутреннего рендера")}, {"anisotropy", tr("Анизотропная фильтрация")},
         {"antialiasing", tr("Сглаживание")}, {"dither", tr("Дизеринг")},
         {"output_effect", tr("Масштабирование вывода")}, {"sharpness", tr("Резкость CAS")}, {"fsr_sharpness", tr("Смягчение FSR RCAS (0 — резче)")}};
-    for (const auto &r : rows) form->addRow(r.second, optionCombo(r.first));
+    for (const auto &r : rows) {
+        QComboBox *combo = optionCombo(r.first);
+        if (r.first == "dither")
+            combo->setToolTip(tr("Добавляет едва заметный шум при выводе в 8 бит, чтобы сгладить полосы на градиентах. "
+                                 "Почти не влияет на FPS; для 10-битного вывода отключается."));
+        form->addRow(r.second, combo);
+    }
     auto *note = new QLabel(tr("«Экспериментально» — включается флажком на вкладке «Запуск». CAS и FSR требуют сборку с "
                                "FidelityFX; FSR 2/3 недоступны. Масштаб рендера и FXAA пока не проверены на картинке."));
     note->setWordWrap(true);

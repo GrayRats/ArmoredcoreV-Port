@@ -15,7 +15,7 @@ const find=command=>db.prepare("SELECT * FROM operations WHERE command_json=? AN
 const tasks=[{
  command:['python3','tools/acv_more_instructions.py','--resume-build-fix'],
  message:'Pinned branch plus isolated linkage fix: unsupported unique addresses 10939 to 38; generation coverage only',
- files:['tools/acv_more_instructions.py','tmp/acv-more-instructions.toml','docs/fine/XENON_MORE_INSTRUCTIONS.md',
+ files:['tools/acv_more_instructions.py','tmp/acv-more-instructions.toml','tools/acv-context/docs/fine/XENON_MORE_INSTRUCTIONS.md',
   ...['verification.json','configure.stdout.log','configure.stderr.log','build.stdout.log','build.stderr.log',
       'build_recovery.stdout.log','build_recovery.stderr.log','build-fix.patch','recompile.stdout.log',
       'recompile.stderr.log','remaining-addresses.json','remaining-instructions.json'].map(p=>'logs/acv-more-instructions-20261020/'+p)]
@@ -23,7 +23,7 @@ const tasks=[{
  command:['python3','tools/native-decomp/run_8245fa20.py'],
  message:'Readable retail 0x8245FA20 state reconstruction: 69152 state cases and 10 expected transitions pass; no Xenia parity',
  files:['tools/native-decomp/acv_8245fa20.hpp','tools/native-decomp/compare_8245fa20.cpp',
-  'tools/native-decomp/run_8245fa20.py','logs/decomp-20261020/8245fa20.asm','docs/fine/NATIVE_DECOMP_8245FA20.md',
+  'tools/native-decomp/run_8245fa20.py','logs/decomp-20261020/8245fa20.asm','tools/acv-context/docs/fine/NATIVE_DECOMP_8245FA20.md',
   ...['verification.json','generated_8245fa20.cpp','compile.stdout.txt','compile.stderr.txt',
       'execution.stdout.txt','execution.stderr.txt'].map(p=>'tmp/native-decomp-8245fa20/'+p)]
 }];

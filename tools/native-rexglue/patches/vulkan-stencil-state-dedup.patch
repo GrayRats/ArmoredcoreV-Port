@@ -1,0 +1,39 @@
+--- a/src/graphics/vulkan/deferred_command_buffer.cpp
++++ b/src/graphics/vulkan/deferred_command_buffer.cpp
+@@ -46,6 +46,8 @@
+   static const bool dedup_push = [] { const char* v = std::getenv("ACV_VULKAN_DEDUP_PUSH_CONSTANTS"); return v && std::strcmp(v, "1") == 0; }();
+   acv::BufferBindCache bind_cache;
+   acv::PushConstantCache push_cache;
++  acv::PushConstantCache stencil_reference, stencil_compare, stencil_write;
++  static const bool dedup_stencil = [] { const char* v = std::getenv("ACV_VULKAN_DEDUP_STENCIL_CONSTANTS"); return v && std::strcmp(v, "1") == 0; }();
+   static const bool dedup_dynamic = [] { const char* v = std::getenv("ACV_VULKAN_DEDUP_DYNAMIC_CONSTANTS"); return v && std::strcmp(v, "1") == 0; }();
+   acv::DynamicConstantCache<4> blend_cache;
+   acv::DynamicConstantCache<3> depth_bias_cache;
+@@ -119,6 +121,7 @@
+ 
+       case Command::kVkBindPipeline: {
+         blend_cache.Reset(); depth_bias_cache.Reset();
++        stencil_reference = {}; stencil_compare = {}; stencil_write = {};
+         auto& args = *reinterpret_cast<const ArgsVkBindPipeline*>(stream);
+         dfn.vkCmdBindPipeline(command_buffer, args.pipeline_bind_point, args.pipeline);
+       } break;
+@@ -325,16 +328,19 @@
+ 
+       case Command::kVkSetStencilCompareMask: {
+         auto& args = *reinterpret_cast<const ArgsSetStencilMaskReference*>(stream);
++        if (!dedup_stencil || stencil_compare.Update(VK_NULL_HANDLE, args.face_mask, 0, sizeof(args.mask_reference), &args.mask_reference))
+         dfn.vkCmdSetStencilCompareMask(command_buffer, args.face_mask, args.mask_reference);
+       } break;
+ 
+       case Command::kVkSetStencilReference: {
+         auto& args = *reinterpret_cast<const ArgsSetStencilMaskReference*>(stream);
++        if (!dedup_stencil || stencil_reference.Update(VK_NULL_HANDLE, args.face_mask, 0, sizeof(args.mask_reference), &args.mask_reference))
+         dfn.vkCmdSetStencilReference(command_buffer, args.face_mask, args.mask_reference);
+       } break;
+ 
+       case Command::kVkSetStencilWriteMask: {
+         auto& args = *reinterpret_cast<const ArgsSetStencilMaskReference*>(stream);
++        if (!dedup_stencil || stencil_write.Update(VK_NULL_HANDLE, args.face_mask, 0, sizeof(args.mask_reference), &args.mask_reference))
+         dfn.vkCmdSetStencilWriteMask(command_buffer, args.face_mask, args.mask_reference);
+       } break;
+ 

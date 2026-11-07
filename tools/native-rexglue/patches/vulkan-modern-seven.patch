@@ -1,0 +1,1923 @@
+--- a/include/rex/ui/vulkan/device.h
++++ b/include/rex/ui/vulkan/device.h
+@@ -154,6 +154,12 @@
+     // VK_KHR_dynamic_rendering (#55, promoted to 1.3)
+ 
+     bool dynamicRendering = false;
++    // Optional new scheduler paths; true only when explicitly enabled at creation.
++    bool synchronization2 = false;
++    bool timelineSemaphore = false;
++    bool readbackTransferQueue = false;
++    bool graphicsPipelineLibrary = false;
++    bool extendedRasterizationState = false;
+ 
+     // VK_EXT_non_seamless_cube_map (#423)
+ 
+--- a/src/ui/vulkan/vulkan_device.cpp
++++ b/src/ui/vulkan/vulkan_device.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <algorithm>
+ #include <cstring>
++#include <cstdlib>
+ #include <string>
+ #include <unordered_map>
+ #include <vector>
+@@ -207,10 +208,17 @@
+   bool ext_1_1_KHR_maintenance1 = false;
+   bool ext_1_2_KHR_shader_float_controls = false;
+   bool ext_EXT_fragment_shader_interlock = false;
++  bool ext_EXT_graphics_pipeline_library = false;
++  bool ext_KHR_pipeline_library = false;
+   bool ext_1_3_EXT_shader_demote_to_helper_invocation = false;
+   bool ext_1_3_KHR_dynamic_rendering = false;
+   bool ext_EXT_non_seamless_cube_map = false;
+   if (with_gpu_emulation) {
++    const char* gpl=std::getenv("ACV_VULKAN_PIPELINE_LIBRARIES");
++    if(get_physical_device_properties2_supported && properties.apiVersion>=VK_MAKE_API_VERSION(0,1,1,0) && gpl && std::strcmp(gpl,"1")==0){
++      XE_UI_VULKAN_LOCAL_EXTENSION(KHR_pipeline_library)
++      XE_UI_VULKAN_LOCAL_EXTENSION(EXT_graphics_pipeline_library)
++    }
+     // #15.
+     XE_UI_VULKAN_LOCAL_PROMOTED_EXTENSION(KHR_sampler_mirror_clamp_to_edge, 1, 2)
+     // #70. Must be enabled for VK_KHR_sampler_ycbcr_conversion.
+@@ -287,6 +295,11 @@
+     return nullptr;
+   }
+ 
++  if(ext_EXT_graphics_pipeline_library && !ext_KHR_pipeline_library){
++    enabled_extensions.erase(std::remove_if(enabled_extensions.begin(),enabled_extensions.end(),
++        [](const char* name){return std::strcmp(name,VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME)==0;}),enabled_extensions.end());
++    ext_EXT_graphics_pipeline_library=false;
++  }
+   VkDeviceCreateInfo device_create_info = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+ 
+   device_create_info.enabledExtensionCount = uint32_t(enabled_extensions.size());
+@@ -311,6 +324,8 @@
+   VulkanFeatures<VkPhysicalDevicePortabilitySubsetFeaturesKHR,
+                  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR>
+       features_KHR_portability_subset;
++  VulkanFeatures<VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT,
++                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT> features_EXT_graphics_pipeline_library;
+   VkPhysicalDeviceDriverPropertiesKHR properties_1_2_KHR_driver_properties = {
+       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+   VkPhysicalDeviceFloatControlsProperties properties_1_2_KHR_shader_float_controls = {
+@@ -337,6 +352,7 @@
+       features_EXT_robustness2;
+ 
+   if (get_physical_device_properties2_supported) {
++    if(ext_EXT_graphics_pipeline_library && ext_KHR_pipeline_library)features_EXT_graphics_pipeline_library.Link(supported_features_2,device_create_info);
+     if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 2, 0)) {
+       features_1_2.Link(supported_features_2, device_create_info);
+     }
+@@ -480,6 +496,13 @@
+ 
+   device->queue_families_[device->queue_family_graphics_compute_].queues.resize(std::max(
+       size_t(1), device->queue_families_[device->queue_family_graphics_compute_].queues.size()));
++  const char* transfer_queue = std::getenv("ACV_READBACK_TRANSFER_QUEUE");
++  if (with_gpu_emulation && properties.apiVersion >= VK_MAKE_API_VERSION(0,1,2,0) &&
++      transfer_queue && std::strcmp(transfer_queue,"1")==0 &&
++      queue_families[device->queue_family_graphics_compute_].queueCount >= 2) {
++    device->queue_families_[device->queue_family_graphics_compute_].queues.resize(2);
++    device->properties_.readbackTransferQueue = true;
++  }
+   if (device->queue_family_sparse_binding_ != UINT32_MAX) {
+     device->queue_families_[device->queue_family_sparse_binding_].queues.resize(std::max(
+         size_t(1), device->queue_families_[device->queue_family_sparse_binding_].queues.size()));
+@@ -647,6 +670,11 @@
+ 
+   if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 2, 0)) {
+     if (with_gpu_emulation) {
++      const char* timeline = std::getenv("ACV_VULKAN_TIMELINE_SUBMISSIONS");
++      if ((timeline && std::strcmp(timeline, "1") == 0) ||
++          (transfer_queue && std::strcmp(transfer_queue,"1")==0)) {
++        XE_UI_VULKAN_FEATURE_2(features_1_2, timelineSemaphore);
++      }
+       XE_UI_VULKAN_FEATURE_2(features_1_2, samplerMirrorClampToEdge);
+       XE_UI_VULKAN_FEATURE_2(features_1_2, uniformBufferStandardLayout);
+       XE_UI_VULKAN_FEATURE_2(features_1_2, scalarBlockLayout);
+@@ -659,6 +687,12 @@
+ 
+   if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 3, 0)) {
+     if (with_gpu_emulation) {
++      const char* raster = std::getenv("ACV_VULKAN_EXTENDED_RASTER_STATE");
++      device->properties_.extendedRasterizationState = raster && std::strcmp(raster,"1")==0;
++      const char* sync2 = std::getenv("ACV_VULKAN_SYNCHRONIZATION2");
++      if (sync2 && std::strcmp(sync2, "1") == 0) {
++        XE_UI_VULKAN_FEATURE_2(features_1_3, synchronization2);
++      }
+       XE_UI_VULKAN_FEATURE_2(features_1_3, shaderDemoteToHelperInvocation);
+       XE_UI_VULKAN_FEATURE_2(features_1_3, dynamicRendering);
+     }
+@@ -676,6 +710,9 @@
+     }
+   }
+ 
++  if(with_gpu_emulation && ext_EXT_graphics_pipeline_library && ext_KHR_pipeline_library){
++    XE_UI_VULKAN_FEATURE_2(features_EXT_graphics_pipeline_library, graphicsPipelineLibrary);
++  }
+   if (ext_KHR_portability_subset) {
+     if (with_gpu_emulation) {
+       XE_UI_VULKAN_FEATURE_2(features_KHR_portability_subset, constantAlphaColorBlendFactors)
+--- a/include/rex/graphics/vulkan/pipeline_cache.h
++++ b/include/rex/graphics/vulkan/pipeline_cache.h
+@@ -468,6 +468,11 @@
+   bool creation_completion_set_event_ = false;
+   size_t creation_threads_shutdown_from_ = SIZE_MAX;
+   std::vector<std::unique_ptr<rex::thread::Thread>> creation_threads_;
++  struct LibraryCache;
++  std::unique_ptr<LibraryCache> library_cache_;
++  struct DriverCache;
++  std::unique_ptr<DriverCache> driver_cache_;
++
+ };
+ 
+ }  // namespace rex::graphics::vulkan
+--- a/src/graphics/vulkan/pipeline_cache.cpp
++++ b/src/graphics/vulkan/pipeline_cache.cpp
+@@ -41,6 +41,9 @@
+ #include <rex/graphics/util/draw.h>
+ #include <rex/graphics/vulkan/command_processor.h>
+ #include <rex/graphics/vulkan/pipeline_cache.h>
++#include "persistent_pipeline_cache.h"
++#include "vertex_input_pipeline_libraries.h"
++#include <cstdlib>
+ #include <rex/graphics/vulkan/shader.h>
+ #include <rex/graphics/xenos.h>
+ #include <rex/hash.h>
+@@ -272,6 +275,14 @@
+ 
+ }  // namespace
+ 
++struct VulkanPipelineCache::LibraryCache : acv::VertexInputPipelineLibraries {
++ using acv::VertexInputPipelineLibraries::VertexInputPipelineLibraries;
++};
++
++struct VulkanPipelineCache::DriverCache : acv::PersistentPipelineCache {
++ using acv::PersistentPipelineCache::PersistentPipelineCache;
++};
++
+ VulkanPipelineCache::VulkanPipelineCache(VulkanCommandProcessor& command_processor,
+                                          const RegisterFile& register_file,
+                                          VulkanRenderTargetCache& render_target_cache,
+@@ -287,6 +298,20 @@
+ 
+ bool VulkanPipelineCache::Initialize() {
+   const ui::vulkan::VulkanDevice* const vulkan_device = command_processor_.GetVulkanDevice();
++
++  command_processor_.InitializeExtendedRasterizationState();
++  if(vulkan_device->properties().graphicsPipelineLibrary){
++    const auto& f=vulkan_device->functions();
++    library_cache_=std::make_unique<LibraryCache>(vulkan_device->device(),f.vkCreateGraphicsPipelines,f.vkDestroyPipeline);
++  }
++  if (const char* path = std::getenv("ACV_VULKAN_PIPELINE_CACHE"); path && *path) {
++    VkPhysicalDeviceProperties properties{};
++    const auto& ifn = vulkan_device->vulkan_instance()->functions();
++    ifn.vkGetPhysicalDeviceProperties(vulkan_device->physical_device(), &properties);
++    driver_cache_ = std::make_unique<DriverCache>(vulkan_device->device(), properties, ifn.vkGetDeviceProcAddr, path);
++    REXGPU_INFO("ACV driver pipeline cache enabled={} loaded={} writable={} result={}", driver_cache_->handle()!=VK_NULL_HANDLE, driver_cache_->loaded, driver_cache_->writable(), int(driver_cache_->last_result));
++    if (driver_cache_->last_result == VK_ERROR_DEVICE_LOST) return false;
++  }
+ 
+   bool edram_fragment_shader_interlock =
+       render_target_cache_.GetPath() == RenderTargetCache::Path::kPixelShaderInterlock;
+@@ -419,6 +444,7 @@
+   auto pipeline_storage_file_path =
+       shader_storage_shareable_root /
+       fmt::format("{:08X}.{}.vk.xpso", title_id, edram_fragment_shader_interlock ? "fsi" : "fbo");
++  if(command_processor_.ExtendedRasterizationEnabled())pipeline_storage_file_path += ".dynamic-raster";
+   pipeline_storage_file_ = rex::filesystem::OpenFile(pipeline_storage_file_path, "a+b");
+   if (!pipeline_storage_file_) {
+     REXGPU_ERROR(
+@@ -817,6 +843,8 @@
+   creation_completion_event_.reset();
+ 
+   ShutdownShaderStorage();
++  library_cache_.reset();
++  if (driver_cache_) { driver_cache_->Save(); driver_cache_.reset(); }
+ 
+   const ui::vulkan::VulkanDevice* const vulkan_device = command_processor_.GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+@@ -1096,6 +1124,11 @@
+         uint32_t(primitive_processing_result.tessellation_mode),
+         uint32_t(primitive_processing_result.host_primitive_reset_enabled), render_pass_key.key);
+     return false;
++  }
++  if(command_processor_.ExtendedRasterizationEnabled()){
++    const VkCullModeFlags cull=(description.cull_front?VK_CULL_MODE_FRONT_BIT:0)|(description.cull_back?VK_CULL_MODE_BACK_BIT:0);
++    command_processor_.SetGuestRasterizationState(cull,description.front_face_clockwise?VK_FRONT_FACE_CLOCKWISE:VK_FRONT_FACE_COUNTER_CLOCKWISE);
++    description.cull_front=0;description.cull_back=0;description.front_face_clockwise=0;
+   }
+   if (last_pipeline_ && last_pipeline_->first == description) {
+     VkPipeline last_pipeline = last_pipeline_->second.pipeline.load(std::memory_order_acquire);
+@@ -3394,7 +3427,7 @@
+     color_blend_state.pAttachments = color_blend_attachments;
+   }
+ 
+-  std::array<VkDynamicState, 7> dynamic_states;
++  std::array<VkDynamicState, 9> dynamic_states;
+   VkPipelineDynamicStateCreateInfo dynamic_state;
+   dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamic_state.pNext = nullptr;
+@@ -3407,6 +3440,10 @@
+   // invalidated (again, even if it has no effect).
+   dynamic_states[dynamic_state.dynamicStateCount++] = VK_DYNAMIC_STATE_VIEWPORT;
+   dynamic_states[dynamic_state.dynamicStateCount++] = VK_DYNAMIC_STATE_SCISSOR;
++  if(command_processor_.ExtendedRasterizationEnabled()){
++    dynamic_states[dynamic_state.dynamicStateCount++]=VK_DYNAMIC_STATE_CULL_MODE;
++    dynamic_states[dynamic_state.dynamicStateCount++]=VK_DYNAMIC_STATE_FRONT_FACE;
++  }
+   if (!edram_fragment_shader_interlock) {
+     dynamic_states[dynamic_state.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
+     dynamic_states[dynamic_state.dynamicStateCount++] = VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+@@ -3479,10 +3516,14 @@
+ 
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+-  VkPipeline pipeline;
+-  VkResult create_result = dfn.vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+-                                                         &pipeline_create_info, nullptr, &pipeline);
++  VkPipeline pipeline=VK_NULL_HANDLE;
++  VkResult create_result=VK_SUCCESS;
++  const VkPipelineCache driver=driver_cache_?driver_cache_->handle():VK_NULL_HANDLE;
++  if(!library_cache_ || !library_cache_->TryCreate(pipeline_create_info,driver,pipeline,create_result))
++    create_result=dfn.vkCreateGraphicsPipelines(device,driver,1,&pipeline_create_info,nullptr,&pipeline);
++  if (create_result == VK_SUCCESS && driver_cache_) driver_cache_->Created();
+   if (create_result != VK_SUCCESS) {
++    if(pipeline!=VK_NULL_HANDLE)dfn.vkDestroyPipeline(device,pipeline,nullptr);
+     uint64_t ps_hash = creation_arguments.pixel_shader
+                            ? creation_arguments.pixel_shader->shader().ucode_data_hash()
+                            : 0;
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -217,6 +217,12 @@
+   VkDescriptorSet AllocateSingleTransientDescriptor(
+       SingleTransientDescriptorLayout transient_descriptor_layout);
+ 
++  void AddTransferReadbackDependency();
++  void InitializeExtendedRasterizationState();
++  bool ExtendedRasterizationEnabled()const{return extended_raster_enabled_;}
++  void SetGuestRasterizationState(VkCullModeFlags cull,VkFrontFace front){guest_cull_mode_=cull;guest_front_face_=front;}
++  void ApplyGuestRasterizationState();
++
+   // Diagnostic only, no data members / object ABI change. Categories: guest FSI
+   // draw region=1, Resolve copy dispatch=2, GeneralReadback staging copy=3.
+   void MarkGpuTimestampRegion(uint32_t category, uint64_t copy_bytes = 0);
+@@ -430,10 +436,9 @@
+   // clearing and stopping capturing. Returns whether the submission was done
+   // successfully, if it has failed, leaves it open.
+   bool EndSubmission(bool is_swap);
+-  bool AwaitAllQueueOperationsCompletion() {
+-    CheckSubmissionFenceAndDeviceLoss(GetCurrentSubmission());
+-    return !submission_open_ && submissions_in_flight_fences_.empty();
+-  }
++  bool AwaitAllQueueOperationsCompletion();
++  bool EnsureTimelineSubmission();
++
+   // Keep primary-buffer-end submit behavior aligned with D3D12: only submit
+   // when immediate submission is safe.
+   bool CanEndSubmissionImmediately() const;
+@@ -549,6 +554,7 @@
+   // In case vkQueueSubmit fails after something like a successful
+   // vkQueueBindSparse, to wait correctly on the next attempt.
+   std::vector<VkSemaphore> current_submission_wait_semaphores_;
++  std::vector<uint64_t> current_submission_wait_values_;
+   std::vector<VkPipelineStageFlags> current_submission_wait_stage_masks_;
+   std::vector<VkFence> submissions_in_flight_fences_;
+   std::deque<std::pair<uint64_t, VkSemaphore>> submissions_in_flight_semaphores_;
+@@ -729,8 +735,10 @@
+       swap_framebuffers_;
+ 
+   // Pending pipeline barriers.
+-  std::vector<VkBufferMemoryBarrier> pending_barriers_buffer_memory_barriers_;
+-  std::vector<VkImageMemoryBarrier> pending_barriers_image_memory_barriers_;
++  struct PendingBufferBarrier : VkBufferMemoryBarrier { VkPipelineStageFlags src_stages=0, dst_stages=0; };
++  struct PendingImageBarrier : VkImageMemoryBarrier { VkPipelineStageFlags src_stages=0, dst_stages=0; };
++  std::vector<PendingBufferBarrier> pending_barriers_buffer_memory_barriers_;
++  std::vector<PendingImageBarrier> pending_barriers_image_memory_barriers_;
+   struct PendingBarrier {
+     VkPipelineStageFlags src_stage_mask = 0;
+     VkPipelineStageFlags dst_stage_mask = 0;
+@@ -868,6 +876,19 @@
+   std::unique_ptr<GeneralReadbackContext> general_readback_;
+   bool IssueCopy_GeneralReadback(const draw_util::ResolveInfo& info);
+ 
++  PFN_vkCmdPipelineBarrier2 scoped_barrier_command_ = nullptr;
++  bool scoped_barrier_loaded_ = false;
++
++  struct TimelineContext;
++  std::unique_ptr<TimelineContext> timeline_submission_;
++  bool timeline_initialized_ = false;
++
++  bool extended_raster_enabled_=false;
++  PFN_vkCmdSetCullMode set_cull_mode_=nullptr;
++  PFN_vkCmdSetFrontFace set_front_face_=nullptr;
++  VkCullModeFlags guest_cull_mode_=VK_CULL_MODE_NONE;
++  VkFrontFace guest_front_face_=VK_FRONT_FACE_COUNTER_CLOCKWISE;
++
+ };
+ 
+ }  // namespace rex::graphics::vulkan
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -56,6 +56,9 @@
+ #include "coherent_readback_publication.h"
+ #include "submission_fence_wait.h"
+ #include "gpu_timestamp_profiler.h"
++#include "timeline_submission.h"
++#include "async_readback_transfer.h"
++#include "readback_suballocation.h"
+ 
+ // Legacy backend compatibility aliases for shared readback controls.
+ REXCVAR_DEFINE_BOOL(vulkan_readback_resolve, false, "GPU/Vulkan",
+@@ -589,6 +592,10 @@
+ 
+ // All Vulkan resources are owned and destroyed on the GPU worker. Provider
+ // callbacks retain only the bridge's plain state, never a Vulkan allocation.
++struct VulkanCommandProcessor::TimelineContext : acv::TimelineSubmission {
++  using acv::TimelineSubmission::TimelineSubmission;
++};
++
+ struct VulkanCommandProcessor::GeneralReadbackContext {
+   using Bridge = acv::GeneralReadbackBridge<memory::Memory>;
+   struct Slot {
+@@ -601,6 +608,8 @@
+     VkMemoryPropertyFlags memory_flags = 0;
+     bool memory_flags_known = false;
+     bool occupied = false;
++    bool pooled = false;
++    VkDeviceSize offset = 0;
+   };
+   explicit GeneralReadbackContext(VulkanCommandProcessor& cp)
+       : bridge(*cp.memory_, rex::thread::global_critical_region::mutex(),
+@@ -654,6 +663,23 @@
+           << ",\"scope\":\"TOP/BOTTOM inclusive regions; GPU intervals may overlap; time-spaced subset, not frame attribution\"}\n";
+       WriteTimestamps(row.str());
+     }
++    if(memory_device->properties().readbackTransferQueue && cp.timeline_submission_){
++      transfer=std::make_unique<acv::AsyncReadbackTransfer>(memory_device->device(),
++          memory_device->vulkan_instance()->functions().vkGetDeviceProcAddr,
++          memory_device->queue_family_graphics_compute(),cp.timeline_submission_->maximum_difference());
++      if(!transfer->ready()){
++        if(transfer->result==VK_ERROR_DEVICE_LOST){cp.device_lost_=true;if(cp.graphics_system_)cp.graphics_system_->OnHostGpuLossFromAnyThread(true);}
++        REXGPU_WARN("Readback transfer queue unavailable: {}",int(transfer->result));transfer.reset();
++      }else REXGPU_INFO("ACV readback queue1 active; per-Resolve producer submission, batching disabled");
++    }
++    const char* suballocate=std::getenv("ACV_READBACK_SUBALLOCATION");
++    if(suballocate && std::strcmp(suballocate,"1")==0 && memory_device->properties().apiVersion>=VK_MAKE_API_VERSION(0,1,1,0)){
++      VkPhysicalDeviceProperties props{};memory_device->vulkan_instance()->functions().vkGetPhysicalDeviceProperties(memory_device->physical_device(),&props);
++      readback_pool=std::make_unique<acv::ReadbackSuballocation>(memory_device->device(),memory_device->vulkan_instance()->functions().vkGetDeviceProcAddr,memory_properties,props.limits.nonCoherentAtomSize);
++      if(readback_pool->result==VK_ERROR_DEVICE_LOST){cp.device_lost_=true;if(cp.graphics_system_)cp.graphics_system_->OnHostGpuLossFromAnyThread(true);}
++      if(!readback_pool->ready()){REXGPU_WARN("Readback suballocation unavailable: {}; dedicated slots retained",int(readback_pool->result));readback_pool.reset();}
++      else {allocated=readback_pool->allocated();slots.reserve(64);REXGPU_INFO("ACV bounded readback suballocation active: bytes={}",allocated);}
++    }
+     const char* coherent = std::getenv("ACV_READBACK_SKIP_COHERENT_INVALIDATE");
+     skip_coherent_invalidate = coherent && std::strcmp(coherent, "1") == 0;
+     if (skip_coherent_invalidate) REXGPU_INFO("ACV coherent GeneralReadback invalidate skip enabled");
+@@ -672,7 +698,7 @@
+       REXGPU_INFO("ACV immutable Resolve destination descriptor cache enabled: 64 entries");
+     }
+     const char* batch = std::getenv("ACV_GENERAL_READBACK_BATCH");
+-    if (batch && std::strcmp(batch, "1") == 0) {
++    if (!transfer && batch && std::strcmp(batch, "1") == 0) {
+       bridge.EnableBatching([&cp](uint64_t ticket) {
+         if (!cp.submission_open_ || cp.GetCurrentSubmission() != ticket || cp.device_lost_)
+           return false;
+@@ -697,6 +723,26 @@
+         REXGPU_WARN("Parallel readback workers unavailable; using serial copies: {}", error.what());
+       }
+     }
++  }
++  std::unique_ptr<acv::AsyncReadbackTransfer> transfer;
++  std::unique_ptr<acv::ReadbackSuballocation> readback_pool;
++  Slot* AcquirePooledSlot(uint32_t length){
++    for(auto& slot:slots)if(!slot->occupied && slot->capacity>=length)return slot.get();
++    auto fresh=std::make_unique<Slot>();VkDeviceSize offset=0,span=0;
++    uint64_t id=next_slot++;
++    if(slots.size()>=64 || !readback_pool->Acquire(id,length,offset,span)){
++      if(!bridge.Drain())return nullptr;
++      for(auto& slot:slots)if(!slot->occupied && slot->capacity>=length)return slot.get();
++      for(auto it=slots.begin();it!=slots.end();){
++        if((*it)->occupied){++it;continue;}
++        if(!bridge.RetireSlot((*it)->id))return nullptr;
++        readback_pool->Release((*it)->id);it=slots.erase(it);
++      }
++      if(slots.size()>=64 || !readback_pool->Acquire(id,length,offset,span))return nullptr;
++    }
++    fresh->id=id;fresh->buffer=readback_pool->buffer();fresh->memory=readback_pool->memory();fresh->mapping=readback_pool->data(offset);
++    fresh->capacity=span;fresh->allocation=span;fresh->offset=offset;fresh->pooled=true;fresh->memory_type=readback_pool->type();fresh->memory_flags=readback_pool->flags();fresh->memory_flags_known=true;
++    Slot* result=fresh.get();slots.push_back(std::move(fresh));return result;
+   }
+   std::unique_ptr<acv::GpuTimestampProfiler> timestamps;
+   PFN_vkCmdWriteTimestamp timestamp_write = nullptr;
+@@ -2098,6 +2144,10 @@
+ }
+ 
+ void VulkanCommandProcessor::ShutdownContext() {
++  if(timeline_submission_ && !AwaitAllQueueOperationsCompletion() && !device_lost_)
++    rex::FatalError("Cannot complete timeline submissions before teardown");
++  scoped_barrier_command_ = nullptr;
++  scoped_barrier_loaded_ = false;
+   if (general_readback_) {
+     auto& context = *general_readback_;
+     context.bridge.Drain();
+@@ -2109,6 +2159,12 @@
+     if (!AwaitAllQueueOperationsCompletion() && !device_lost_) {
+       rex::FatalError("Cannot complete Vulkan submissions before readback teardown");
+     }
++    if(context.transfer){
++      auto queue=vd->AcquireQueue(vd->queue_family_graphics_compute(),1);
++      VkResult result=context.transfer->Stop(queue.queue());
++      if(result!=VK_SUCCESS && result!=VK_ERROR_DEVICE_LOST)rex::FatalError("Cannot stop readback transfer queue");
++      context.transfer->DestroyAfterDeviceStopped();
++    }
+     context.bridge.CancelAfterDeviceStopped();
+     if (context.timestamps) {
+       if (!device_lost_) context.CollectTimestamps(submission_completed_);
+@@ -2119,10 +2175,12 @@
+     // replace the shared buffer or descriptor layout. Destroy only after stop.
+     if (context.resolve_descriptors) context.resolve_descriptors->DestroyAfterDeviceStopped(true);
+     for (auto& slot : context.slots) {
++      if(slot->pooled)continue;
+       vd->functions().vkUnmapMemory(vd->device(), slot->memory);
+       vd->functions().vkDestroyBuffer(vd->device(), slot->buffer, nullptr);
+       vd->functions().vkFreeMemory(vd->device(), slot->memory, nullptr);
+     }
++    if(context.readback_pool)context.readback_pool->DestroyAfterDeviceStopped();
+     general_readback_.reset();
+   }
+   AwaitAllQueueOperationsCompletion();
+@@ -2326,13 +2384,13 @@
+   }
+   submissions_in_flight_semaphores_.clear();
+   for (VkFence& fence : submissions_in_flight_fences_) {
+-    dfn.vkDestroyFence(device, fence, nullptr);
++    if(fence!=VK_NULL_HANDLE) dfn.vkDestroyFence(device, fence, nullptr);
+   }
+   submissions_in_flight_fences_.clear();
+   current_submission_wait_stage_masks_.clear();
+-  for (VkSemaphore semaphore : current_submission_wait_semaphores_) {
+-    dfn.vkDestroySemaphore(device, semaphore, nullptr);
+-  }
++  for(size_t i=0;i<current_submission_wait_semaphores_.size();++i)if(!current_submission_wait_values_[i])
++    dfn.vkDestroySemaphore(device,current_submission_wait_semaphores_[i],nullptr);
++  current_submission_wait_values_.clear();
+   current_submission_wait_semaphores_.clear();
+   submission_completed_ = 0;
+   submission_open_ = false;
+@@ -2342,10 +2400,13 @@
+   }
+   semaphores_free_.clear();
+   for (VkFence fence : fences_free_) {
+-    dfn.vkDestroyFence(device, fence, nullptr);
++    if(fence!=VK_NULL_HANDLE) dfn.vkDestroyFence(device, fence, nullptr);
+   }
+   fences_free_.clear();
+ 
++  if(timeline_submission_){timeline_submission_->DestroyAfterDeviceStopped();timeline_submission_.reset();}
++  timeline_initialized_=false;
++  extended_raster_enabled_=false;set_cull_mode_=nullptr;set_front_face_=nullptr;
+   device_lost_ = false;
+ 
+   CommandProcessor::ShutdownContext();
+@@ -3169,7 +3230,7 @@
+ 
+   // Separate different barriers for overlapping buffer ranges into different
+   // pipeline barrier commands.
+-  for (const VkBufferMemoryBarrier& other_buffer_memory_barrier :
++  for (PendingBufferBarrier& other_buffer_memory_barrier :
+        pending_barriers_buffer_memory_barriers_) {
+     if (other_buffer_memory_barrier.buffer != buffer ||
+         (size != VK_WHOLE_SIZE && offset + size <= other_buffer_memory_barrier.offset) ||
+@@ -3182,6 +3243,8 @@
+         other_buffer_memory_barrier.dstAccessMask == dst_access_mask &&
+         other_buffer_memory_barrier.srcQueueFamilyIndex == src_queue_family_index &&
+         other_buffer_memory_barrier.dstQueueFamilyIndex == dst_queue_family_index) {
++      other_buffer_memory_barrier.src_stages |= src_stage_mask;
++      other_buffer_memory_barrier.dst_stages |= dst_stage_mask;
+       // The barrier is already pending.
+       current_pending_barrier_.src_stage_mask |= src_stage_mask;
+       current_pending_barrier_.dst_stage_mask |= dst_stage_mask;
+@@ -3193,10 +3256,12 @@
+ 
+   current_pending_barrier_.src_stage_mask |= src_stage_mask;
+   current_pending_barrier_.dst_stage_mask |= dst_stage_mask;
+-  VkBufferMemoryBarrier& buffer_memory_barrier =
++  PendingBufferBarrier& buffer_memory_barrier =
+       pending_barriers_buffer_memory_barriers_.emplace_back();
+   buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+   buffer_memory_barrier.pNext = nullptr;
++  buffer_memory_barrier.src_stages = src_stage_mask;
++  buffer_memory_barrier.dst_stages = dst_stage_mask;
+   buffer_memory_barrier.srcAccessMask = src_access_mask;
+   buffer_memory_barrier.dstAccessMask = dst_access_mask;
+   buffer_memory_barrier.srcQueueFamilyIndex = src_queue_family_index;
+@@ -3220,7 +3285,7 @@
+ 
+   // Separate different barriers for overlapping image subresource ranges into
+   // different pipeline barrier commands.
+-  for (const VkImageMemoryBarrier& other_image_memory_barrier :
++  for (PendingImageBarrier& other_image_memory_barrier :
+        pending_barriers_image_memory_barriers_) {
+     if (other_image_memory_barrier.image != image ||
+         !(other_image_memory_barrier.subresourceRange.aspectMask & subresource_range.aspectMask) ||
+@@ -3253,6 +3318,8 @@
+         other_image_memory_barrier.newLayout == new_layout &&
+         other_image_memory_barrier.srcQueueFamilyIndex == src_queue_family_index &&
+         other_image_memory_barrier.dstQueueFamilyIndex == dst_queue_family_index) {
++      other_image_memory_barrier.src_stages |= src_stage_mask;
++      other_image_memory_barrier.dst_stages |= dst_stage_mask;
+       // The barrier is already pending.
+       current_pending_barrier_.src_stage_mask |= src_stage_mask;
+       current_pending_barrier_.dst_stage_mask |= dst_stage_mask;
+@@ -3264,10 +3331,12 @@
+ 
+   current_pending_barrier_.src_stage_mask |= src_stage_mask;
+   current_pending_barrier_.dst_stage_mask |= dst_stage_mask;
+-  VkImageMemoryBarrier& image_memory_barrier =
++  PendingImageBarrier& image_memory_barrier =
+       pending_barriers_image_memory_barriers_.emplace_back();
+   image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+   image_memory_barrier.pNext = nullptr;
++  image_memory_barrier.src_stages = src_stage_mask;
++  image_memory_barrier.dst_stages = dst_stage_mask;
+   image_memory_barrier.srcAccessMask = src_access_mask;
+   image_memory_barrier.dstAccessMask = dst_access_mask;
+   image_memory_barrier.oldLayout = old_layout;
+@@ -3289,24 +3358,46 @@
+     return false;
+   }
+   EndRenderPass();
++  const auto* vd = GetVulkanDevice();
++  if (vd->properties().synchronization2 && !scoped_barrier_loaded_) {
++    scoped_barrier_loaded_ = true;
++    scoped_barrier_command_ = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(
++        vd->vulkan_instance()->functions().vkGetDeviceProcAddr(vd->device(), "vkCmdPipelineBarrier2"));
++    if (!scoped_barrier_command_) REXGPU_WARN("Enabled synchronization2 has no command PFN; using legacy barriers");
++  }
+   for (auto it = pending_barriers_.cbegin(); it != pending_barriers_.cend(); ++it) {
+-    auto it_next = std::next(it);
+-    bool is_last = it_next == pending_barriers_.cend();
+-    // .data() + offset, not &[offset], for buffer and image barriers, because
+-    // if there are no buffer or image memory barriers in the last pipeline
+-    // barriers, the offsets may be equal to the sizes of the vectors.
+-    deferred_command_buffer_.CmdVkPipelineBarrier(
+-        it->src_stage_mask ? it->src_stage_mask : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+-        it->dst_stage_mask ? it->dst_stage_mask : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
+-        nullptr,
+-        uint32_t((is_last ? pending_barriers_buffer_memory_barriers_.size()
+-                          : it_next->buffer_memory_barriers_offset) -
+-                 it->buffer_memory_barriers_offset),
+-        pending_barriers_buffer_memory_barriers_.data() + it->buffer_memory_barriers_offset,
+-        uint32_t((is_last ? pending_barriers_image_memory_barriers_.size()
+-                          : it_next->image_memory_barriers_offset) -
+-                 it->image_memory_barriers_offset),
+-        pending_barriers_image_memory_barriers_.data() + it->image_memory_barriers_offset);
++    auto next = std::next(it);
++    const size_t buffer_end = next==pending_barriers_.cend() ? pending_barriers_buffer_memory_barriers_.size() : next->buffer_memory_barriers_offset;
++    const size_t image_end = next==pending_barriers_.cend() ? pending_barriers_image_memory_barriers_.size() : next->image_memory_barriers_offset;
++    if (scoped_barrier_command_) {
++      std::vector<VkBufferMemoryBarrier2> buffers;
++      std::vector<VkImageMemoryBarrier2> images;
++      buffers.reserve(buffer_end-it->buffer_memory_barriers_offset);
++      images.reserve(image_end-it->image_memory_barriers_offset);
++      for(size_t i=it->buffer_memory_barriers_offset;i<buffer_end;++i){
++        const auto& b=pending_barriers_buffer_memory_barriers_[i];
++        VkBufferMemoryBarrier2 v{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
++        v.srcStageMask=b.src_stages;v.dstStageMask=b.dst_stages;v.srcAccessMask=b.srcAccessMask;v.dstAccessMask=b.dstAccessMask;
++        v.srcQueueFamilyIndex=b.srcQueueFamilyIndex;v.dstQueueFamilyIndex=b.dstQueueFamilyIndex;
++        v.buffer=b.buffer;v.offset=b.offset;v.size=b.size;buffers.push_back(v);
++      }
++      for(size_t i=it->image_memory_barriers_offset;i<image_end;++i){
++        const auto& b=pending_barriers_image_memory_barriers_[i];
++        VkImageMemoryBarrier2 v{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
++        v.srcStageMask=b.src_stages;v.dstStageMask=b.dst_stages;v.srcAccessMask=b.srcAccessMask;v.dstAccessMask=b.dstAccessMask;
++        v.srcQueueFamilyIndex=b.srcQueueFamilyIndex;v.dstQueueFamilyIndex=b.dstQueueFamilyIndex;
++        v.image=b.image;v.oldLayout=b.oldLayout;v.newLayout=b.newLayout;v.subresourceRange=b.subresourceRange;images.push_back(v);
++      }
++      deferred_command_buffer_.CmdVkPipelineBarrier2(scoped_barrier_command_,uint32_t(buffers.size()),buffers.data(),uint32_t(images.size()),images.data());
++    } else {
++      deferred_command_buffer_.CmdVkLegacyPendingBarriers(
++          it->src_stage_mask ? it->src_stage_mask : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
++          it->dst_stage_mask ? it->dst_stage_mask : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
++          uint32_t(buffer_end-it->buffer_memory_barriers_offset),
++          buffer_end>it->buffer_memory_barriers_offset ? pending_barriers_buffer_memory_barriers_.data()+it->buffer_memory_barriers_offset : nullptr,
++          uint32_t(image_end-it->image_memory_barriers_offset),
++          image_end>it->image_memory_barriers_offset ? pending_barriers_image_memory_barriers_.data()+it->image_memory_barriers_offset : nullptr);
++    }
+   }
+   pending_barriers_.clear();
+   pending_barriers_buffer_memory_barriers_.clear();
+@@ -3854,6 +3945,19 @@
+   return pipeline_cache_->LoadShader(shader_type, host_address, dword_count);
+ }
+ 
++void VulkanCommandProcessor::InitializeExtendedRasterizationState(){
++  const auto* vd=GetVulkanDevice();extended_raster_enabled_=false;
++  if(!vd->properties().extendedRasterizationState)return;
++  const auto& ifn=vd->vulkan_instance()->functions();
++  set_cull_mode_=reinterpret_cast<PFN_vkCmdSetCullMode>(ifn.vkGetDeviceProcAddr(vd->device(),"vkCmdSetCullMode"));
++  set_front_face_=reinterpret_cast<PFN_vkCmdSetFrontFace>(ifn.vkGetDeviceProcAddr(vd->device(),"vkCmdSetFrontFace"));
++  extended_raster_enabled_=set_cull_mode_ && set_front_face_;
++  if(!extended_raster_enabled_)REXGPU_WARN("Extended rasterization commands unavailable; static PSO path retained");
++}
++void VulkanCommandProcessor::ApplyGuestRasterizationState(){
++  if(extended_raster_enabled_)deferred_command_buffer_.CmdVkGuestRasterization(set_cull_mode_,set_front_face_,guest_cull_mode_,guest_front_face_);
++}
++
+ void VulkanCommandProcessor::MarkGpuTimestampRegion(uint32_t category, uint64_t copy_bytes) {
+   if (!general_readback_ || !general_readback_->timestamps || !submission_open_) return;
+   general_readback_->timestamps->Mark(GetCurrentSubmission(), category,
+@@ -4395,6 +4499,7 @@
+   if (primitive_processing_result.index_buffer_type ==
+           PrimitiveProcessor::ProcessedIndexBufferType::kNone ||
+       shader_32bit_index_dma) {
++    ApplyGuestRasterizationState();
+     MarkGpuTimestampRegion(render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock ? 1 : 4);
+     deferred_command_buffer_.CmdVkDraw(primitive_processing_result.host_draw_vertex_count, 1, 0, 0);
+   } else {
+@@ -4427,6 +4532,7 @@
+         primitive_processing_result.host_index_format == xenos::IndexFormat::kInt16
+             ? VK_INDEX_TYPE_UINT16
+             : VK_INDEX_TYPE_UINT32);
++    ApplyGuestRasterizationState();
+     MarkGpuTimestampRegion(render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock ? 1 : 4);
+     deferred_command_buffer_.CmdVkDrawIndexed(primitive_processing_result.host_draw_vertex_count, 1,
+                                               0, 0, 0);
+@@ -4844,6 +4950,7 @@
+ 
+ bool VulkanCommandProcessor::IssueCopy_GeneralReadback(const draw_util::ResolveInfo& info) {
+   acv::gpu_profile::Scope profile(acv::gpu_profile::Stage::kGeneralResolve);
++  if(!EnsureTimelineSubmission())return false;
+   if (!general_readback_) general_readback_ = std::make_unique<GeneralReadbackContext>(*this);
+   if (device_lost_) return false;
+   auto& context = *general_readback_;
+@@ -4856,8 +4963,9 @@
+   const auto& dfn = vd->functions();
+   const VkDevice device = vd->device();
+   GeneralReadbackContext::Slot* slot = nullptr;
++  if(context.readback_pool){slot=context.AcquirePooledSlot(length);if(!slot)return false;}
+   for (auto& candidate : context.slots) {
+-    if (!candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
++    if (!slot && !candidate->occupied && candidate->capacity >= length) { slot = candidate.get(); break; }
+   }
+   constexpr VkDeviceSize budget = 64ULL << 20;
+   std::unique_ptr<GeneralReadbackContext::Slot> fresh;
+@@ -5010,12 +5118,15 @@
+   SubmitBarriers(true);
+   VkBufferCopy copy = {};
+   copy.srcOffset = address;
++  copy.dstOffset = slot->offset;
+   copy.size = length;
++  if(!context.transfer){
+   MarkGpuTimestampRegion(3, copy.size);
+   deferred_command_buffer_.CmdVkCopyBuffer(shared_memory_->buffer(), slot->buffer, 1, &copy);
+-  PushBufferMemoryBarrier(slot->buffer, 0, length,
++  PushBufferMemoryBarrier(slot->buffer, slot->offset, length,
+       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+       VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
++  }
+   const uint64_t ticket = GetCurrentSubmission();
+   slot->submission = ticket;
+   // Never submit or await a GPU fence under the memory-system mutex.
+@@ -5026,9 +5137,11 @@
+         VkMappedMemoryRange range = {};
+         range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+         range.memory = slot->memory;
+-        range.size = VK_WHOLE_SIZE;
++        range.offset = slot->offset;
++        range.size = slot->pooled ? slot->allocation : VK_WHOLE_SIZE;
+         return acv::PublishCompletedReadback(
+-            !device_lost_ && submission_completed_ >= slot->submission,
++            !device_lost_ && submission_completed_ >= slot->submission &&
++                (!general_readback_->transfer || general_readback_->transfer->PublishedReady(slot->submission)),
+             general_readback_->skip_coherent_invalidate, slot->memory_flags_known, slot->memory_flags,
+             [&] { return vd->functions().vkInvalidateMappedMemoryRanges(vd->device(), 1, &range); },
+             [&] {
+@@ -5059,6 +5172,15 @@
+     acv::gpu_profile::Scope submit_profile(acv::gpu_profile::Stage::kGeneralSubmit);
+     if (!EndSubmission(false)) { context.bridge.Fail(state); return false; }
+   }
++  if(context.transfer){
++    auto queue=vd->AcquireQueue(vd->queue_family_graphics_compute(),1);
++    VkResult result=context.transfer->Submit(queue.queue(),timeline_submission_->handle(),ticket,shared_memory_->buffer(),slot->buffer,copy);
++    if(result!=VK_SUCCESS){
++      REXGPU_ERROR("Readback transfer submit failed: {}",int(result));context.bridge.Fail(state);
++      if(result==VK_ERROR_DEVICE_LOST){device_lost_=true;if(graphics_system_)graphics_system_->OnHostGpuLossFromAnyThread(true);}
++      return false;
++    }
++  }
+   if (!context.bridge.Commit(state, ticket, std::move(publish))) {
+     context.bridge.Fail(state); return false;
+   }
+@@ -5072,6 +5194,11 @@
+   CheckSubmissionFenceAndDeviceLoss(submission);
+   // EndSubmission or a fence wait may fail without reporting device loss.
+   // Check the requested ticket rather than treating a non-lost device as ready.
++  if(!device_lost_ && submission_completed_>=submission && general_readback_ && general_readback_->transfer){
++    VkResult result=general_readback_->transfer->WaitForTicket(submission);
++    if(result!=VK_SUCCESS){REXGPU_ERROR("Readback transfer wait failed: {}",int(result));
++      if(result==VK_ERROR_DEVICE_LOST){device_lost_=true;if(graphics_system_)graphics_system_->OnHostGpuLossFromAnyThread(true);}return false;}
++  }
+   return !device_lost_ && submission_completed_ >= submission;
+ }
+ 
+@@ -5731,7 +5858,31 @@
+   // EndSubmission appends only successful submissions on graphics/compute
+   // queue index0. No other VkQueue contributes fences to this vector. Waiting
+   // for its last required signal therefore proves the whole requested prefix.
+-  const auto completion = acv::CompleteSubmissionFences(
++  acv::SubmissionFenceCompletion completion;
++  if(timeline_submission_){
++    const uint64_t required=await_submission>submission_completed_ ? await_submission-submission_completed_ : 0;
++    if(required>submissions_in_flight_fences_.size()){completion.valid_range=false;}
++    else {
++      completion.requested_prefix=size_t(required);
++      if(required){
++        auto begin=std::chrono::steady_clock::now();
++        completion.blocking_result=timeline_submission_->Wait(await_submission,UINT64_MAX);
++        if(trace)blocking_ns+=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-begin).count());
++        completion.device_lost=completion.blocking_result==VK_ERROR_DEVICE_LOST;
++      }
++      uint64_t value=0;
++      if(!completion.device_lost){
++        completion.poll_calls=1;completion.poll_result=timeline_submission_->Counter(value);
++        if(trace){switch(completion.poll_result){case VK_SUCCESS:++poll_success;break;case VK_NOT_READY:++poll_not_ready;break;case VK_TIMEOUT:++poll_timeout;break;case VK_ERROR_DEVICE_LOST:++poll_lost;break;default:++poll_other;break;}}
++        completion.device_lost=completion.poll_result==VK_ERROR_DEVICE_LOST;
++        if(completion.poll_result==VK_SUCCESS){
++          if(value<submission_completed_ || value>timeline_submission_->last_submitted() || value-submission_completed_>submissions_in_flight_fences_.size())completion.valid_range=false;
++          else {completion.retired=size_t(value-submission_completed_);submissions_in_flight_fences_.erase(submissions_in_flight_fences_.begin(),submissions_in_flight_fences_.begin()+completion.retired);submission_completed_=value;}
++        }
++      }
++    }
++  } else {
++    completion = acv::CompleteSubmissionFences(
+       submissions_in_flight_fences_, fences_free_, submission_completed_, await_submission,
+       latest_fence, [&](uint32_t count, const VkFence* fences, uint64_t timeout) {
+         std::chrono::steady_clock::time_point start;
+@@ -5754,6 +5905,7 @@
+         }
+         return result;
+       });
++  }
+   if (!completion.valid_range) {
+     REXGPU_ERROR("Requested Vulkan fence prefix is outside submitted tickets");
+     return;
+@@ -5790,7 +5942,7 @@
+                   "poll_timeout={} poll_device_lost={} poll_other={} last_poll_result={}", age, age - stats.since, latest_fence,
+                   stats.blocking_calls, stats.requested_fences, stats.passed_fences,
+                   stats.prefix_gt1, stats.max_prefix, stats.polls, stats.blocking_ns / 1e6,
+-                   status_poll ? "vkGetFenceStatus" : "vkWaitForFences0", stats.success,
++                   timeline_submission_ ? "timeline_counter" : (status_poll ? "vkGetFenceStatus" : "vkWaitForFences0"), stats.success,
+                    stats.not_ready, stats.timeout, stats.lost, stats.other, int32_t(completion.poll_result));
+       stats = {}; stats.since = age;
+     }
+@@ -6032,6 +6184,52 @@
+   return true;
+ }
+ 
++bool VulkanCommandProcessor::EnsureTimelineSubmission() {
++  const auto* vulkan_device=GetVulkanDevice();const VkDevice device=vulkan_device->device();
++  if (!timeline_initialized_) {
++    timeline_initialized_=true;
++    if (vulkan_device->properties().timelineSemaphore && submissions_in_flight_fences_.empty()) {
++      VkPhysicalDeviceTimelineSemaphoreProperties limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES};
++      VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};props.pNext=&limits;
++      const auto& ifn=vulkan_device->vulkan_instance()->functions();
++      ifn.vkGetPhysicalDeviceProperties2(vulkan_device->physical_device(),&props);
++      timeline_submission_=std::make_unique<TimelineContext>(device,ifn.vkGetDeviceProcAddr,submission_completed_,limits.maxTimelineSemaphoreValueDifference);
++      if(timeline_submission_->initialization!=VK_SUCCESS){
++        VkResult result=timeline_submission_->initialization;
++        REXGPU_WARN("Timeline submission initialization failed: {}; retaining fence path",int(result));
++        timeline_submission_.reset();
++        if(result==VK_ERROR_DEVICE_LOST){device_lost_=true;if(graphics_system_)graphics_system_->OnHostGpuLossFromAnyThread(true);return false;}
++      }
++    }
++  }
++  return !device_lost_;
++}
++
++bool VulkanCommandProcessor::AwaitAllQueueOperationsCompletion() {
++  CheckSubmissionFenceAndDeviceLoss(GetCurrentSubmission());
++  if(submission_open_ || !submissions_in_flight_fences_.empty())return false;
++  if(general_readback_ && general_readback_->transfer && !device_lost_){
++    VkResult result=general_readback_->transfer->WaitForTicket(UINT64_MAX);
++    if(result!=VK_SUCCESS){
++      REXGPU_ERROR("Transfer queue completion failed: {}",int(result));
++      if(result==VK_ERROR_DEVICE_LOST){device_lost_=true;if(graphics_system_)graphics_system_->OnHostGpuLossFromAnyThread(true);}
++      return false;
++    }
++  }
++  return !device_lost_;
++}
++
++void VulkanCommandProcessor::AddTransferReadbackDependency(){
++  if(!general_readback_ || !general_readback_->transfer || !general_readback_->transfer->latest())return;
++  auto& transfer=*general_readback_->transfer;
++  for(size_t i=0;i<current_submission_wait_semaphores_.size();++i)if(current_submission_wait_semaphores_[i]==transfer.handle()){
++    current_submission_wait_values_[i]=transfer.latest();return;
++  }
++  current_submission_wait_semaphores_.push_back(transfer.handle());
++  current_submission_wait_values_.push_back(transfer.latest());
++  current_submission_wait_stage_masks_.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
++}
++
+ bool VulkanCommandProcessor::EndSubmission(bool is_swap) {
+   acv::GpuTimestampSubmissionScope timestamp_submission(
+       submission_open_ && general_readback_ ? general_readback_->timestamps.get() : nullptr,
+@@ -6044,9 +6242,16 @@
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+ 
++  if(submission_open_ && !EnsureTimelineSubmission())return false;
++  const bool use_timeline=timeline_submission_ && timeline_submission_->handle()!=VK_NULL_HANDLE;
++  if(use_timeline && GetCurrentSubmission()-submission_completed_>timeline_submission_->maximum_difference()) {
++    CheckSubmissionFenceAndDeviceLoss(GetCurrentSubmission()-timeline_submission_->maximum_difference());
++    if(device_lost_ || GetCurrentSubmission()-submission_completed_>timeline_submission_->maximum_difference())return false;
++  }
++
+   // Make sure everything needed for submitting exist.
+   if (submission_open_) {
+-    if (fences_free_.empty()) {
++    if (!use_timeline && fences_free_.empty()) {
+       VkFenceCreateInfo fence_create_info;
+       fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+       fence_create_info.pNext = nullptr;
+@@ -6177,6 +6382,7 @@
+         return false;
+       }
+       current_submission_wait_semaphores_.push_back(bind_sparse_semaphore);
++      current_submission_wait_values_.push_back(0);
+       semaphores_free_.pop_back();
+       current_submission_wait_stage_masks_.push_back(sparse_bind_wait_stage_mask_);
+       sparse_bind_wait_stage_mask_ = 0;
+@@ -6223,17 +6429,18 @@
+     submit_info.pCommandBuffers = &command_buffer.buffer;
+     submit_info.signalSemaphoreCount = 0;
+     submit_info.pSignalSemaphores = nullptr;
+-    assert_false(fences_free_.empty());
+-    VkFence fence = fences_free_.back();
+-    if (dfn.vkResetFences(device, 1, &fence) != VK_SUCCESS) {
+-      REXGPU_ERROR("Failed to reset a Vulkan submission fence");
+-      return false;
++    VkFence fence=VK_NULL_HANDLE;
++    if(!use_timeline){
++      assert_false(fences_free_.empty());fence=fences_free_.back();
++      VkResult reset=dfn.vkResetFences(device,1,&fence);
++      if(reset!=VK_SUCCESS){REXGPU_ERROR("Failed to reset submission fence: {}",int(reset));return false;}
+     }
+     VkResult submit_result;
+     {
+       ui::vulkan::VulkanDevice::Queue::Acquisition queue_acquisition =
+           vulkan_device->AcquireQueue(vulkan_device->queue_family_graphics_compute(), 0);
+-      submit_result = dfn.vkQueueSubmit(queue_acquisition.queue(), 1, &submit_info, fence);
++      submit_result = use_timeline ? timeline_submission_->Submit(queue_acquisition.queue(),submit_info,GetCurrentSubmission(),submission_completed_,current_submission_wait_values_.data())
++          : dfn.vkQueueSubmit(queue_acquisition.queue(), 1, &submit_info, fence);
+     }
+     if (submit_result != VK_SUCCESS) {
+       REXGPU_ERROR("Failed to submit a Vulkan command buffer");
+@@ -6247,19 +6454,19 @@
+     }
+     uint64_t submission_current = GetCurrentSubmission();
+     current_submission_wait_stage_masks_.clear();
+-    for (VkSemaphore semaphore : current_submission_wait_semaphores_) {
+-      submissions_in_flight_semaphores_.emplace_back(submission_current, semaphore);
+-    }
++    for(size_t i=0;i<current_submission_wait_semaphores_.size();++i)if(!current_submission_wait_values_[i])
++      submissions_in_flight_semaphores_.emplace_back(submission_current,current_submission_wait_semaphores_[i]);
++    current_submission_wait_values_.clear();
+     current_submission_wait_semaphores_.clear();
+     command_buffers_submitted_.emplace_back(submission_current, command_buffer);
+     command_buffers_writable_.pop_back();
+     // Increments the current submission number, going to the next submission.
+     submissions_in_flight_fences_.push_back(fence);
+-    fences_free_.pop_back();
++    if(!use_timeline) fences_free_.pop_back();
+ 
+     submission_open_ = false;
+     timestamp_submission.Submitted();
+-    // The fence is now tracked. No allocation, wait or callbacks while admitting
++    // The successful completion ticket is now tracked. No allocation, wait or callbacks while admitting
+     // preallocated recorded jobs; a failed commit is an explicit submission error.
+     if (!readback_submission.Submitted()) return false;
+     if (general_readback_ && general_readback_->bridge.batching()) general_readback_->TraceBatch();
+--- a/include/rex/graphics/vulkan/deferred_command_buffer.h
++++ b/include/rex/graphics/vulkan/deferred_command_buffer.h
+@@ -279,6 +279,30 @@
+     args.first_query = first_query;
+     args.query_count = query_count;
+   }
++
++  // Flatten per-resource scope records directly into the existing legacy stream:
++  // no intermediate vector allocation when synchronization2 is disabled.
++  template<class BufferBarrier, class ImageBarrier>
++  void CmdVkLegacyPendingBarriers(VkPipelineStageFlags src,VkPipelineStageFlags dst,
++      uint32_t buffer_count,const BufferBarrier* buffers,uint32_t image_count,const ImageBarrier* images) {
++    const size_t buffer_offset=rex::align(sizeof(ArgsVkPipelineBarrier),alignof(VkBufferMemoryBarrier));
++    const size_t image_offset=rex::align(buffer_offset+sizeof(VkBufferMemoryBarrier)*buffer_count,alignof(VkImageMemoryBarrier));
++    auto* bytes=reinterpret_cast<uint8_t*>(WriteCommand(Command::kVkPipelineBarrier,image_offset+sizeof(VkImageMemoryBarrier)*image_count));
++    auto& args=*reinterpret_cast<ArgsVkPipelineBarrier*>(bytes);
++    args.src_stage_mask=src;args.dst_stage_mask=dst;args.dependency_flags=0;args.memory_barrier_count=0;
++    args.buffer_memory_barrier_count=buffer_count;args.image_memory_barrier_count=image_count;
++    for(uint32_t i=0;i<buffer_count;++i)std::memcpy(bytes+buffer_offset+sizeof(VkBufferMemoryBarrier)*i,static_cast<const VkBufferMemoryBarrier*>(&buffers[i]),sizeof(VkBufferMemoryBarrier));
++    for(uint32_t i=0;i<image_count;++i)std::memcpy(bytes+image_offset+sizeof(VkImageMemoryBarrier)*i,static_cast<const VkImageMemoryBarrier*>(&images[i]),sizeof(VkImageMemoryBarrier));
++  }
++
++  void CmdVkGuestRasterization(PFN_vkCmdSetCullMode cull,PFN_vkCmdSetFrontFace front,VkCullModeFlags mode,VkFrontFace face){
++    auto& args=*reinterpret_cast<ArgsVkGuestRasterization*>(WriteCommand(Command::kVkGuestRasterization,sizeof(ArgsVkGuestRasterization)));
++    args.cull=cull;args.front=front;args.mode=mode;args.face=face;
++  }
++
++  void CmdVkPipelineBarrier2(PFN_vkCmdPipelineBarrier2 command,
++      uint32_t buffer_count, const VkBufferMemoryBarrier2* buffers,
++      uint32_t image_count, const VkImageMemoryBarrier2* images);
+ 
+   // pNext of all barriers must be null.
+   void CmdVkPipelineBarrier(VkPipelineStageFlags src_stage_mask,
+@@ -389,6 +413,8 @@
+     kVkSetStencilWriteMask,
+     kVkSetViewport,
+     kVkWriteTimestamp,  // Append only: preserve all existing deferred opcodes.
++    kVkPipelineBarrier2,
++    kVkGuestRasterization,
+   };
+ 
+   struct CommandHeader {
+@@ -538,6 +564,13 @@
+     uint32_t query_count;
+   };
+ 
++  struct ArgsVkGuestRasterization {PFN_vkCmdSetCullMode cull;PFN_vkCmdSetFrontFace front;VkCullModeFlags mode;VkFrontFace face;};
++  struct ArgsVkPipelineBarrier2 {
++    PFN_vkCmdPipelineBarrier2 command;
++    uint32_t buffer_count, image_count;
++    // Followed by aligned VkBufferMemoryBarrier2[], VkImageMemoryBarrier2[].
++  };
++
+   struct ArgsVkPipelineBarrier {
+     VkPipelineStageFlags src_stage_mask;
+     VkPipelineStageFlags dst_stage_mask;
+--- a/src/graphics/vulkan/deferred_command_buffer.cpp
++++ b/src/graphics/vulkan/deferred_command_buffer.cpp
+@@ -259,6 +259,23 @@
+         dfn.vkCmdEndRendering(command_buffer);
+         break;
+ 
++      case Command::kVkGuestRasterization: {
++        const auto& args=*reinterpret_cast<const ArgsVkGuestRasterization*>(stream);
++        args.cull(command_buffer,args.mode);args.front(command_buffer,args.face);
++      } break;
++
++      case Command::kVkPipelineBarrier2: {
++        const auto& args=*reinterpret_cast<const ArgsVkPipelineBarrier2*>(stream);
++        size_t offset=rex::align(sizeof(ArgsVkPipelineBarrier2),alignof(VkBufferMemoryBarrier2));
++        const auto* buffers=reinterpret_cast<const VkBufferMemoryBarrier2*>(reinterpret_cast<const uint8_t*>(stream)+offset);
++        offset=rex::align(offset+sizeof(VkBufferMemoryBarrier2)*args.buffer_count,alignof(VkImageMemoryBarrier2));
++        const auto* images=reinterpret_cast<const VkImageMemoryBarrier2*>(reinterpret_cast<const uint8_t*>(stream)+offset);
++        VkDependencyInfo info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
++        info.bufferMemoryBarrierCount=args.buffer_count;info.pBufferMemoryBarriers=args.buffer_count?buffers:nullptr;
++        info.imageMemoryBarrierCount=args.image_count;info.pImageMemoryBarriers=args.image_count?images:nullptr;
++        args.command(command_buffer,&info);
++      } break;
++
+       case Command::kVkPipelineBarrier: {
+         auto& args = *reinterpret_cast<const ArgsVkPipelineBarrier*>(stream);
+         size_t barrier_offset_bytes = sizeof(ArgsVkPipelineBarrier);
+@@ -375,6 +392,20 @@
+   }
+ }
+ 
++void DeferredCommandBuffer::CmdVkPipelineBarrier2(PFN_vkCmdPipelineBarrier2 command,
++    uint32_t buffer_count,const VkBufferMemoryBarrier2* buffers,
++    uint32_t image_count,const VkImageMemoryBarrier2* images) {
++  static_assert(alignof(VkBufferMemoryBarrier2)<=alignof(uintmax_t));
++  static_assert(alignof(VkImageMemoryBarrier2)<=alignof(uintmax_t));
++  const size_t buffer_offset=rex::align(sizeof(ArgsVkPipelineBarrier2),alignof(VkBufferMemoryBarrier2));
++  const size_t image_offset=rex::align(buffer_offset+sizeof(VkBufferMemoryBarrier2)*buffer_count,alignof(VkImageMemoryBarrier2));
++  auto* bytes=reinterpret_cast<uint8_t*>(WriteCommand(Command::kVkPipelineBarrier2,image_offset+sizeof(VkImageMemoryBarrier2)*image_count));
++  auto& args=*reinterpret_cast<ArgsVkPipelineBarrier2*>(bytes);
++  args.command=command;args.buffer_count=buffer_count;args.image_count=image_count;
++  if(buffer_count)std::memcpy(bytes+buffer_offset,buffers,sizeof(VkBufferMemoryBarrier2)*buffer_count);
++  if(image_count)std::memcpy(bytes+image_offset,images,sizeof(VkImageMemoryBarrier2)*image_count);
++}
++
+ void DeferredCommandBuffer::CmdVkPipelineBarrier(
+     VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+     VkDependencyFlags dependency_flags, uint32_t memory_barrier_count,
+--- a/src/graphics/vulkan/shared_memory.cpp
++++ b/src/graphics/vulkan/shared_memory.cpp
+@@ -199,6 +199,7 @@
+ }
+ 
+ void VulkanSharedMemory::Use(Usage usage, std::pair<uint32_t, uint32_t> written_range) {
++  if(usage!=Usage::kRead)command_processor_.AddTransferReadbackDependency();
+   written_range.first = std::min(written_range.first, kBufferSize);
+   written_range.second = std::min(written_range.second, kBufferSize - written_range.first);
+   assert_true(usage != Usage::kRead || !written_range.second);
+--- /dev/null
++++ b/src/graphics/vulkan/persistent_pipeline_cache.h
+@@ -0,0 +1,261 @@
++#pragma once
++// Include after SDK Vulkan feature macros. Optional cache, owned by one device.
++#include <algorithm>
++#include <array>
++#include <atomic>
++#include <chrono>
++#include <condition_variable>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fcntl.h>
++#include <mutex>
++#include <string>
++#include <sys/file.h>
++#include <sys/stat.h>
++#include <thread>
++#include <unistd.h>
++#include <vector>
++#include <vulkan/vulkan_core.h>
++namespace acv {
++class PersistentPipelineCache {
++  static constexpr size_t kLimit = 64 * 1024 * 1024;
++  static constexpr uint64_t kMagic = 0x3143565043564341ULL;
++  VkDevice device_;
++  VkPhysicalDeviceProperties properties_;
++  VkPipelineCache cache_{};
++  PFN_vkCreatePipelineCache create_;
++  PFN_vkGetPipelineCacheData get_;
++  PFN_vkDestroyPipelineCache destroy_;
++  std::string path_;
++  int lock_ = -1;
++  std::mutex mutex_;
++  std::condition_variable condition_;
++  std::thread worker_;
++  bool pending_ = false, stopping_ = false;
++  uint64_t creates_ = 0;
++  std::chrono::steady_clock::time_point saved_{};
++  static uint64_t Hash(const uint8_t *p, size_t n) {
++    uint64_t h = 14695981039346656037ULL;
++    for (size_t i = 0; i < n; ++i) {
++      h ^= p[i];
++      h *= 1099511628211ULL;
++    }
++    return h;
++  }
++  bool Compatible(const std::vector<uint8_t> &data) const {
++    if (data.size() < 32)
++      return false;
++    uint32_t h[4];
++    std::memcpy(h, data.data(), 16);
++    return h[0] >= 32 && h[0] <= data.size() &&
++           h[1] == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
++           h[2] == properties_.vendorID && h[3] == properties_.deviceID &&
++           !std::memcmp(data.data() + 16, properties_.pipelineCacheUUID,
++                        VK_UUID_SIZE);
++  }
++
++public:
++  std::atomic<VkResult> last_result{VK_SUCCESS};
++  bool loaded = false;
++  std::atomic<bool> write_failed{false};
++  PersistentPipelineCache(VkDevice device,
++                          const VkPhysicalDeviceProperties &properties,
++                          PFN_vkGetDeviceProcAddr proc, const char *path)
++      : device_(device), properties_(properties), path_(path) {
++    create_ = reinterpret_cast<PFN_vkCreatePipelineCache>(
++        proc(device, "vkCreatePipelineCache"));
++    get_ = reinterpret_cast<PFN_vkGetPipelineCacheData>(
++        proc(device, "vkGetPipelineCacheData"));
++    destroy_ = reinterpret_cast<PFN_vkDestroyPipelineCache>(
++        proc(device, "vkDestroyPipelineCache"));
++    if (!create_ || !get_ || !destroy_) {
++      last_result = VK_ERROR_INITIALIZATION_FAILED;
++      return;
++    }
++    lock_ = open((path_ + ".lock").c_str(),
++                 O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
++    if (lock_ >= 0 && flock(lock_, LOCK_EX | LOCK_NB)) {
++      close(lock_);
++      lock_ = -1;
++    }
++    std::vector<uint8_t> data;
++    int fd = open(path_.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
++    if (fd >= 0) {
++      struct stat st{};
++      std::array<uint64_t, 3> header{};
++      if (!fstat(fd, &st) && S_ISREG(st.st_mode) &&
++          st.st_size >= int64_t(sizeof(header)) &&
++          st.st_size <= int64_t(kLimit + sizeof(header)) &&
++          read(fd, header.data(), sizeof(header)) == ssize_t(sizeof(header)) &&
++          header[0] == kMagic &&
++          header[1] == uint64_t(st.st_size - sizeof(header))) {
++        try {
++          data.resize(size_t(header[1]));
++          size_t done = 0;
++          while (done < data.size()) {
++            auto n = read(fd, data.data() + done, data.size() - done);
++            if (n <= 0)
++              break;
++            done += size_t(n);
++          }
++          if (done != data.size() ||
++              Hash(data.data(), data.size()) != header[2] || !Compatible(data))
++            data.clear();
++        } catch (...) {
++          data.clear();
++          write_failed = true;
++        }
++      }
++      close(fd);
++    }
++    VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
++    ci.initialDataSize = data.size();
++    ci.pInitialData = data.empty() ? nullptr : data.data();
++    last_result = create_(device_, &ci, nullptr, &cache_);
++    loaded = last_result == VK_SUCCESS && !data.empty();
++    if (last_result != VK_SUCCESS) {
++      cache_ = VK_NULL_HANDLE;
++      if (!data.empty() && last_result != VK_ERROR_DEVICE_LOST) {
++        ci.initialDataSize = 0;
++        ci.pInitialData = nullptr;
++        last_result = create_(device_, &ci, nullptr, &cache_);
++        if (last_result != VK_SUCCESS)
++          cache_ = VK_NULL_HANDLE;
++      }
++    }
++    if (cache_ && lock_ >= 0) {
++      try {
++        worker_ = std::thread([this] { Writer(); });
++      } catch (...) {
++        write_failed = true;
++      }
++    }
++  }
++  ~PersistentPipelineCache() {
++    if (worker_.joinable()) {
++      {
++        std::lock_guard<std::mutex> guard(mutex_);
++        stopping_ = true;
++        pending_ = true;
++      }
++      condition_.notify_one();
++      worker_.join();
++    }
++    if (cache_)
++      destroy_(device_, cache_, nullptr);
++    if (lock_ >= 0)
++      close(lock_);
++  }
++  PersistentPipelineCache(const PersistentPipelineCache &) = delete;
++  PersistentPipelineCache &operator=(const PersistentPipelineCache &) = delete;
++  VkPipelineCache handle() const { return cache_; }
++  // Called after a successful pipeline creation. No GPU waits. Saves
++  // periodically because the ACV host may hard-exit without running renderer
++  // destructors.
++  bool writable() const { return lock_ >= 0; }
++  void Created() noexcept {
++    try {
++      std::lock_guard<std::mutex> guard(mutex_);
++      ++creates_;
++      if (worker_.joinable()) {
++        pending_ = true;
++        condition_.notify_one();
++      }
++    } catch (...) {
++      write_failed = true;
++    }
++  }
++  void Save() noexcept {
++    try {
++      std::lock_guard<std::mutex> guard(mutex_);
++      if (worker_.joinable()) {
++        pending_ = true;
++        condition_.notify_one();
++      }
++    } catch (...) {
++      write_failed = true;
++    }
++  }
++
++private:
++  void Writer() noexcept {
++    std::unique_lock<std::mutex> guard(mutex_);
++    for (;;) {
++      condition_.wait(guard, [this] { return pending_ || stopping_; });
++      if (!stopping_ && saved_ != std::chrono::steady_clock::time_point{})
++        condition_.wait_until(guard, saved_ + std::chrono::seconds(5),
++                              [this] { return stopping_; });
++      bool stop = stopping_;
++      pending_ = false;
++      saved_ = std::chrono::steady_clock::now();
++      guard.unlock();
++      try {
++        SaveLocked();
++      } catch (...) {
++        write_failed = true;
++      }
++      guard.lock();
++      if (stop)
++        break;
++      if (last_result == VK_INCOMPLETE)
++        pending_ = true;
++    }
++  }
++  void SaveLocked() {
++    if (!cache_ || lock_ < 0)
++      return;
++    size_t size = 0;
++    last_result = get_(device_, cache_, &size, nullptr);
++    if (last_result != VK_SUCCESS || !size || size > kLimit) {
++      write_failed = true;
++      return;
++    }
++    std::vector<uint8_t> data(size);
++    last_result = get_(device_, cache_, &size, data.data());
++    if (last_result != VK_SUCCESS || size > data.size()) {
++      write_failed = true;
++      return;
++    }
++    data.resize(size);
++    if (!Compatible(data))
++      return;
++    std::array<uint64_t, 3> header{kMagic, uint64_t(data.size()),
++                                   Hash(data.data(), data.size())};
++    std::string temp = path_ + ".tmp.XXXXXX";
++    std::vector<char> name(temp.begin(), temp.end());
++    name.push_back(0);
++    int fd = mkstemp(name.data());
++    if (fd < 0) {
++      write_failed = true;
++      return;
++    }
++    bool ok = true;
++    auto put = [&](const void *ptr, size_t n) {
++      auto *bytes = static_cast<const uint8_t *>(ptr);
++      while (n) {
++        auto count = write(fd, bytes, n);
++        if (count <= 0) {
++          ok = false;
++          return;
++        }
++        bytes += count;
++        n -= size_t(count);
++      }
++    };
++    put(header.data(), sizeof(header));
++    if (ok)
++      put(data.data(), data.size());
++    if (ok && fsync(fd))
++      ok = false;
++    if (close(fd))
++      ok = false;
++    if (ok && rename(name.data(), path_.c_str()))
++      ok = false;
++    if (!ok) {
++      unlink(name.data());
++      write_failed = true;
++    }
++  }
++};
++} // namespace acv
+--- /dev/null
++++ b/src/graphics/vulkan/timeline_submission.h
+@@ -0,0 +1,109 @@
++#pragma once
++// Device feature must have been enabled before constructing this owner.
++#include <cstdint>
++#include <vector>
++#include <vulkan/vulkan_core.h>
++namespace acv {
++class TimelineSubmission {
++  VkDevice device_;
++  VkSemaphore semaphore_{};
++  PFN_vkCreateSemaphore create_{};
++  PFN_vkDestroySemaphore destroy_{};
++  PFN_vkGetSemaphoreCounterValue counter_{};
++  PFN_vkWaitSemaphores wait_{};
++  PFN_vkQueueSubmit submit_{};
++  uint64_t initial_, submitted_, max_difference_;
++
++public:
++  VkResult initialization = VK_SUCCESS;
++  TimelineSubmission(VkDevice device, PFN_vkGetDeviceProcAddr proc,
++                     uint64_t initial, uint64_t max_difference)
++      : device_(device), initial_(initial), submitted_(initial),
++        max_difference_(max_difference) {
++    create_ = reinterpret_cast<PFN_vkCreateSemaphore>(
++        proc(device, "vkCreateSemaphore"));
++    destroy_ = reinterpret_cast<PFN_vkDestroySemaphore>(
++        proc(device, "vkDestroySemaphore"));
++    counter_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValue>(
++        proc(device, "vkGetSemaphoreCounterValue"));
++    wait_ = reinterpret_cast<PFN_vkWaitSemaphores>(
++        proc(device, "vkWaitSemaphores"));
++    submit_ =
++        reinterpret_cast<PFN_vkQueueSubmit>(proc(device, "vkQueueSubmit"));
++    if (!create_ || !destroy_ || !counter_ || !wait_ || !submit_ ||
++        !max_difference_) {
++      initialization = VK_ERROR_INITIALIZATION_FAILED;
++      return;
++    }
++    VkSemaphoreTypeCreateInfo type{
++        VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
++    type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
++    type.initialValue = initial;
++    VkSemaphoreCreateInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
++    info.pNext = &type;
++    initialization = create_(device_, &info, nullptr, &semaphore_);
++    if (initialization != VK_SUCCESS)
++      semaphore_ = VK_NULL_HANDLE;
++  }
++  // Normal teardown explicitly proves stop. Unexpected destruction retains a
++  // potentially GPU-referenced handle instead of freeing it while pending.
++  ~TimelineSubmission() {
++    if (semaphore_ && submitted_ == initial_)
++      destroy_(device_, semaphore_, nullptr);
++  }
++  TimelineSubmission(const TimelineSubmission &) = delete;
++  TimelineSubmission &operator=(const TimelineSubmission &) = delete;
++  VkSemaphore handle() const { return semaphore_; }
++  uint64_t maximum_difference() const { return max_difference_; }
++  uint64_t last_submitted() const { return submitted_; }
++  void DestroyAfterDeviceStopped() {
++    if (semaphore_)
++      destroy_(device_, semaphore_, nullptr);
++    semaphore_ = VK_NULL_HANDLE;
++  }
++  VkResult Counter(uint64_t &value) const {
++    return counter_(device_, semaphore_, &value);
++  }
++  VkResult Wait(uint64_t ticket, uint64_t timeout) const {
++    if (ticket > submitted_)
++      return VK_ERROR_INITIALIZATION_FAILED;
++    VkSemaphoreWaitInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
++    info.semaphoreCount = 1;
++    info.pSemaphores = &semaphore_;
++    info.pValues = &ticket;
++    return wait_(device_, &info, timeout);
++  }
++  // Existing CP submit has only binary waits and no signals. Their zero
++  // timeline values are ignored by Vulkan, but the count must match all wait
++  // semaphores.
++  VkResult Submit(VkQueue queue, const VkSubmitInfo &original, uint64_t ticket,
++                  uint64_t known_completed,
++                  const uint64_t *wait_values = nullptr) {
++    if (!semaphore_ || ticket <= submitted_ || ticket < known_completed ||
++        ticket - known_completed > max_difference_ || original.pNext ||
++        original.signalSemaphoreCount)
++      return VK_ERROR_INITIALIZATION_FAILED;
++    std::vector<uint64_t> waits;
++    try {
++      waits.resize(original.waitSemaphoreCount, 0);
++    } catch (...) {
++      return VK_ERROR_OUT_OF_HOST_MEMORY;
++    }
++    VkTimelineSemaphoreSubmitInfo values{
++        VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
++    values.waitSemaphoreValueCount = original.waitSemaphoreCount;
++    values.pWaitSemaphoreValues =
++        wait_values ? wait_values : (waits.empty() ? nullptr : waits.data());
++    values.signalSemaphoreValueCount = 1;
++    values.pSignalSemaphoreValues = &ticket;
++    VkSubmitInfo info = original;
++    info.pNext = &values;
++    info.signalSemaphoreCount = 1;
++    info.pSignalSemaphores = &semaphore_;
++    VkResult result = submit_(queue, 1, &info, VK_NULL_HANDLE);
++    if (result == VK_SUCCESS)
++      submitted_ = ticket;
++    return result;
++  }
++};
++} // namespace acv
+--- /dev/null
++++ b/src/graphics/vulkan/vertex_input_pipeline_libraries.h
+@@ -0,0 +1,124 @@
++#pragma once
++#include <cstdint>
++#include <map>
++#include <mutex>
++#include <string>
++#include <vulkan/vulkan_core.h>
++namespace acv {
++// Reuse vertex-input interface libraries; shader/output parts remain provided
++// at final linking. Unsupported input extensions or a full cache use
++// monolithic.
++class VertexInputPipelineLibraries {
++  VkDevice device_;
++  PFN_vkCreateGraphicsPipelines create_;
++  PFN_vkDestroyPipeline destroy_;
++  std::mutex mutex_;
++  std::map<std::string, VkPipeline> libraries_;
++  template <class T> static void Add(std::string &key, T value) {
++    key.append(reinterpret_cast<const char *>(&value), sizeof(value));
++  }
++
++public:
++  VertexInputPipelineLibraries(VkDevice d, PFN_vkCreateGraphicsPipelines c,
++                               PFN_vkDestroyPipeline x)
++      : device_(d), create_(c), destroy_(x) {}
++  ~VertexInputPipelineLibraries() {
++    for (const auto &item : libraries_)
++      destroy_(device_, item.second, nullptr);
++  }
++  bool TryCreate(const VkGraphicsPipelineCreateInfo &original,
++                 VkPipelineCache cache, VkPipeline &pipeline,
++                 VkResult &result) try {
++    pipeline = VK_NULL_HANDLE;
++    auto *vi = original.pVertexInputState;
++    auto *ia = original.pInputAssemblyState;
++    if (!vi || !ia || vi->pNext || ia->pNext || original.flags)
++      return false;
++    if (original.pDynamicState)
++      for (uint32_t i = 0; i < original.pDynamicState->dynamicStateCount; ++i) {
++        auto s = original.pDynamicState->pDynamicStates[i];
++        if (s == VK_DYNAMIC_STATE_VERTEX_INPUT_EXT ||
++            s == VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE ||
++            s == VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY ||
++            s == VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE)
++          return false;
++      }
++    std::string key;
++    Add(key, vi->flags);
++    Add(key, vi->vertexBindingDescriptionCount);
++    Add(key, vi->vertexAttributeDescriptionCount);
++    for (uint32_t i = 0; i < vi->vertexBindingDescriptionCount; ++i) {
++      auto &b = vi->pVertexBindingDescriptions[i];
++      Add(key, b.binding);
++      Add(key, b.stride);
++      Add(key, b.inputRate);
++    }
++    for (uint32_t i = 0; i < vi->vertexAttributeDescriptionCount; ++i) {
++      auto &a = vi->pVertexAttributeDescriptions[i];
++      Add(key, a.location);
++      Add(key, a.binding);
++      Add(key, a.format);
++      Add(key, a.offset);
++    }
++    Add(key, ia->flags);
++    Add(key, ia->topology);
++    Add(key, ia->primitiveRestartEnable);
++    VkPipeline library = VK_NULL_HANDLE;
++    {
++      std::lock_guard<std::mutex> guard(mutex_);
++      auto it = libraries_.find(key);
++      if (it != libraries_.end())
++        library = it->second;
++      else {
++        if (libraries_.size() >= 128)
++          return false;
++        VkGraphicsPipelineLibraryCreateInfoEXT subset{
++            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT};
++        subset.flags =
++            VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT;
++        VkGraphicsPipelineCreateInfo info{
++            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
++        info.pNext = &subset;
++        info.flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
++        info.pVertexInputState = vi;
++        info.pInputAssemblyState = ia;
++        info.basePipelineIndex = -1;
++        result = create_(device_, cache, 1, &info, nullptr, &library);
++        if (result != VK_SUCCESS) {
++          if (library)
++            destroy_(device_, library, nullptr);
++          return true;
++        }
++        try {
++          libraries_.emplace(std::move(key), library);
++        } catch (...) {
++          destroy_(device_, library, nullptr);
++          result = VK_ERROR_OUT_OF_HOST_MEMORY;
++          return true;
++        }
++      }
++    }
++    VkPipelineLibraryCreateInfoKHR links{
++        VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR};
++    links.pNext = original.pNext;
++    links.libraryCount = 1;
++    links.pLibraries = &library;
++    VkGraphicsPipelineLibraryCreateInfoEXT supplied{
++        VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT};
++    supplied.pNext = &links;
++    supplied.flags =
++        VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
++        VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT |
++        VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT;
++    VkGraphicsPipelineCreateInfo info = original;
++    info.pNext = &supplied;
++    info.pVertexInputState = nullptr;
++    info.pInputAssemblyState = nullptr;
++    result = create_(device_, cache, 1, &info, nullptr, &pipeline);
++    return true;
++  } catch (...) {
++    result = VK_ERROR_OUT_OF_HOST_MEMORY;
++    return true;
++  }
++};
++} // namespace acv
+--- /dev/null
++++ b/src/graphics/vulkan/readback_suballocation.h
+@@ -0,0 +1,180 @@
++#pragma once
++#include <algorithm>
++#include <array>
++#include <cstdint>
++#include <vulkan/vulkan_core.h>
++namespace acv {
++class ReadbackSuballocation {
++  static constexpr VkDeviceSize kBudget = 64ULL << 20;
++  VkDevice device_;
++  VkBuffer buffer_{};
++  VkDeviceMemory memory_{};
++  void *mapping_{};
++  uint32_t type_ = UINT32_MAX;
++  VkMemoryPropertyFlags flags_{};
++  VkDeviceSize atom_ = 4, allocated_ = 0;
++  bool used_ = false;
++  PFN_vkDestroyBuffer destroy_buffer_{};
++  PFN_vkFreeMemory free_{};
++  PFN_vkUnmapMemory unmap_{};
++  struct Range {
++    uint64_t id = 0;
++    VkDeviceSize offset = 0, size = 0;
++  };
++  std::array<Range, 64> ranges_{};
++  bool Gap(VkDeviceSize bytes, VkDeviceSize &offset, VkDeviceSize &span) const {
++    if (!bytes || bytes > kBudget || atom_ > kBudget)
++      return false;
++    span = (bytes + atom_ - 1) & ~(atom_ - 1);
++    auto sorted = ranges_;
++    std::sort(sorted.begin(), sorted.end(), [](const Range &a, const Range &b) {
++      return a.size && (!b.size || a.offset < b.offset);
++    });
++    offset = 0;
++    for (const auto &r : sorted) {
++      if (!r.size)
++        break;
++      if (r.offset >= offset && r.offset - offset >= span)
++        return true;
++      offset = r.offset + r.size;
++    }
++    return offset <= kBudget && span <= kBudget - offset;
++  }
++  void Cleanup() {
++    if (mapping_)
++      unmap_(device_, memory_);
++    if (buffer_)
++      destroy_buffer_(device_, buffer_, nullptr);
++    if (memory_)
++      free_(device_, memory_, nullptr);
++    mapping_ = nullptr;
++    buffer_ = VK_NULL_HANDLE;
++    memory_ = VK_NULL_HANDLE;
++  }
++
++public:
++  VkResult result = VK_SUCCESS;
++  ReadbackSuballocation(VkDevice device, PFN_vkGetDeviceProcAddr proc,
++                        const VkPhysicalDeviceMemoryProperties &types,
++                        VkDeviceSize atom)
++      : device_(device), atom_(std::max<VkDeviceSize>(4, atom)) {
++    auto create =
++        reinterpret_cast<PFN_vkCreateBuffer>(proc(device, "vkCreateBuffer"));
++    auto requirements = reinterpret_cast<PFN_vkGetBufferMemoryRequirements>(
++        proc(device, "vkGetBufferMemoryRequirements"));
++    auto allocate = reinterpret_cast<PFN_vkAllocateMemory>(
++        proc(device, "vkAllocateMemory"));
++    auto bind = reinterpret_cast<PFN_vkBindBufferMemory>(
++        proc(device, "vkBindBufferMemory"));
++    auto map = reinterpret_cast<PFN_vkMapMemory>(proc(device, "vkMapMemory"));
++    destroy_buffer_ =
++        reinterpret_cast<PFN_vkDestroyBuffer>(proc(device, "vkDestroyBuffer"));
++    free_ = reinterpret_cast<PFN_vkFreeMemory>(proc(device, "vkFreeMemory"));
++    unmap_ = reinterpret_cast<PFN_vkUnmapMemory>(proc(device, "vkUnmapMemory"));
++    if (!create || !requirements || !allocate || !bind || !map ||
++        !destroy_buffer_ || !free_ || !unmap_) {
++      result = VK_ERROR_INITIALIZATION_FAILED;
++      return;
++    }
++    VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
++    info.size = kBudget;
++    info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++    result = create(device_, &info, nullptr, &buffer_);
++    if (result != VK_SUCCESS) {
++      buffer_ = VK_NULL_HANDLE;
++      return;
++    }
++    VkMemoryRequirements req{};
++    requirements(device_, buffer_, &req);
++    if (req.size > kBudget) {
++      result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
++      Cleanup();
++      return;
++    }
++    int best = -1;
++    for (uint32_t i = 0; i < types.memoryTypeCount; ++i) {
++      auto f = types.memoryTypes[i].propertyFlags;
++      if (!(req.memoryTypeBits & (1u << i)) ||
++          !(f & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
++        continue;
++      int score = ((f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ? 4 : 0) +
++                  ((f & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) ? 2 : 0);
++      if (score > best) {
++        best = score;
++        type_ = i;
++        flags_ = f;
++      }
++    }
++    if (type_ == UINT32_MAX) {
++      result = VK_ERROR_FEATURE_NOT_PRESENT;
++      Cleanup();
++      return;
++    }
++    VkMemoryDedicatedAllocateInfo dedicated{
++        VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
++    dedicated.buffer = buffer_;
++    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
++    ai.pNext = &dedicated;
++    ai.allocationSize = req.size;
++    ai.memoryTypeIndex = type_;
++    result = allocate(device_, &ai, nullptr, &memory_);
++    if (result != VK_SUCCESS) {
++      memory_ = VK_NULL_HANDLE;
++      Cleanup();
++      return;
++    }
++    result = bind(device_, buffer_, memory_, 0);
++    if (result != VK_SUCCESS) {
++      Cleanup();
++      return;
++    }
++    result = map(device_, memory_, 0, VK_WHOLE_SIZE, 0, &mapping_);
++    if (result != VK_SUCCESS) {
++      mapping_ = nullptr;
++      Cleanup();
++      return;
++    }
++    allocated_ = req.size;
++  }
++  ~ReadbackSuballocation() {
++    if (!used_)
++      Cleanup();
++  }
++  ReadbackSuballocation(const ReadbackSuballocation &) = delete;
++  ReadbackSuballocation &operator=(const ReadbackSuballocation &) = delete;
++  bool ready() const { return mapping_ != nullptr; }
++  bool Acquire(uint64_t id, VkDeviceSize bytes, VkDeviceSize &offset,
++               VkDeviceSize &span) {
++    if (!ready() || !id || !Gap(bytes, offset, span))
++      return false;
++    for (auto &r : ranges_)
++      if (!r.size) {
++        r = {id, offset, span};
++        used_ = true;
++        return true;
++      }
++    return false;
++  }
++  void Release(uint64_t id) {
++    for (auto &r : ranges_)
++      if (r.id == id) {
++        r = {};
++        return;
++      }
++  }
++  void DestroyAfterDeviceStopped() {
++    Cleanup();
++    ranges_ = {};
++    used_ = false;
++  }
++  VkBuffer buffer() const { return buffer_; }
++  VkDeviceMemory memory() const { return memory_; }
++  void *data(VkDeviceSize offset) const {
++    return static_cast<uint8_t *>(mapping_) + offset;
++  }
++  uint32_t type() const { return type_; }
++  VkMemoryPropertyFlags flags() const { return flags_; }
++  VkDeviceSize allocated() const { return allocated_; }
++};
++} // namespace acv
+--- /dev/null
++++ b/src/graphics/vulkan/async_readback_transfer.h
+@@ -0,0 +1,218 @@
++#pragma once
++#include "timeline_submission.h"
++#include <algorithm>
++#include <array>
++#include <limits>
++namespace acv {
++// Queue 1 of the graphics family. Shared buffers retain exclusive ownership.
++// All calls run on the GPU worker; host publication uses only proven
++// completion.
++class AsyncReadbackTransfer {
++  struct Record {
++    VkCommandPool pool{};
++    VkCommandBuffer command{};
++    uint64_t value = 0, ticket = 0;
++  };
++  VkDevice device_;
++  TimelineSubmission timeline_;
++  std::array<Record, 64> records_{};
++  PFN_vkCreateCommandPool create_{};
++  PFN_vkDestroyCommandPool destroy_{};
++  PFN_vkAllocateCommandBuffers allocate_{};
++  PFN_vkResetCommandPool reset_{};
++  PFN_vkBeginCommandBuffer begin_{};
++  PFN_vkEndCommandBuffer end_{};
++  PFN_vkQueueWaitIdle idle_{};
++  PFN_vkCmdCopyBuffer copy_{};
++  PFN_vkCmdPipelineBarrier barrier_{};
++  uint32_t family_;
++  uint64_t completed_ = 0, completed_ticket_ = 0;
++  bool used_ = false;
++  void Cleanup() {
++    for (auto &r : records_)
++      if (r.pool) {
++        destroy_(device_, r.pool, nullptr);
++        r = {};
++      }
++    timeline_.DestroyAfterDeviceStopped();
++  }
++
++public:
++  VkResult result = VK_SUCCESS;
++  AsyncReadbackTransfer(VkDevice device, PFN_vkGetDeviceProcAddr proc,
++                        uint32_t family, uint64_t max_difference)
++      : device_(device), timeline_(device, proc, 0, max_difference),
++        family_(family) {
++#define ACV_TRANSFER_LOAD(field, name)                                         \
++  field = reinterpret_cast<PFN_##name>(proc(device, #name))
++    ACV_TRANSFER_LOAD(create_, vkCreateCommandPool);
++    ACV_TRANSFER_LOAD(destroy_, vkDestroyCommandPool);
++    ACV_TRANSFER_LOAD(allocate_, vkAllocateCommandBuffers);
++    ACV_TRANSFER_LOAD(reset_, vkResetCommandPool);
++    ACV_TRANSFER_LOAD(begin_, vkBeginCommandBuffer);
++    ACV_TRANSFER_LOAD(end_, vkEndCommandBuffer);
++    ACV_TRANSFER_LOAD(idle_, vkQueueWaitIdle);
++    ACV_TRANSFER_LOAD(copy_, vkCmdCopyBuffer);
++    ACV_TRANSFER_LOAD(barrier_, vkCmdPipelineBarrier);
++#undef ACV_TRANSFER_LOAD
++    result = timeline_.initialization;
++    if (result == VK_SUCCESS &&
++        (!create_ || !destroy_ || !allocate_ || !reset_ || !begin_ || !end_ ||
++         !idle_ || !copy_ || !barrier_))
++      result = VK_ERROR_INITIALIZATION_FAILED;
++  }
++  ~AsyncReadbackTransfer() {
++    if (!used_)
++      Cleanup();
++  }
++  VkSemaphore handle() const { return timeline_.handle(); }
++  uint64_t latest() const { return timeline_.last_submitted(); }
++  bool ready() const { return result == VK_SUCCESS && handle(); }
++  bool PublishedReady(uint64_t ticket) const {
++    for (const auto &r : records_)
++      if (r.ticket == ticket)
++        return r.value <= completed_;
++    return ticket <= completed_ticket_;
++  }
++  VkResult WaitForTicket(uint64_t ticket) {
++    uint64_t value = 0;
++    for (const auto &r : records_)
++      if (r.ticket <= ticket)
++        value = std::max(value, r.value);
++    if (value > completed_) {
++      result = timeline_.Wait(value, UINT64_MAX);
++      if (result != VK_SUCCESS)
++        return result;
++    }
++    result = timeline_.Counter(completed_);
++    if (result != VK_SUCCESS)
++      return result;
++    for (const auto &r : records_)
++      if (r.value <= completed_)
++        completed_ticket_ = std::max(completed_ticket_, r.ticket);
++    return VK_SUCCESS;
++  }
++  VkResult Submit(VkQueue queue, VkSemaphore producer, uint64_t ticket,
++                  VkBuffer source, VkBuffer target,
++                  const VkBufferCopy &region) {
++    if (failed_)
++      return failure_;
++    VkResult status =
++        SubmitImpl(queue, producer, ticket, source, target, region);
++    if (status != VK_SUCCESS) {
++      failed_ = true;
++      failure_ = status;
++    }
++    return status;
++  }
++
++private:
++  bool failed_ = false;
++  VkResult failure_ = VK_SUCCESS;
++  VkResult SubmitImpl(VkQueue queue, VkSemaphore producer, uint64_t ticket,
++                      VkBuffer source, VkBuffer target,
++                      const VkBufferCopy &region) {
++    result = timeline_.Counter(completed_);
++    if (result != VK_SUCCESS)
++      return result;
++    for (const auto &r : records_)
++      if (r.value <= completed_)
++        completed_ticket_ = std::max(completed_ticket_, r.ticket);
++    if (latest() == UINT64_MAX)
++      return result = VK_ERROR_TOO_MANY_OBJECTS;
++    uint64_t next = latest() + 1;
++    if (next - completed_ > timeline_.maximum_difference()) {
++      result =
++          timeline_.Wait(next - timeline_.maximum_difference(), UINT64_MAX);
++      if (result != VK_SUCCESS)
++        return result;
++      result = timeline_.Counter(completed_);
++      if (result != VK_SUCCESS)
++        return result;
++    }
++    Record *record = nullptr;
++    for (auto &r : records_)
++      if (r.value <= completed_) {
++        record = &r;
++        break;
++      }
++    if (!record) {
++      auto *oldest = &records_[0];
++      for (auto &r : records_)
++        if (r.value < oldest->value)
++          oldest = &r;
++      result = WaitForTicket(oldest->ticket);
++      if (result != VK_SUCCESS)
++        return result;
++      record = oldest;
++    }
++    if (!record->pool) {
++      VkCommandPoolCreateInfo pi{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
++      pi.queueFamilyIndex = family_;
++      pi.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
++      result = create_(device_, &pi, nullptr, &record->pool);
++      if (result != VK_SUCCESS) {
++        record->pool = VK_NULL_HANDLE;
++        return result;
++      }
++      VkCommandBufferAllocateInfo ai{
++          VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
++      ai.commandPool = record->pool;
++      ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
++      ai.commandBufferCount = 1;
++      result = allocate_(device_, &ai, &record->command);
++      if (result != VK_SUCCESS) {
++        destroy_(device_, record->pool, nullptr);
++        *record = {};
++        return result;
++      }
++    } else {
++      result = reset_(device_, record->pool, 0);
++      if (result != VK_SUCCESS)
++        return result;
++    }
++    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
++    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
++    result = begin_(record->command, &bi);
++    if (result != VK_SUCCESS)
++      return result;
++    copy_(record->command, source, target, 1, &region);
++    VkBufferMemoryBarrier host{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++    host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++    host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
++    host.srcQueueFamilyIndex = host.dstQueueFamilyIndex =
++        VK_QUEUE_FAMILY_IGNORED;
++    host.buffer = target;
++    host.offset = region.dstOffset;
++    host.size = region.size;
++    barrier_(record->command, VK_PIPELINE_STAGE_TRANSFER_BIT,
++             VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &host, 0, nullptr);
++    result = end_(record->command);
++    if (result != VK_SUCCESS)
++      return result;
++    VkPipelineStageFlags stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
++    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
++    si.waitSemaphoreCount = 1;
++    si.pWaitSemaphores = &producer;
++    si.pWaitDstStageMask = &stage;
++    si.commandBufferCount = 1;
++    si.pCommandBuffers = &record->command;
++    // Retain resources on unknown/device-loss results until explicit device
++    // stop.
++    used_ = true;
++    result = timeline_.Submit(queue, si, next, completed_, &ticket);
++    if (result == VK_SUCCESS) {
++      record->value = next;
++      record->ticket = ticket;
++    }
++    return result;
++  }
++
++public:
++  VkResult Stop(VkQueue queue) { return idle_(queue); }
++  void DestroyAfterDeviceStopped() {
++    Cleanup();
++    used_ = false;
++  }
++};
++} // namespace acv

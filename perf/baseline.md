@@ -51,8 +51,46 @@ RUNTIME_BASELINE; значения сохранены в evidence.json. Пров
 34.4587ms; max802.88ms,1%low неизвестен. GPU92.43%device-wide;
 CPU GPU Commands68.30%,DrawThread44.71%,Main21.56% одного ядра.
 60CPU/GPU строк,5665IP samples,lost0. В sampling warning/error нет.
-Миссия/действие не указаны; это ещё не воспроизводимый baseline маршрута.
+Пользователь уточнил: первая миссия, gameplay, мелкие зависания; маршрут не задан.
+Это ещё не воспроизводимый baseline маршрута.
 Cache2048/3072MiB/600s отличается от исторических настроек; A/B ускорение не заявлено.
 [Session/settings/hashes](../logs/fps-baseline-20261029-session161152-02/session.json),
 [расчёт/границы](../logs/fps-baseline-20261029-session161152-02/analysis.json).
 Artifact hashes относятся к файлам; maps/stat device mismatch сохранён явно.
+
+## Повтор первой миссии, та же сессия
+
+После уточнения пользователя на471.15с снят ещё60с профиль:
+29.3226swap/s,34.1034ms по1500интервалам5полных окон; max49.10ms.
+GPU93.65%device-wide,5791IPs/lost0; warning/error в окне нет;
+физические disk reads0байт.802.88ms пауза первого замера не повторилась.
+[Analysis](../logs/fps-baseline-20261029-session161152-03/analysis.json),
+[аннотация](../logs/fps-baseline-20261029-session161152-03/user-annotation.json).
+Тот же PID/settings, разные действия/камеры не контролировались; это не FPS A/B.
+Отдельный raw-swap кандидат built/host-tested, runtime-тест ещё предстоит:
+[manifest](../tmp/acv-swap-trace-20261029/build.json), [отчёт](../report-fps.md).
+
+## Поздний live memcpy-профиль, тот же процесс
+
+По запросу пользователя без перезапуска/настройки PID11835:
+30s,1527CPU samples,509backward-copy hits,lost0;477pool Copy/Worker,32ReadPhysicalCpu.
+Два полных300swap окна24.7522/s,40.4004ms; GPU95.73%device-wide.
+Поздний маршрут не подтверждён, не считать падение с29/s регрессией/A-B.
+Следующий15s register sample:317/317disjoint,page-aligned source/destination.
+Новый forward128 код в этом процессе не загружался.
+[Live evidence](../logs/fps-live-copy-20261029-01/analysis.json),
+[геометрия копий](../logs/fps-live-copy-20261029-02/geometry.json),
+[кандидат и ограничения](kb:FPS_FORWARD_COPY_20261029).
+
+## Forward128 runtime и GPU boundary
+
+Candidate6090b52a forward1,session171732:240s child0/fatal0/runtime_errors0.
+Raw120–180s1072intervals17.8587swap/s,55.9953ms,1%low14.3942,max83.3753ms.
+GPU97.77%,60CPU/GPU rows,4439IPs/lost0. Control0 session172327 exited90.45s,
+до120s gate; валидного A/B нет. GPU-written cached coherent staging test Astra6
+прошёл bytes/guards, но copy medians Forward128≈3%медленнее libc.
+Не принимать RAM speedup за GPU/FPS ускорение.
+[Raw summary](../logs/fps-forward-test-20261029/on-01/swap-summary.json),
+[контроль](../logs/fps-forward-test-20261029/comparison-status.json),
+[GPU benchmark](../logs/fps-forward-gpu-20261029/result.json),
+[границы](kb:FPS_FORWARD_COPY_20261029).

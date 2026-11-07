@@ -14,10 +14,6 @@
       "sha256": "26d3ba81c3da960f72dbf7f8b9e8b4482a118a9ffb82c2f2ad0d5966f007402a",
       "size": 1085440
     },
-    "bind/dvdbnd.bdt": {
-      "sha256": "a66d5305c5a2977c2cf13aab20c8916c4b2924bdbac2de3c74a66a23d963b7ca",
-      "size": 3279025311
-    },
     "bind/dvdbnd5.bhd": {
       "sha256": "816fa23bc3721fbe11d29a56e335b6a9f6945fc67fd561e730602ea2b5330bb2",
       "size": 338592
@@ -105,6 +101,220 @@
     "movie/jp/tu_scan.wmv": {
       "sha256": "d9bba1342c288c6219b8bc9faa8886c468e8bc4698a8592cda720942195f00c8",
       "size": 2217516
+    },
+    "bind/shards/shards.idx": {
+      "size": 474690,
+      "sha256": "2594efd5f99aa816de9c52b72d8b6d0ac1bf10f09952d611bd9681f046bb62de"
+    },
+    "bind/shards/core.pak": {
+      "size": 427658148,
+      "sha256": "729d7fcfe66c6d9fe832ae1300df473a2f0f48879e17204fed3a0ef9d53210b9"
+    },
+    "bind/shards/gaps.pak": {
+      "size": 16,
+      "sha256": "7c0e81149680ec0e2eb31225561540e7d96daa2edd78ef28d23b6434fb8f6188"
+    },
+    "bind/shards/image.pak": {
+      "size": 68251712,
+      "sha256": "21015a8029d2ad1c7d8863a0ab63bb3704bb8335a1bd53b7cd7bd972eee58672"
+    },
+    "bind/shards/lang-cn.pak": {
+      "size": 14852480,
+      "sha256": "c5334595766816eba02665a388911b00b60941f89b4ce69c5e769c9cbf08ebbd"
+    },
+    "bind/shards/lang-en.pak": {
+      "size": 19914208,
+      "sha256": "8c5141f3e8ab648be718d9097a00a94f09762d876a38930ebf1b995a09c16c9f"
+    },
+    "bind/shards/lang-fr.pak": {
+      "size": 22190304,
+      "sha256": "81612a656cce1c22ca4a2750dfa2209a3b8ab3ac7e7510f00148fbd46cf5a635"
+    },
+    "bind/shards/lang-ge.pak": {
+      "size": 22301984,
+      "sha256": "14a2d6feea91be645b50150458ea487761a0bd0b3925a4e81bc67b0b17294177"
+    },
+    "bind/shards/lang-it.pak": {
+      "size": 22152288,
+      "sha256": "65ce79889747d79dad1dde13f5822c5e2951a0c60cab62a96a9a720b3a615872"
+    },
+    "bind/shards/lang-jp.pak": {
+      "size": 85386176,
+      "sha256": "4657028e03c7d1e3a9f921fb61014e6217d52b1b22d41ad775084474bbc76186"
+    },
+    "bind/shards/lang-kr.pak": {
+      "size": 14967520,
+      "sha256": "9cfcbaf29107e776a0c8a0cc711fe79450182e5172f833b0fe0c0761331e5429"
+    },
+    "bind/shards/lang-sp.pak": {
+      "size": 22294400,
+      "sha256": "840fafc8fe6d3d91895d8f1ee5e5f6580e3458585b2529cf5f7e3de6a7581d0a"
+    },
+    "bind/shards/map-m0050.pak": {
+      "size": 18532963,
+      "sha256": "91fb1ee746327b16a7044b5affb9a1a94bc5dc82df3022c3e70272ea4a47d020"
+    },
+    "bind/shards/map-m0100.pak": {
+      "size": 22357882,
+      "sha256": "c380fb5709d5b359c06b4ab50e0fca4fd1a7da5ced71427035f66a78a2478c0c"
+    },
+    "bind/shards/map-m0200.pak": {
+      "size": 15328822,
+      "sha256": "a38bd11eceb216685ba001c197a27bff4831d189ede0322899aca6d05d28dac6"
+    },
+    "bind/shards/map-m0201.pak": {
+      "size": 13026398,
+      "sha256": "1fc3f4031d006e4c48f615eb7d9030ff93bad26dc1fde8029cf87db91f3d0a09"
+    },
+    "bind/shards/map-m0299.pak": {
+      "size": 32143971,
+      "sha256": "2631c5947e9102696aa2115a16b0497c5e0acf00e409c51bc6f338016cbc2ba6"
+    },
+    "bind/shards/map-m0300.pak": {
+      "size": 45977955,
+      "sha256": "0074bd0cc693d517ad91346dcd992a85db6ade076de6996ec7e3c1c01e444e5b"
+    },
+    "bind/shards/map-m0400.pak": {
+      "size": 19703914,
+      "sha256": "6351f5c3e48f843fa4d7ab447b2ce69ea0371abc20939cbab1ad09c3193dc2f6"
+    },
+    "bind/shards/map-m0500.pak": {
+      "size": 31983729,
+      "sha256": "c8f41338d15d5a9b09443d519fffdf3af0e58aa88e24b092fcf683a370f001db"
+    },
+    "bind/shards/map-m0600.pak": {
+      "size": 30867357,
+      "sha256": "d8c154428bdaeb21252f2048147c3df1663634ebeb4c3803d8068fed4a275da9"
+    },
+    "bind/shards/map-m0650.pak": {
+      "size": 13579782,
+      "sha256": "1ff24f9ff4f9f20293952937506a258d72b06aee9a5d0bd2a1acb799d3c51053"
+    },
+    "bind/shards/map-m0700.pak": {
+      "size": 27309574,
+      "sha256": "aba4608910bc98e0faefacfc9172d38fa6208a632b5322775efaa1554129c459"
+    },
+    "bind/shards/map-m0750.pak": {
+      "size": 29220052,
+      "sha256": "38abbe937730acbbbe2f9119fc696b4b59b761ffdf0792dbb09cbbae8ccddb4b"
+    },
+    "bind/shards/map-m0800.pak": {
+      "size": 29550092,
+      "sha256": "1fd1e013d115e526342147c0df16b15c1385d5511778d416fde675f052acbd4a"
+    },
+    "bind/shards/map-m0900.pak": {
+      "size": 12656814,
+      "sha256": "d97592ed2c31bdfa1ce1f07d33ff9a844cc6168c6771294580d679f229be524b"
+    },
+    "bind/shards/map-m1000.pak": {
+      "size": 29618531,
+      "sha256": "d04d32e3d286b20bf8ceda69761bcc052d76d0bb8c0b10d8c3f39c2fc22d0cc5"
+    },
+    "bind/shards/map-m2000.pak": {
+      "size": 14324435,
+      "sha256": "acd8866f8fbb6340f9d51c5d17d29f94ada3c5769b39a1bbf75f83cb7a9a10e7"
+    },
+    "bind/shards/map-m2100.pak": {
+      "size": 27071049,
+      "sha256": "262d27dc81a189b5c3ec5e80be5bdaea06c8c3ad9ca93a812fb28d3dda5af035"
+    },
+    "bind/shards/map-m2200.pak": {
+      "size": 20388451,
+      "sha256": "841ab16ed9bcdfa3c2027a62038be92e3dce790df2cd6556c088c909c4f74263"
+    },
+    "bind/shards/map-m2300.pak": {
+      "size": 39093988,
+      "sha256": "63a9a18c87ad9376a365709a012d1176c1cacf881e6e28ed51453e447ce94db2"
+    },
+    "bind/shards/map-m2500.pak": {
+      "size": 17541843,
+      "sha256": "114eb23b1f92b8669bf0fcec1dc579621e186505a691c2927a3912c140da1126"
+    },
+    "bind/shards/map-m5000.pak": {
+      "size": 2129644,
+      "sha256": "f3879c3f4d35eb5fcdaafd8b0a2de1c2dc12b995edf3ac7b044493fdcac000b9"
+    },
+    "bind/shards/map-m5001.pak": {
+      "size": 7786516,
+      "sha256": "96e5f3b980d45084877044df6c2d30a11b0b7e620cf7ed506f36aefaf121dbe0"
+    },
+    "bind/shards/model-ac-1.pak": {
+      "size": 805177834,
+      "sha256": "bb7ee18ca033baba00f9f91e6d83d6cb074183712aa4969741d35f9595d7bfcc"
+    },
+    "bind/shards/model-ac-2.pak": {
+      "size": 86750005,
+      "sha256": "5d3f10a0fc520f4826befd4fa376ef30ec185af0ae1ffd3cdf00da4ae98af670"
+    },
+    "bind/shards/model-break.pak": {
+      "size": 223676,
+      "sha256": "a127b1bdac839ad84ac7b2378ad032c8d30a491ae95cc6e698312656921bdaf5"
+    },
+    "bind/shards/model-cam.pak": {
+      "size": 399161,
+      "sha256": "035e74f21f3266486aa30bb5f7f0e7c310050aeeafd2c8cdf03db6fa6705238b"
+    },
+    "bind/shards/model-decal.pak": {
+      "size": 173467,
+      "sha256": "d3eff558ef06dd7a7e6cd68d694dfb9b1d25b474634eab3cd50f9a26310ac889"
+    },
+    "bind/shards/model-ene.pak": {
+      "size": 217718781,
+      "sha256": "e1690187e019f59279783873c70485b563f2df393e0213a28c51c38ec0f42b31"
+    },
+    "bind/shards/model-enecolor.pak": {
+      "size": 11818013,
+      "sha256": "119c7f83c13022b2d918d8cdfb296eea6ff76a8281b5d7f9772a781aab0e19cf"
+    },
+    "bind/shards/model-filter.pak": {
+      "size": 453406,
+      "sha256": "754a98c77bba4c015a41e6f74540fe8cab3f3c1520fa799859a9a14f61616128"
+    },
+    "bind/shards/model-image.pak": {
+      "size": 89638,
+      "sha256": "c4daece2e089b1c6020a165764b437280441b6de41273245e1120ddaa3812e50"
+    },
+    "bind/shards/model-map.pak": {
+      "size": 87644,
+      "sha256": "92bf51309644c07855409bc23ed0039f3cdaf68697d92fe4ee2f5ef88dc6da6c"
+    },
+    "bind/shards/model-menu.pak": {
+      "size": 41879913,
+      "sha256": "f8f7eaa51ddfd2ac68220d5920f9cb2543d712afc51db75447ee920c9fbc6a59"
+    },
+    "bind/shards/model-menusfx.pak": {
+      "size": 616527,
+      "sha256": "e68561605d279bd4611df9e5b51339af5a2a110d1ec4472968ecd8b6342e4e2c"
+    },
+    "bind/shards/model-obj.pak": {
+      "size": 455182734,
+      "sha256": "ef889d9e23afbe03e0aa2fe42102d6cf3ef33d458c3abbd4e9ad512a0485cc51"
+    },
+    "bind/shards/model-poly.pak": {
+      "size": 41657820,
+      "sha256": "27fcdfe31e28ba8c34c27f492674813b45202e1106029fe44d289cf68f19d665"
+    },
+    "bind/shards/model-sfx.pak": {
+      "size": 7874295,
+      "sha256": "b79b60f84bb0881b94aff9a21e51ca812eb51a5f2edc88b6a64f85180b2f3fbb"
+    },
+    "bind/shards/model-system.pak": {
+      "size": 44876,
+      "sha256": "43fd97a08c64793176aba674343e9e686374cf5e61304bf9912ff555a9f1b146"
+    },
+    "bind/shards/sound.pak": {
+      "size": 365909792,
+      "sha256": "60d974e3f49c2a619ad5fe16d03adc9b2e3b062b59d7b618659ae41a6e36f2f3"
+    },
+    "bind/shards/unknown.pak": {
+      "size": 45345636,
+      "sha256": "d13f7d25947a02f2a63125b7c54e14731a80a9dee54e917e04f1ba051f4a56ad"
+    }
+  },
+  "source_archive": {
+    "bind/dvdbnd.bdt": {
+      "sha256": "a66d5305c5a2977c2cf13aab20c8916c4b2924bdbac2de3c74a66a23d963b7ca",
+      "size": 3279025311
     }
   }
 }

@@ -17,9 +17,10 @@ class BridgeTest(unittest.TestCase):
     def test_save_policy_and_reset(self):
         snap=self.call(BRIDGE,["snapshot"]);doc=snap["settings"]
         self.assertEqual(doc["launcher"]["profile"],self.profile["uuid"])
-        self.assertEqual([o["value"] for o in snap["capabilities"]["fps_limit"]["options"]],[30,60,120])
+        self.assertEqual([o["value"] for o in snap["capabilities"]["fps_limit"]["options"]],[30,60,120,0])
         doc["graphics"].update(resolution="2560x1080",vsync=False)
         self.call(BRIDGE,["save"],doc)
+        doc=self.call(BRIDGE,["snapshot"])["settings"]
         before=(self.root/"settings.json").read_bytes()
         for change in [{"fps_limit":165},{"resolution":"$(touch bad)"},{"vsync":1},{"output_effect":"fsr3"}]:
             bad=copy.deepcopy(doc);bad["graphics"].update(change)
@@ -37,6 +38,7 @@ class BridgeTest(unittest.TestCase):
     def test_draft_preview_is_read_only(self):
         doc=self.call(BRIDGE,["snapshot"])["settings"]
         self.call(BRIDGE,["save"],doc)
+        doc=self.call(BRIDGE,["snapshot"])["settings"]  # save normalizes new defaults (e.g. mangohud_host_fps)
         before=(self.root/"settings.json").read_bytes()
         draft=copy.deepcopy(doc)
         draft["launcher"].update(allow_experimental=True,build=str(self.root/"missing-game"))
@@ -55,20 +57,25 @@ class BridgeTest(unittest.TestCase):
     def test_frame_caps_and_color_request(self):
         sys.path.insert(0,str(ROOT/"tools/native-rexglue"))
         import acv_settings as settings
-        features=settings.runtime_features(ROOT.parent/"ACV-Linux-release-1.0/bin/game")
+        game_dir=ROOT/"bin/game"
+        if not (game_dir/"librexgpu-xenos.so").is_file():  # development tree: use the newest packaged release
+            releases=sorted(ROOT.parent.glob("ACV-Linux-release-*/bin/game/librexgpu-xenos.so"))
+            if not releases:self.skipTest("no packaged runtime libraries to inspect")
+            game_dir=releases[-1].parent
+        features=settings.runtime_features(game_dir)
         self.assertIn("frame_limit_fps",features)
         self.assertIn("present_output_bits",features)
         caps=settings.capabilities()
-        self.assertEqual([o["value"] for o in caps["fps_limit"]["options"]],[30,60,120])
+        self.assertEqual([o["value"] for o in caps["fps_limit"]["options"]],[30,60,120,0])
         self.assertEqual([o["value"] for o in caps["output_effect"]["options"]],["bilinear","cas","fsr"])
-        for limit in [30,60,120]:
+        for limit in [30,60,120,0]:
             args=settings.graphics_to_cvars({"fps_limit":limit},features=features)
             self.assertIn(f"--frame_limit_fps={limit}",args)
         args=settings.graphics_to_cvars({"color_depth":10,"dither":False},True,features)
         self.assertIn("--present_output_bits=10",args)
         doc=self.call(BRIDGE,["snapshot"])["settings"]
-        doc["launcher"].update(build=str(ROOT.parent/"ACV-Linux-release-1.0/bin/game/acv_linux_probe"),allow_experimental=True)
-        for limit in [30,120]:
+        doc["launcher"].update(build=str(game_dir/"acv_linux_probe"),allow_experimental=True)
+        for limit in [30,120,0]:
             doc["graphics"]["fps_limit"]=limit
             self.call(BRIDGE,["save"],doc)
             self.assertEqual(self.call(BRIDGE,["snapshot"])["settings"]["graphics"]["fps_limit"],limit)

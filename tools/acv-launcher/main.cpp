@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
                                           "Задайте переменную окружения ACV_ROOT."));
         return 2;
     }
-    // Development layout (PLAN_GUI.MD B1). An installed package would use QStandardPaths instead.
+    // Development layout (kb:PLAN_GUI B1). An installed package would use QStandardPaths instead.
     const bool packaged = QFileInfo::exists(root + "/acv-package.json");
     const QString defaultProfiles = packaged
         ? QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/DEArmoredcore/acv"

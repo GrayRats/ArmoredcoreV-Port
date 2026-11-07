@@ -37,14 +37,19 @@ def selected(command):
 def main():
     config = ROOT / "tools/native-rexglue/acv.config"
     original = config.read_bytes()
-    assert selected(assembled([], config)) == "full"
-    assert selected(assembled(["--graphics-profile", "sdk"], config)) is None
+    stripped = original.replace(b"readback_resolve = full\n", b"", 1)
+    assert stripped != original, "acv.config no longer selects readback_resolve"
+    assert selected(assembled([], config)) == "full"  # explicit user choice in [sdk]
+    assert selected(assembled(["--graphics-profile", "sdk"], config)) == "full"  # [sdk] key applies to every profile
     assert selected(assembled(["--extra=--readback_resolve=none"], config)) == "none"
     with tempfile.TemporaryDirectory(prefix="acv-readback-config-", dir=ROOT / "tmp") as temp:
         override = Path(temp) / "override.config"
-        override.write_bytes(original.replace(b"[sdk]", b"[sdk]\nreadback_resolve = fast", 1))
-        assert selected(assembled([], override)) == "fast"
-        override.write_bytes(b"\xef\xbb\xbf" + original)
+        override.write_bytes(stripped)
+        assert selected(assembled([], override)) == "full"  # profile default without the [sdk] key
+        assert selected(assembled(["--graphics-profile", "sdk"], override)) is None
+        override.write_bytes(stripped.replace(b"[sdk]", b"[sdk]\nreadback_resolve = some", 1))
+        assert selected(assembled([], override)) == "some"
+        override.write_bytes(b"\xef\xbb\xbf" + stripped)
         assert selected(assembled([], override)) == "full"
         with patch.object(sys, "argv", [str(ROOT / "tools/native-rexglue/probe_linux.py"),
                                        "--config", str(Path(temp)/"missing.config")]), \
@@ -57,6 +62,6 @@ def main():
                 raise AssertionError("Missing config did not fail")
             launch.assert_not_called()
     assert config.read_bytes() == original
-    print("Passed: ACV full default, SDK unchanged, CLI/config overrides, BOM, missing-file guard; no game launched")
+    print("Passed: ACV full profile default, config full choice, SDK unchanged, CLI/config overrides, BOM, missing-file guard; no game launched")
 if __name__ == "__main__":
     main()

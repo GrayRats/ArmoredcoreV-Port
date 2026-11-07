@@ -10,8 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = ROOT / "tools/native-rexglue"
 BUILD = ROOT / "tmp/acv-rexglue-linux-indexed/out/build/linux-release"
-TOOL_FILES = ["RUNTIME_BASELINE.json", "acv_paths.py", "acv_display.py", "profile_startup.py", "acv_shm.py", "probe_linux.py", "acv_settings.py", "acv_profiles.py", "acv_profile_cli.py",
-              "acv.config", "input-profile.json"]
+TOOL_FILES = ["RUNTIME_BASELINE.json", "acv_paths.py", "acv_display.py", "profile_startup.py", "acv_shm.py", "probe_linux.py", "acv_settings.py", "acv_profiles.py", "acv_profile_cli.py", "acv_mangohud.py", "acv_input.py",
+              "acv.config", "input_keyboard.ini", "input_gamepad.ini"]
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--launcher", type=Path, default=ROOT / "tmp/acv-launcher-build/acv-launcher")

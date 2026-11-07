@@ -1,0 +1,77 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -737,7 +737,7 @@
+       for (uint32_t i = 0; i < r.regions; ++i) {
+         if (i) row << ',';
+         const auto& span = r.spans[i];
+-        row << "{\"category\":" << span.category << ",\"commands\":" << span.commands << ",\"gpu_ns\":" << ns[i] << '}';
++        row << "{\"category\":" << span.category << ",\"commands\":" << span.commands << ",\"copy_bytes\":" << span.copy_bytes << ",\"gpu_ns\":" << ns[i] << '}';
+       }
+       row << "]}\n"; WriteTimestamps(row.str());
+     });
+@@ -3854,12 +3854,12 @@
+   return pipeline_cache_->LoadShader(shader_type, host_address, dword_count);
+ }
+ 
+-void VulkanCommandProcessor::MarkGpuTimestampRegion(uint32_t category) {
++void VulkanCommandProcessor::MarkGpuTimestampRegion(uint32_t category, uint64_t copy_bytes) {
+   if (!general_readback_ || !general_readback_->timestamps || !submission_open_) return;
+   general_readback_->timestamps->Mark(GetCurrentSubmission(), category,
+       [this](VkPipelineStageFlagBits stage, VkQueryPool pool, uint32_t query) {
+         deferred_command_buffer_.CmdVkWriteTimestamp(stage, pool, query, general_readback_->timestamp_write);
+-      });
++      }, copy_bytes);
+ }
+ 
+ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type, uint32_t index_count,
+@@ -5011,7 +5011,7 @@
+   VkBufferCopy copy = {};
+   copy.srcOffset = address;
+   copy.size = length;
+-  MarkGpuTimestampRegion(3);
++  MarkGpuTimestampRegion(3, copy.size);
+   deferred_command_buffer_.CmdVkCopyBuffer(shared_memory_->buffer(), slot->buffer, 1, &copy);
+   PushBufferMemoryBarrier(slot->buffer, 0, length,
+       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -219,7 +219,7 @@
+ 
+   // Diagnostic only, no data members / object ABI change. Categories: guest FSI
+   // draw region=1, Resolve copy dispatch=2, GeneralReadback staging copy=3.
+-  void MarkGpuTimestampRegion(uint32_t category);
++  void MarkGpuTimestampRegion(uint32_t category, uint64_t copy_bytes = 0);
+ 
+   // Unscaled stable shared buffer only. Null on disabled/full cache requests the
+   // original transient path; false denotes invalid input or a fatal Vulkan error.
+--- a/src/graphics/vulkan/gpu_timestamp_profiler.h
++++ b/src/graphics/vulkan/gpu_timestamp_profiler.h
+@@ -13,7 +13,7 @@
+   static constexpr uint32_t kSlots=64,kRegions=16,kQueriesPerSlot=kRegions*2,kQueries=kSlots*kQueriesPerSlot;
+   static constexpr uint64_t kMaxSamples=1200;
+   enum class Phase { Free,Recording,Recorded,Submitted,Failed };
+-  struct Region { uint32_t category=0;uint64_t commands=0; };
++  struct Region { uint32_t category=0;uint64_t commands=0,copy_bytes=0; };
+   struct Record {
+     Phase phase=Phase::Free;uint64_t ticket=0;double age=0;
+     uint32_t regions=0,attempts=0;bool open=false,truncated=false;
+@@ -70,16 +70,16 @@
+   }
+   // write(stage,pool,index); ticket guard prevents provider-triggered submission
+   // closure from writing an end into a different command stream.
+-  template<class Write> void Mark(uint64_t ticket,uint32_t category,Write&& write) {
++  template<class Write> void Mark(uint64_t ticket,uint32_t category,Write&& write,uint64_t copy_bytes=0) {
+     if(!enabled_ || active_==kSlots)return;
+     auto& r=records_[active_];if(r.ticket!=ticket || r.phase!=Phase::Recording){Fail(r.ticket);return;}
+-    if(r.open && r.spans[r.regions-1].category==category){++r.spans[r.regions-1].commands;return;}
++    if(r.open && r.spans[r.regions-1].category==category){++r.spans[r.regions-1].commands;r.spans[r.regions-1].copy_bytes+=copy_bytes;return;}
+     try {
+       CloseRegion(r,write);
+       if(r.regions==kRegions){if(!r.truncated){r.truncated=true;++stats_.truncated;}return;}
+       // An end index is reserved together with each begin, including last pair.
+       const uint32_t query=active_*kQueriesPerSlot+2*r.regions;
+-      r.spans[r.regions++]={category,1};r.open=true;
++      r.spans[r.regions++]={category,1,copy_bytes};r.open=true;
+       write(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,pool_,query);
+     }catch(...){Fail(ticket);enabled_=false;++stats_.errors;}
+   }

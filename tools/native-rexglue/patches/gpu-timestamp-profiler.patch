@@ -1,0 +1,452 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -55,6 +55,7 @@
+ #include "resolve_descriptor_cache.h"
+ #include "coherent_readback_publication.h"
+ #include "submission_fence_wait.h"
++#include "gpu_timestamp_profiler.h"
+ 
+ // Legacy backend compatibility aliases for shared readback controls.
+ REXCVAR_DEFINE_BOOL(vulkan_readback_resolve, false, "GPU/Vulkan",
+@@ -615,6 +616,44 @@
+     const auto* memory_device = cp.GetVulkanDevice();
+     memory_device->vulkan_instance()->functions().vkGetPhysicalDeviceMemoryProperties(
+         memory_device->physical_device(), &memory_properties);
++    const char* timestamp_path = std::getenv("ACV_GPU_TIMESTAMPS");
++    if (timestamp_path && *timestamp_path && acv::gpu_profile::configuration().path &&
++        *acv::gpu_profile::configuration().path) {
++      const auto& ifn = memory_device->vulkan_instance()->functions();
++      VkPhysicalDeviceProperties properties = {};
++      ifn.vkGetPhysicalDeviceProperties(memory_device->physical_device(), &properties);
++      uint32_t families_count = 0;
++      ifn.vkGetPhysicalDeviceQueueFamilyProperties(memory_device->physical_device(), &families_count, nullptr);
++      std::vector<VkQueueFamilyProperties> families(families_count);
++      ifn.vkGetPhysicalDeviceQueueFamilyProperties(memory_device->physical_device(), &families_count, families.data());
++      const uint32_t family = memory_device->queue_family_graphics_compute();
++      const uint32_t bits = family < families_count ? families[family].timestampValidBits : 0;
++      timestamp_output = timestamp_path;
++      const auto& f = memory_device->functions();
++      const auto query_results = reinterpret_cast<PFN_vkGetQueryPoolResults>(
++          ifn.vkGetDeviceProcAddr(memory_device->device(), "vkGetQueryPoolResults"));
++      timestamp_write = reinterpret_cast<PFN_vkCmdWriteTimestamp>(
++          ifn.vkGetDeviceProcAddr(memory_device->device(), "vkCmdWriteTimestamp"));
++      timestamps = std::make_unique<acv::GpuTimestampProfiler>(
++          acv::GpuTimestampProfiler::Api{f.vkCreateQueryPool, timestamp_write ? query_results : nullptr, f.vkDestroyQueryPool},
++          memory_device->device(), bits, properties.limits.timestampPeriod);
++      if (timestamps->last_result() == VK_ERROR_DEVICE_LOST && !cp.device_lost_) {
++        cp.device_lost_ = true;
++        if (cp.graphics_system_) cp.graphics_system_->OnHostGpuLossFromAnyThread(true);
++      }
++      std::ostringstream row;
++      row << "{\"type\":\"config\",\"timestampValidBits\":" << bits
++          << ",\"timestampPeriod_ns\":" << properties.limits.timestampPeriod
++          << ",\"timestampComputeAndGraphics\":" << properties.limits.timestampComputeAndGraphics
++          << ",\"core_query_pfn\":" << (query_results ? "true" : "false")
++          << ",\"core_timestamp_pfn\":" << (timestamp_write ? "true" : "false")
++          << ",\"queue_family\":" << family << ",\"query_count\":2048,\"slots\":64,\"regions_per_slot\":16"
++          << ",\"categories\":{\"1\":\"guest_fsi_draw_inclusive\",\"2\":\"resolve_dispatch_inclusive\",\"3\":\"general_staging_copy_inclusive\",\"4\":\"guest_other_draw_inclusive\"}"
++          << ",\"sample_rate_max\":20,\"window_start_s\":120,\"window_end_s\":180,\"enabled\":"
++          << (timestamps->enabled() ? "true" : "false") << ",\"create_result\":" << int(timestamps->last_result())
++          << ",\"scope\":\"TOP/BOTTOM inclusive regions; GPU intervals may overlap; time-spaced subset, not frame attribution\"}\n";
++      WriteTimestamps(row.str());
++    }
+     const char* coherent = std::getenv("ACV_READBACK_SKIP_COHERENT_INVALIDATE");
+     skip_coherent_invalidate = coherent && std::strcmp(coherent, "1") == 0;
+     if (skip_coherent_invalidate) REXGPU_INFO("ACV coherent GeneralReadback invalidate skip enabled");
+@@ -658,6 +697,52 @@
+         REXGPU_WARN("Parallel readback workers unavailable; using serial copies: {}", error.what());
+       }
+     }
++  }
++  std::unique_ptr<acv::GpuTimestampProfiler> timestamps;
++  PFN_vkCmdWriteTimestamp timestamp_write = nullptr;
++  std::string timestamp_output;
++  bool timestamp_io_failed = false, timestamp_final_summary = false;
++  void WriteTimestamps(const std::string& bytes) {
++    if (timestamp_io_failed) return;
++    bool ok = false;
++    if (FILE* file = std::fopen(timestamp_output.c_str(), "ab")) {
++      ok = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
++      if (std::fclose(file)) ok = false;
++    }
++    if (!ok) { timestamp_io_failed = true; REXGPU_WARN("Cannot write GPU timestamp diagnostics"); }
++  }
++  void TimestampSummary(const char* reason, double age) {
++    if (!timestamps) return;
++    const auto& s = timestamps->stats();
++    std::ostringstream row;
++    row << "{\"type\":\"summary\",\"reason\":\"" << reason << "\",\"age_s\":" << age
++        << ",\"eligible\":" << s.eligible << ",\"selected\":" << s.selected << ",\"submitted\":" << s.submitted
++        << ",\"completed\":" << s.completed << ",\"records_processed\":" << s.emitted
++        << ",\"io_failed\":" << (timestamp_io_failed ? "true" : "false")
++        << ",\"capacity_dropped\":" << s.capacity_dropped << ",\"truncated\":" << s.truncated
++        << ",\"not_ready\":" << s.not_ready << ",\"discarded\":" << s.discarded
++        << ",\"failed\":" << s.failed << ",\"errors\":" << s.errors
++        << ",\"ambiguous\":" << s.ambiguous << ",\"occupied\":" << timestamps->occupied()
++        << ",\"last_vk_result\":" << int(timestamps->last_result()) << "}\n";
++    WriteTimestamps(row.str());
++  }
++  VkResult CollectTimestamps(uint64_t completed) {
++    if (!timestamps) return VK_SUCCESS;
++    const double age = acv::gpu_profile::configuration().age();
++    const auto result = timestamps->Collect(completed, age, [&](const auto& r, const auto& ns) {
++      std::ostringstream row; row.precision(12);
++      row << "{\"type\":\"sample\",\"ticket\":" << r.ticket << ",\"record_age_s\":" << r.age
++          << ",\"collect_age_s\":" << age << ",\"completed_ticket\":" << completed
++          << ",\"truncated\":" << (r.truncated ? "true" : "false") << ",\"regions\":[";
++      for (uint32_t i = 0; i < r.regions; ++i) {
++        if (i) row << ',';
++        const auto& span = r.spans[i];
++        row << "{\"category\":" << span.category << ",\"commands\":" << span.commands << ",\"gpu_ns\":" << ns[i] << '}';
++      }
++      row << "]}\n"; WriteTimestamps(row.str());
++    });
++    if (age >= 181 && !timestamp_final_summary) { TimestampSummary("window_complete", age); timestamp_final_summary = true; }
++    return result;
+   }
+   void SetMemoryType(Slot& slot, uint32_t type) const {
+     slot.memory_type = type;
+@@ -2025,6 +2110,11 @@
+       rex::FatalError("Cannot complete Vulkan submissions before readback teardown");
+     }
+     context.bridge.CancelAfterDeviceStopped();
++    if (context.timestamps) {
++      if (!device_lost_) context.CollectTimestamps(submission_completed_);
++      context.TimestampSummary("teardown", acv::gpu_profile::configuration().age());
++      context.timestamps->DestroyAfterDeviceStopped(true);
++    }
+     // This stable-buffer cache survives ordinary ClearCache, which does not
+     // replace the shared buffer or descriptor layout. Destroy only after stop.
+     if (context.resolve_descriptors) context.resolve_descriptors->DestroyAfterDeviceStopped(true);
+@@ -3764,6 +3854,14 @@
+   return pipeline_cache_->LoadShader(shader_type, host_address, dword_count);
+ }
+ 
++void VulkanCommandProcessor::MarkGpuTimestampRegion(uint32_t category) {
++  if (!general_readback_ || !general_readback_->timestamps || !submission_open_) return;
++  general_readback_->timestamps->Mark(GetCurrentSubmission(), category,
++      [this](VkPipelineStageFlagBits stage, VkQueryPool pool, uint32_t query) {
++        deferred_command_buffer_.CmdVkWriteTimestamp(stage, pool, query, general_readback_->timestamp_write);
++      });
++}
++
+ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type, uint32_t index_count,
+                                        IndexBufferInfo* index_buffer_info,
+                                        bool major_mode_explicit) {
+@@ -4297,6 +4395,7 @@
+   if (primitive_processing_result.index_buffer_type ==
+           PrimitiveProcessor::ProcessedIndexBufferType::kNone ||
+       shader_32bit_index_dma) {
++    MarkGpuTimestampRegion(render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock ? 1 : 4);
+     deferred_command_buffer_.CmdVkDraw(primitive_processing_result.host_draw_vertex_count, 1, 0, 0);
+   } else {
+     std::pair<VkBuffer, VkDeviceSize> index_buffer;
+@@ -4328,6 +4427,7 @@
+         primitive_processing_result.host_index_format == xenos::IndexFormat::kInt16
+             ? VK_INDEX_TYPE_UINT16
+             : VK_INDEX_TYPE_UINT32);
++    MarkGpuTimestampRegion(render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock ? 1 : 4);
+     deferred_command_buffer_.CmdVkDrawIndexed(primitive_processing_result.host_draw_vertex_count, 1,
+                                               0, 0, 0);
+   }
+@@ -4745,6 +4845,7 @@
+ bool VulkanCommandProcessor::IssueCopy_GeneralReadback(const draw_util::ResolveInfo& info) {
+   acv::gpu_profile::Scope profile(acv::gpu_profile::Stage::kGeneralResolve);
+   if (!general_readback_) general_readback_ = std::make_unique<GeneralReadbackContext>(*this);
++  if (device_lost_) return false;
+   auto& context = *general_readback_;
+   const uint32_t address = info.copy_dest_extent_start, length = info.copy_dest_extent_length;
+   {
+@@ -4910,6 +5011,7 @@
+   VkBufferCopy copy = {};
+   copy.srcOffset = address;
+   copy.size = length;
++  MarkGpuTimestampRegion(3);
+   deferred_command_buffer_.CmdVkCopyBuffer(shared_memory_->buffer(), slot->buffer, 1, &copy);
+   PushBufferMemoryBarrier(slot->buffer, 0, length,
+       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+@@ -5698,6 +5800,14 @@
+     if (graphics_system_) graphics_system_->OnHostGpuLossFromAnyThread(true);
+     return;
+   }
++  if (general_readback_ && general_readback_->timestamps) {
++    const VkResult query_result = general_readback_->CollectTimestamps(submission_completed_);
++    if (query_result == VK_ERROR_DEVICE_LOST) {
++      device_lost_ = true;
++      if (graphics_system_) graphics_system_->OnHostGpuLossFromAnyThread(true);
++      return;
++    }
++  }
+   if (!completion.retired) {
+     // Not updated - no need to reclaim or download things.
+     return;
+@@ -5823,6 +5933,12 @@
+     // the end of the submission (when async pipeline object creation requests
+     // are fulfilled).
+     deferred_command_buffer_.Reset();
++    if (general_readback_ && general_readback_->timestamps) {
++      general_readback_->timestamps->Begin(GetCurrentSubmission(), acv::gpu_profile::configuration().age(),
++          [this](VkQueryPool pool, uint32_t first, uint32_t count) {
++            deferred_command_buffer_.CmdVkResetQueryPool(pool, first, count);
++          });
++    }
+ 
+     // Reset cached state of the command buffer.
+     dynamic_viewport_update_needed_ = true;
+@@ -5917,6 +6033,9 @@
+ }
+ 
+ bool VulkanCommandProcessor::EndSubmission(bool is_swap) {
++  acv::GpuTimestampSubmissionScope timestamp_submission(
++      submission_open_ && general_readback_ ? general_readback_->timestamps.get() : nullptr,
++      GetCurrentSubmission());
+   acv::ReadbackSubmissionScope<GeneralReadbackContext::Bridge> readback_submission(
+       general_readback_ && general_readback_->bridge.batching() ? &general_readback_->bridge : nullptr,
+       GetCurrentSubmission());
+@@ -5999,6 +6118,12 @@
+       active_occlusion_query_ = {};
+     }
+ 
++    if (general_readback_ && general_readback_->timestamps) {
++      general_readback_->timestamps->Seal(GetCurrentSubmission(),
++          [this](VkPipelineStageFlagBits stage, VkQueryPool pool, uint32_t query) {
++            deferred_command_buffer_.CmdVkWriteTimestamp(stage, pool, query, general_readback_->timestamp_write);
++          });
++    }
+     EndRenderPass();
+ 
+     pipeline_cache_->EndSubmission();
+@@ -6133,6 +6258,7 @@
+     fences_free_.pop_back();
+ 
+     submission_open_ = false;
++    timestamp_submission.Submitted();
+     // The fence is now tracked. No allocation, wait or callbacks while admitting
+     // preallocated recorded jobs; a failed commit is an explicit submission error.
+     if (!readback_submission.Submitted()) return false;
+--- a/src/graphics/vulkan/render_target_cache.cpp
++++ b/src/graphics/vulkan/render_target_cache.cpp
+@@ -1297,6 +1297,7 @@
+                 sizeof(copy_shader_constants), &copy_shader_constants);
+           }
+           command_processor_.SubmitBarriers(true);
++          command_processor_.MarkGpuTimestampRegion(2);
+           command_buffer.CmdVkDispatch(copy_group_count_x, copy_group_count_y, 1);
+ 
+           // Invalidate textures and mark the range as scaled if needed.
+--- a/src/graphics/vulkan/deferred_command_buffer.cpp
++++ b/src/graphics/vulkan/deferred_command_buffer.cpp
+@@ -266,6 +266,11 @@
+             reinterpret_cast<const uint8_t*>(stream) + sizeof(ArgsVkPushConstants));
+       } break;
+ 
++      case Command::kVkWriteTimestamp: {
++        const auto& args = *reinterpret_cast<const ArgsVkWriteTimestamp*>(stream);
++        args.write(command_buffer, args.stage, args.pool, args.query);
++      } break;
++
+       case Command::kVkResetQueryPool: {
+         auto& args = *reinterpret_cast<const ArgsVkResetQueryPool*>(stream);
+         dfn.vkCmdResetQueryPool(command_buffer, args.query_pool, args.first_query,
+--- a/include/rex/graphics/vulkan/deferred_command_buffer.h
++++ b/include/rex/graphics/vulkan/deferred_command_buffer.h
+@@ -264,6 +264,13 @@
+   // Dynamic rendering (VK_KHR_dynamic_rendering / Vulkan 1.3).
+   void CmdVkBeginRendering(const VkRenderingInfo* rendering_info);
+   void CmdVkEndRendering() { WriteCommand(Command::kVkEndRendering, 0); }
++
++  void CmdVkWriteTimestamp(VkPipelineStageFlagBits stage, VkQueryPool pool, uint32_t query,
++                           PFN_vkCmdWriteTimestamp write) {
++    auto& args = *reinterpret_cast<ArgsVkWriteTimestamp*>(
++        WriteCommand(Command::kVkWriteTimestamp, sizeof(ArgsVkWriteTimestamp)));
++    args.stage = stage; args.pool = pool; args.query = query; args.write = write;
++  }
+ 
+   void CmdVkResetQueryPool(VkQueryPool query_pool, uint32_t first_query, uint32_t query_count) {
+     auto& args = *reinterpret_cast<ArgsVkResetQueryPool*>(
+@@ -381,6 +388,7 @@
+     kVkSetStencilReference,
+     kVkSetStencilWriteMask,
+     kVkSetViewport,
++    kVkWriteTimestamp,  // Append only: preserve all existing deferred opcodes.
+   };
+ 
+   struct CommandHeader {
+@@ -520,6 +528,10 @@
+     uint32_t query;
+   };
+ 
++  struct ArgsVkWriteTimestamp {
++    VkPipelineStageFlagBits stage; VkQueryPool pool; uint32_t query; PFN_vkCmdWriteTimestamp write;
++  };
++
+   struct ArgsVkResetQueryPool {
+     VkQueryPool query_pool;
+     uint32_t first_query;
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -216,6 +216,10 @@
+   // A frame must be open.
+   VkDescriptorSet AllocateSingleTransientDescriptor(
+       SingleTransientDescriptorLayout transient_descriptor_layout);
++
++  // Diagnostic only, no data members / object ABI change. Categories: guest FSI
++  // draw region=1, Resolve copy dispatch=2, GeneralReadback staging copy=3.
++  void MarkGpuTimestampRegion(uint32_t category);
+ 
+   // Unscaled stable shared buffer only. Null on disabled/full cache requests the
+   // original transient path; false denotes invalid input or a fatal Vulkan error.
+--- /dev/null
++++ b/src/graphics/vulkan/gpu_timestamp_profiler.h
+@@ -0,0 +1,151 @@
++#pragma once
++// Bounded diagnostic only. Include after SDK Vulkan API feature macros.
++// Regions are disjoint command ranges, not exclusive GPU hardware time. TOP / 
++// BOTTOM timestamps may include pipeline overlap and implementation-later stages.
++#include <vulkan/vulkan_core.h>
++#include <array>
++#include <cmath>
++#include <cstdint>
++#include <limits>
++namespace acv {
++class GpuTimestampProfiler {
++ public:
++  static constexpr uint32_t kSlots=64,kRegions=16,kQueriesPerSlot=kRegions*2,kQueries=kSlots*kQueriesPerSlot;
++  static constexpr uint64_t kMaxSamples=1200;
++  enum class Phase { Free,Recording,Recorded,Submitted,Failed };
++  struct Region { uint32_t category=0;uint64_t commands=0; };
++  struct Record {
++    Phase phase=Phase::Free;uint64_t ticket=0;double age=0;
++    uint32_t regions=0,attempts=0;bool open=false,truncated=false;
++    std::array<Region,kRegions> spans{};
++  };
++  struct Value { uint64_t ticks=0,available=0; };
++  struct Stats {
++    uint64_t eligible=0,selected=0,submitted=0,completed=0,emitted=0;
++    uint64_t capacity_dropped=0,truncated=0,not_ready=0,discarded=0,failed=0,errors=0,ambiguous=0;
++  };
++  struct Api { PFN_vkCreateQueryPool create;PFN_vkGetQueryPoolResults get;PFN_vkDestroyQueryPool destroy; };
++  GpuTimestampProfiler(Api api,VkDevice device,uint32_t bits,double period)
++      :api_(api),device_(device),bits_(bits),period_(period) {
++    if(!bits || bits>64 || !std::isfinite(period) || period<=0) return;
++    if(!api_.create || !api_.get || !api_.destroy){last_result_=VK_ERROR_INITIALIZATION_FAILED;return;}
++    VkQueryPoolCreateInfo ci{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};ci.queryType=VK_QUERY_TYPE_TIMESTAMP;ci.queryCount=kQueries;
++    last_result_=api_.create(device_,&ci,nullptr,&pool_);enabled_=last_result_==VK_SUCCESS;
++    if(!enabled_)pool_=VK_NULL_HANDLE; // Failure output is undefined, never destroy it.
++  }
++  ~GpuTimestampProfiler(){if(pool_ && !occupied())api_.destroy(device_,pool_,nullptr);}
++  GpuTimestampProfiler(const GpuTimestampProfiler&)=delete;
++  GpuTimestampProfiler& operator=(const GpuTimestampProfiler&)=delete;
++  // Explicit teardown only after queue stop. Failed submissions retain ranges,
++  // even when a later retry might execute their already-recorded reset/writes.
++  bool DestroyAfterDeviceStopped(bool stopped) {
++    if(!stopped)return false;
++    if(pool_)api_.destroy(device_,pool_,nullptr);
++    pool_=VK_NULL_HANDLE;enabled_=false;active_=kSlots;records_={};return true;
++  }
++  bool enabled()const{return enabled_;}
++  VkQueryPool pool()const{return pool_;}
++  VkResult last_result()const{return last_result_;}
++  uint32_t valid_bits()const{return bits_;}
++  double period()const{return period_;}
++  const Stats& stats()const{return stats_;}
++  size_t occupied()const{size_t n=0;for(const auto& r:records_)n+=r.phase!=Phase::Free;return n;}
++  static uint64_t Delta(uint64_t start,uint64_t end,uint32_t bits) {
++    if(!bits || bits>64)return 0;
++    return (end-start)&(bits==64?UINT64_MAX:((uint64_t(1)<<bits)-1));
++  }
++  // reset(pool,first,count) must record vkCmdResetQueryPool outside any render
++  // pass in a freshly opened submission. No host reset extension is assumed.
++  template<class Reset> bool Begin(uint64_t ticket,double age,Reset&& reset) {
++    if(!enabled_ || !std::isfinite(age) || age<120 || age>=180 || stats_.selected>=kMaxSamples || age<next_age_)return false;
++    next_age_=age+0.05;++stats_.eligible;
++    if(active_!=kSlots){++stats_.capacity_dropped;return false;}
++    for(uint32_t i=0;i<kSlots;++i) {
++      auto& r=records_[i];if(r.phase!=Phase::Free)continue;
++      r={};r.phase=Phase::Recording;r.ticket=ticket;r.age=age;active_=i;++stats_.selected;
++      try{reset(pool_,i*kQueriesPerSlot,kQueriesPerSlot);}catch(...){Fail(ticket);enabled_=false;++stats_.errors;}
++      return enabled_;
++    }
++    ++stats_.capacity_dropped;return false;
++  }
++  // write(stage,pool,index); ticket guard prevents provider-triggered submission
++  // closure from writing an end into a different command stream.
++  template<class Write> void Mark(uint64_t ticket,uint32_t category,Write&& write) {
++    if(!enabled_ || active_==kSlots)return;
++    auto& r=records_[active_];if(r.ticket!=ticket || r.phase!=Phase::Recording){Fail(r.ticket);return;}
++    if(r.open && r.spans[r.regions-1].category==category){++r.spans[r.regions-1].commands;return;}
++    try {
++      CloseRegion(r,write);
++      if(r.regions==kRegions){if(!r.truncated){r.truncated=true;++stats_.truncated;}return;}
++      // An end index is reserved together with each begin, including last pair.
++      const uint32_t query=active_*kQueriesPerSlot+2*r.regions;
++      r.spans[r.regions++]={category,1};r.open=true;
++      write(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,pool_,query);
++    }catch(...){Fail(ticket);enabled_=false;++stats_.errors;}
++  }
++  template<class Write> void Seal(uint64_t ticket,Write&& write) {
++    if(active_==kSlots)return;
++    auto& r=records_[active_];if(r.ticket!=ticket){Fail(r.ticket);return;}
++    try{CloseRegion(r,write);r.phase=Phase::Recorded;active_=kSlots;}
++    catch(...){Fail(ticket);enabled_=false;++stats_.errors;}
++  }
++  void Submitted(uint64_t ticket) {
++    for(auto& r:records_)if(r.ticket==ticket && r.phase==Phase::Recorded){r.phase=Phase::Submitted;++stats_.submitted;}
++  }
++  void Fail(uint64_t ticket) {
++    for(uint32_t i=0;i<kSlots;++i){auto& r=records_[i];
++      if(r.ticket==ticket && (r.phase==Phase::Recording || r.phase==Phase::Recorded)){
++        r.phase=Phase::Failed;++stats_.failed;if(active_==i)active_=kSlots;
++      }
++    }
++  }
++  // Only a same-ticket completion proof authorizes reading/reuse. Even with
++  // availability bits, pre-reset data from a prior use would otherwise be stale.
++  // emit(record,ns[]) is called only for a complete, unambiguous record.
++  template<class Emit> VkResult Collect(uint64_t completed,double age,Emit&& emit) {
++    if(!enabled_)return last_result_;
++    for(auto& r:records_) {
++      if(r.phase!=Phase::Submitted || r.ticket>completed)continue;
++      if(!r.regions){++stats_.completed;++stats_.discarded;r={};continue;}
++      std::array<Value,kQueriesPerSlot> values{};
++      const uint32_t first=uint32_t(&r-records_.data())*kQueriesPerSlot;
++      last_result_=api_.get(device_,pool_,first,2*r.regions,sizeof(Value)*2*r.regions,
++          values.data(),sizeof(Value),VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
++      if(last_result_!=VK_SUCCESS && last_result_!=VK_NOT_READY){++stats_.errors;enabled_=false;return last_result_;}
++      bool available=last_result_==VK_SUCCESS;
++      for(uint32_t i=0;i<2*r.regions;++i)available&=values[i].available!=0;
++      if(!available){++stats_.not_ready;if(++r.attempts>=3){++stats_.completed;++stats_.discarded;r={};}continue;}
++      // More than one wrap cannot be reconstructed. CPU residence is a safe
++      // upper bound for the sampled GPU interval, not a substitute GPU timing.
++      const double residence_ns=(age-r.age)*1e9;
++      const double wrap_ns=std::ldexp(period_,int(bits_));
++      bool ambiguous=!std::isfinite(residence_ns)||residence_ns<0||residence_ns>=wrap_ns;
++      std::array<double,kRegions> ns{};
++      for(uint32_t i=0;i<r.regions;++i){
++        ns[i]=double(Delta(values[2*i].ticks,values[2*i+1].ticks,bits_))*period_;
++        ambiguous|=ns[i]>residence_ns+period_;
++      }
++      ++stats_.completed;
++      if(ambiguous){++stats_.ambiguous;++stats_.discarded;}
++      else {emit(r,ns);++stats_.emitted;}
++      r={};
++    }
++    return VK_SUCCESS;
++  }
++ private:
++  template<class Write> void CloseRegion(Record& r,Write& write) {
++    if(!r.open)return;
++    write(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,pool_,active_*kQueriesPerSlot+2*r.regions-1);r.open=false;
++  }
++  Api api_;VkDevice device_;VkQueryPool pool_=VK_NULL_HANDLE;
++  uint32_t bits_;double period_;bool enabled_=false;VkResult last_result_=VK_SUCCESS;
++  std::array<Record,kSlots> records_{};uint32_t active_=kSlots;double next_age_=-1;Stats stats_{};
++};
++class GpuTimestampSubmissionScope {
++ public:
++  GpuTimestampSubmissionScope(GpuTimestampProfiler* p,uint64_t ticket):p_(p),ticket_(ticket){}
++  ~GpuTimestampSubmissionScope(){if(p_&&!submitted_)p_->Fail(ticket_);}
++  void Submitted(){if(p_)p_->Submitted(ticket_);submitted_=true;}
++ private:GpuTimestampProfiler* p_;uint64_t ticket_;bool submitted_=false;
++};
++} // namespace acv

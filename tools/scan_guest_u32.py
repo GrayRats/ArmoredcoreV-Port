@@ -2,7 +2,7 @@
 """Read-only scan of Xenia guest memory for a big-endian 32-bit value.
 
 Guest address G maps to host address 0x100000000 + G for the 0x80000000-range
-image, per docs/ACV_TIMING.md (guest 0x8202411C -> host 0x18202411C). The
+image, per kb:ACV_TIMING (guest 0x8202411C -> host 0x18202411C). The
 process must be readable via /proc/<pid>/mem (ptrace_scope 0 or same-process).
 
 usage: scan_guest_u32.py PID START_HEX LENGTH_HEX NEEDLE_HEX

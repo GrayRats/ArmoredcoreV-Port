@@ -1,0 +1,112 @@
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -5617,10 +5617,15 @@
+     const char* value = std::getenv("ACV_VULKAN_WAIT_LATEST_FENCE");
+     return value && std::strcmp(value, "1") == 0;
+   }();
++  static const bool status_poll = [] {
++    const char* value = std::getenv("ACV_VULKAN_FENCE_STATUS_POLL");
++    return value && std::strcmp(value, "1") == 0;
++  }();
+   const auto& profile = acv::gpu_profile::configuration();
+   const double age = profile.path && *profile.path ? profile.age() : -1;
+   const bool trace = age >= 90;
+   uint64_t blocking_ns = 0;
++  uint64_t poll_success = 0, poll_not_ready = 0, poll_timeout = 0, poll_lost = 0, poll_other = 0;
+   // EndSubmission appends only successful submissions on graphics/compute
+   // queue index0. No other VkQueue contributes fences to this vector. Waiting
+   // for its last required signal therefore proves the whole requested prefix.
+@@ -5633,6 +5638,19 @@
+         if (trace && timeout) blocking_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+             std::chrono::steady_clock::now() - start).count());
+         return result;
++      }, [&](VkFence fence) {
++        const VkResult result = status_poll ? dfn.vkGetFenceStatus(device, fence)
++            : dfn.vkWaitForFences(device, 1, &fence, VK_TRUE, 0);
++        if (trace) {
++          switch (result) {
++            case VK_SUCCESS: ++poll_success; break;
++            case VK_NOT_READY: ++poll_not_ready; break;
++            case VK_TIMEOUT: ++poll_timeout; break;
++            case VK_ERROR_DEVICE_LOST: ++poll_lost; break;
++            default: ++poll_other; break;
++          }
++        }
++        return result;
+       });
+   if (!completion.valid_range) {
+     REXGPU_ERROR("Requested Vulkan fence prefix is outside submitted tickets");
+@@ -5642,6 +5660,7 @@
+     REXGPU_ERROR("Failed to await submission completion Vulkan fences: {}", int32_t(completion.blocking_result));
+   }
+   if (completion.poll_result != VK_SUCCESS && completion.poll_result != VK_TIMEOUT &&
++      completion.poll_result != VK_NOT_READY &&
+       completion.poll_result != VK_ERROR_DEVICE_LOST) {
+     REXGPU_ERROR("Failed to poll submission completion Vulkan fence: {}", int32_t(completion.poll_result));
+   }
+@@ -5650,6 +5669,7 @@
+       double since = -1;
+       uint64_t blocking_calls = 0, requested_fences = 0, passed_fences = 0;
+       uint64_t prefix_gt1 = 0, max_prefix = 0, polls = 0, blocking_ns = 0;
++      uint64_t success = 0, not_ready = 0, timeout = 0, lost = 0, other = 0;
+     };
+     static thread_local WaitTrace stats;
+     if (stats.since < 0) stats.since = age;
+@@ -5659,12 +5679,17 @@
+     stats.prefix_gt1 += completion.requested_prefix > 1;
+     stats.max_prefix = std::max(stats.max_prefix, uint64_t(completion.requested_prefix));
+     stats.polls += completion.poll_calls; stats.blocking_ns += blocking_ns;
++    stats.success += poll_success; stats.not_ready += poll_not_ready; stats.timeout += poll_timeout;
++    stats.lost += poll_lost; stats.other += poll_other;
+     if (age - stats.since >= 5) {
+       REXGPU_INFO("ACV submission fence waits age={} window={} latest={} blocking_calls={} "
+                   "original_prefix_fences={} passed_fences={} prefix_gt1_calls={} max_prefix={} "
+-                  "poll_calls={} blocking_ms={}", age, age - stats.since, latest_fence,
++                  "poll_calls={} blocking_ms={} poll_api={} poll_success={} poll_not_ready={} "
++                  "poll_timeout={} poll_device_lost={} poll_other={} last_poll_result={}", age, age - stats.since, latest_fence,
+                   stats.blocking_calls, stats.requested_fences, stats.passed_fences,
+-                  stats.prefix_gt1, stats.max_prefix, stats.polls, stats.blocking_ns / 1e6);
++                  stats.prefix_gt1, stats.max_prefix, stats.polls, stats.blocking_ns / 1e6,
++                   status_poll ? "vkGetFenceStatus" : "vkWaitForFences0", stats.success,
++                   stats.not_ready, stats.timeout, stats.lost, stats.other, int32_t(completion.poll_result));
+       stats = {}; stats.since = age;
+     }
+   }
+--- a/src/graphics/vulkan/submission_fence_wait.h
++++ b/src/graphics/vulkan/submission_fence_wait.h
+@@ -35,10 +35,10 @@
+   size_t requested_prefix=0, blocking_fences=0, poll_calls=0, retired=0;
+   VkResult blocking_result=VK_SUCCESS, poll_result=VK_SUCCESS;
+ };
+-template<class Fence, class Wait>
++template<class Fence, class Wait, class Poll>
+ SubmissionFenceCompletion CompleteSubmissionFences(
+     std::vector<Fence>& in_flight, std::vector<Fence>& free,
+-    uint64_t& completed, uint64_t await_submission, bool latest_only, Wait&& wait) {
++    uint64_t& completed, uint64_t await_submission, bool latest_only, Wait&& wait, Poll&& poll) {
+   SubmissionFenceCompletion result;
+   const uint64_t required = await_submission > completed ? await_submission-completed : 0;
+   if (required > in_flight.size() || required > std::numeric_limits<uint32_t>::max()) {
+@@ -58,7 +58,7 @@
+   // only individually successful polls can advance its earlier prefix.
+   while (ready<in_flight.size()) {
+     ++result.poll_calls;
+-    result.poll_result=wait(1,&in_flight[ready],0);
++    result.poll_result=poll(in_flight[ready]);
+     if (result.poll_result!=VK_SUCCESS) {
+       if (result.poll_result==VK_ERROR_DEVICE_LOST) result.device_lost=true;
+       break;
+@@ -75,4 +75,13 @@
+   completed+=ready;result.retired=ready;
+   return result;
+ }
++// Legacy callers retain exactly the zero-timeout wait API and native VK_TIMEOUT.
++// The optional callback preserves native VK_NOT_READY (no lossy result mapping).
++template<class Fence, class Wait>
++SubmissionFenceCompletion CompleteSubmissionFences(
++    std::vector<Fence>& in_flight, std::vector<Fence>& free,
++    uint64_t& completed, uint64_t await_submission, bool latest_only, Wait&& wait) {
++  return CompleteSubmissionFences(in_flight, free, completed, await_submission,
++      latest_only, wait, [&](Fence fence) { return wait(1, &fence, 0); });
++}
+ } // namespace acv

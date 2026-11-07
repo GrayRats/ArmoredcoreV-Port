@@ -1,0 +1,245 @@
+--- a/include/rex/graphics/vulkan/command_processor.h
++++ b/include/rex/graphics/vulkan/command_processor.h
+@@ -873,6 +873,10 @@
+   PFN_vkCmdPipelineBarrier2 scoped_barrier_command_ = nullptr;
+   bool scoped_barrier_loaded_ = false;
+ 
++  struct TimelineContext;
++  std::unique_ptr<TimelineContext> timeline_submission_;
++  bool timeline_initialized_ = false;
++
+ };
+ 
+ }  // namespace rex::graphics::vulkan
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -56,6 +56,7 @@
+ #include "coherent_readback_publication.h"
+ #include "submission_fence_wait.h"
+ #include "gpu_timestamp_profiler.h"
++#include "timeline_submission.h"
+ 
+ // Legacy backend compatibility aliases for shared readback controls.
+ REXCVAR_DEFINE_BOOL(vulkan_readback_resolve, false, "GPU/Vulkan",
+@@ -589,6 +590,10 @@
+ 
+ // All Vulkan resources are owned and destroyed on the GPU worker. Provider
+ // callbacks retain only the bridge's plain state, never a Vulkan allocation.
++struct VulkanCommandProcessor::TimelineContext : acv::TimelineSubmission {
++  using acv::TimelineSubmission::TimelineSubmission;
++};
++
+ struct VulkanCommandProcessor::GeneralReadbackContext {
+   using Bridge = acv::GeneralReadbackBridge<memory::Memory>;
+   struct Slot {
+@@ -2098,6 +2103,8 @@
+ }
+ 
+ void VulkanCommandProcessor::ShutdownContext() {
++  if(timeline_submission_ && !AwaitAllQueueOperationsCompletion() && !device_lost_)
++    rex::FatalError("Cannot complete timeline submissions before teardown");
+   scoped_barrier_command_ = nullptr;
+   scoped_barrier_loaded_ = false;
+   if (general_readback_) {
+@@ -2328,7 +2335,7 @@
+   }
+   submissions_in_flight_semaphores_.clear();
+   for (VkFence& fence : submissions_in_flight_fences_) {
+-    dfn.vkDestroyFence(device, fence, nullptr);
++    if(fence!=VK_NULL_HANDLE) dfn.vkDestroyFence(device, fence, nullptr);
+   }
+   submissions_in_flight_fences_.clear();
+   current_submission_wait_stage_masks_.clear();
+@@ -2344,10 +2351,12 @@
+   }
+   semaphores_free_.clear();
+   for (VkFence fence : fences_free_) {
+-    dfn.vkDestroyFence(device, fence, nullptr);
++    if(fence!=VK_NULL_HANDLE) dfn.vkDestroyFence(device, fence, nullptr);
+   }
+   fences_free_.clear();
+ 
++  if(timeline_submission_){timeline_submission_->DestroyAfterDeviceStopped();timeline_submission_.reset();}
++  timeline_initialized_=false;
+   device_lost_ = false;
+ 
+   CommandProcessor::ShutdownContext();
+@@ -5763,7 +5772,31 @@
+   // EndSubmission appends only successful submissions on graphics/compute
+   // queue index0. No other VkQueue contributes fences to this vector. Waiting
+   // for its last required signal therefore proves the whole requested prefix.
+-  const auto completion = acv::CompleteSubmissionFences(
++  acv::SubmissionFenceCompletion completion;
++  if(timeline_submission_){
++    const uint64_t required=await_submission>submission_completed_ ? await_submission-submission_completed_ : 0;
++    if(required>submissions_in_flight_fences_.size()){completion.valid_range=false;}
++    else {
++      completion.requested_prefix=size_t(required);
++      if(required){
++        auto begin=std::chrono::steady_clock::now();
++        completion.blocking_result=timeline_submission_->Wait(await_submission,UINT64_MAX);
++        if(trace)blocking_ns+=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-begin).count());
++        completion.device_lost=completion.blocking_result==VK_ERROR_DEVICE_LOST;
++      }
++      uint64_t value=0;
++      if(!completion.device_lost){
++        completion.poll_calls=1;completion.poll_result=timeline_submission_->Counter(value);
++        if(trace){switch(completion.poll_result){case VK_SUCCESS:++poll_success;break;case VK_NOT_READY:++poll_not_ready;break;case VK_TIMEOUT:++poll_timeout;break;case VK_ERROR_DEVICE_LOST:++poll_lost;break;default:++poll_other;break;}}
++        completion.device_lost=completion.poll_result==VK_ERROR_DEVICE_LOST;
++        if(completion.poll_result==VK_SUCCESS){
++          if(value<submission_completed_ || value>timeline_submission_->last_submitted() || value-submission_completed_>submissions_in_flight_fences_.size())completion.valid_range=false;
++          else {completion.retired=size_t(value-submission_completed_);submissions_in_flight_fences_.erase(submissions_in_flight_fences_.begin(),submissions_in_flight_fences_.begin()+completion.retired);submission_completed_=value;}
++        }
++      }
++    }
++  } else {
++    completion = acv::CompleteSubmissionFences(
+       submissions_in_flight_fences_, fences_free_, submission_completed_, await_submission,
+       latest_fence, [&](uint32_t count, const VkFence* fences, uint64_t timeout) {
+         std::chrono::steady_clock::time_point start;
+@@ -5786,6 +5819,7 @@
+         }
+         return result;
+       });
++  }
+   if (!completion.valid_range) {
+     REXGPU_ERROR("Requested Vulkan fence prefix is outside submitted tickets");
+     return;
+@@ -5822,7 +5856,7 @@
+                   "poll_timeout={} poll_device_lost={} poll_other={} last_poll_result={}", age, age - stats.since, latest_fence,
+                   stats.blocking_calls, stats.requested_fences, stats.passed_fences,
+                   stats.prefix_gt1, stats.max_prefix, stats.polls, stats.blocking_ns / 1e6,
+-                   status_poll ? "vkGetFenceStatus" : "vkWaitForFences0", stats.success,
++                   timeline_submission_ ? "timeline_counter" : (status_poll ? "vkGetFenceStatus" : "vkWaitForFences0"), stats.success,
+                    stats.not_ready, stats.timeout, stats.lost, stats.other, int32_t(completion.poll_result));
+       stats = {}; stats.since = age;
+     }
+@@ -6076,9 +6110,31 @@
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+ 
++  if (submission_open_ && !timeline_initialized_) {
++    timeline_initialized_=true;
++    if (vulkan_device->properties().timelineSemaphore && submissions_in_flight_fences_.empty()) {
++      VkPhysicalDeviceTimelineSemaphoreProperties limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES};
++      VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};props.pNext=&limits;
++      const auto& ifn=vulkan_device->vulkan_instance()->functions();
++      ifn.vkGetPhysicalDeviceProperties2(vulkan_device->physical_device(),&props);
++      timeline_submission_=std::make_unique<TimelineContext>(device,ifn.vkGetDeviceProcAddr,submission_completed_,limits.maxTimelineSemaphoreValueDifference);
++      if(timeline_submission_->initialization!=VK_SUCCESS){
++        VkResult result=timeline_submission_->initialization;
++        REXGPU_WARN("Timeline submission initialization failed: {}; retaining fence path",int(result));
++        timeline_submission_.reset();
++        if(result==VK_ERROR_DEVICE_LOST){device_lost_=true;if(graphics_system_)graphics_system_->OnHostGpuLossFromAnyThread(true);return false;}
++      }
++    }
++  }
++  const bool use_timeline=timeline_submission_ && timeline_submission_->handle()!=VK_NULL_HANDLE;
++  if(use_timeline && GetCurrentSubmission()-submission_completed_>timeline_submission_->maximum_difference()) {
++    CheckSubmissionFenceAndDeviceLoss(GetCurrentSubmission()-timeline_submission_->maximum_difference());
++    if(device_lost_ || GetCurrentSubmission()-submission_completed_>timeline_submission_->maximum_difference())return false;
++  }
++
+   // Make sure everything needed for submitting exist.
+   if (submission_open_) {
+-    if (fences_free_.empty()) {
++    if (!use_timeline && fences_free_.empty()) {
+       VkFenceCreateInfo fence_create_info;
+       fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+       fence_create_info.pNext = nullptr;
+@@ -6255,17 +6311,18 @@
+     submit_info.pCommandBuffers = &command_buffer.buffer;
+     submit_info.signalSemaphoreCount = 0;
+     submit_info.pSignalSemaphores = nullptr;
+-    assert_false(fences_free_.empty());
+-    VkFence fence = fences_free_.back();
+-    if (dfn.vkResetFences(device, 1, &fence) != VK_SUCCESS) {
+-      REXGPU_ERROR("Failed to reset a Vulkan submission fence");
+-      return false;
++    VkFence fence=VK_NULL_HANDLE;
++    if(!use_timeline){
++      assert_false(fences_free_.empty());fence=fences_free_.back();
++      VkResult reset=dfn.vkResetFences(device,1,&fence);
++      if(reset!=VK_SUCCESS){REXGPU_ERROR("Failed to reset submission fence: {}",int(reset));return false;}
+     }
+     VkResult submit_result;
+     {
+       ui::vulkan::VulkanDevice::Queue::Acquisition queue_acquisition =
+           vulkan_device->AcquireQueue(vulkan_device->queue_family_graphics_compute(), 0);
+-      submit_result = dfn.vkQueueSubmit(queue_acquisition.queue(), 1, &submit_info, fence);
++      submit_result = use_timeline ? timeline_submission_->Submit(queue_acquisition.queue(),submit_info,GetCurrentSubmission(),submission_completed_)
++          : dfn.vkQueueSubmit(queue_acquisition.queue(), 1, &submit_info, fence);
+     }
+     if (submit_result != VK_SUCCESS) {
+       REXGPU_ERROR("Failed to submit a Vulkan command buffer");
+@@ -6287,11 +6344,11 @@
+     command_buffers_writable_.pop_back();
+     // Increments the current submission number, going to the next submission.
+     submissions_in_flight_fences_.push_back(fence);
+-    fences_free_.pop_back();
++    if(!use_timeline) fences_free_.pop_back();
+ 
+     submission_open_ = false;
+     timestamp_submission.Submitted();
+-    // The fence is now tracked. No allocation, wait or callbacks while admitting
++    // The successful completion ticket is now tracked. No allocation, wait or callbacks while admitting
+     // preallocated recorded jobs; a failed commit is an explicit submission error.
+     if (!readback_submission.Submitted()) return false;
+     if (general_readback_ && general_readback_->bridge.batching()) general_readback_->TraceBatch();
+--- /dev/null
++++ b/src/graphics/vulkan/timeline_submission.h
+@@ -0,0 +1,54 @@
++#pragma once
++// Device feature must have been enabled before constructing this owner.
++#include <vulkan/vulkan_core.h>
++#include <cstdint>
++#include <vector>
++namespace acv {
++class TimelineSubmission {
++ VkDevice device_;VkSemaphore semaphore_{};
++ PFN_vkCreateSemaphore create_{};PFN_vkDestroySemaphore destroy_{};
++ PFN_vkGetSemaphoreCounterValue counter_{};PFN_vkWaitSemaphores wait_{};
++ PFN_vkQueueSubmit submit_{};uint64_t initial_,submitted_,max_difference_;
++ public:
++ VkResult initialization=VK_SUCCESS;
++ TimelineSubmission(VkDevice device,PFN_vkGetDeviceProcAddr proc,uint64_t initial,uint64_t max_difference)
++   :device_(device),initial_(initial),submitted_(initial),max_difference_(max_difference) {
++  create_=reinterpret_cast<PFN_vkCreateSemaphore>(proc(device,"vkCreateSemaphore"));
++  destroy_=reinterpret_cast<PFN_vkDestroySemaphore>(proc(device,"vkDestroySemaphore"));
++  counter_=reinterpret_cast<PFN_vkGetSemaphoreCounterValue>(proc(device,"vkGetSemaphoreCounterValue"));
++  wait_=reinterpret_cast<PFN_vkWaitSemaphores>(proc(device,"vkWaitSemaphores"));
++  submit_=reinterpret_cast<PFN_vkQueueSubmit>(proc(device,"vkQueueSubmit"));
++  if(!create_ || !destroy_ || !counter_ || !wait_ || !submit_ || !max_difference_){initialization=VK_ERROR_INITIALIZATION_FAILED;return;}
++  VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};type.semaphoreType=VK_SEMAPHORE_TYPE_TIMELINE;type.initialValue=initial;
++  VkSemaphoreCreateInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};info.pNext=&type;
++  initialization=create_(device_,&info,nullptr,&semaphore_);if(initialization!=VK_SUCCESS)semaphore_=VK_NULL_HANDLE;
++ }
++ // Normal teardown explicitly proves stop. Unexpected destruction retains a
++ // potentially GPU-referenced handle instead of freeing it while pending.
++ ~TimelineSubmission(){if(semaphore_ && submitted_==initial_)destroy_(device_,semaphore_,nullptr);}
++ TimelineSubmission(const TimelineSubmission&)=delete;
++ TimelineSubmission& operator=(const TimelineSubmission&)=delete;
++ VkSemaphore handle()const{return semaphore_;}
++ uint64_t maximum_difference()const{return max_difference_;}
++ uint64_t last_submitted()const{return submitted_;}
++ void DestroyAfterDeviceStopped(){if(semaphore_)destroy_(device_,semaphore_,nullptr);semaphore_=VK_NULL_HANDLE;}
++ VkResult Counter(uint64_t& value)const{return counter_(device_,semaphore_,&value);}
++ VkResult Wait(uint64_t ticket,uint64_t timeout)const {
++  if(ticket>submitted_)return VK_ERROR_INITIALIZATION_FAILED;
++  VkSemaphoreWaitInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};info.semaphoreCount=1;info.pSemaphores=&semaphore_;info.pValues=&ticket;
++  return wait_(device_,&info,timeout);
++ }
++ // Existing CP submit has only binary waits and no signals. Their zero timeline
++ // values are ignored by Vulkan, but the count must match all wait semaphores.
++ VkResult Submit(VkQueue queue,const VkSubmitInfo& original,uint64_t ticket,uint64_t known_completed) {
++  if(!semaphore_ || ticket<=submitted_ || ticket<known_completed || ticket-known_completed>max_difference_ || original.pNext || original.signalSemaphoreCount)return VK_ERROR_INITIALIZATION_FAILED;
++  std::vector<uint64_t> waits;
++  try {waits.resize(original.waitSemaphoreCount,0);}catch(...){return VK_ERROR_OUT_OF_HOST_MEMORY;}
++  VkTimelineSemaphoreSubmitInfo values{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
++  values.waitSemaphoreValueCount=original.waitSemaphoreCount;values.pWaitSemaphoreValues=waits.empty()?nullptr:waits.data();
++  values.signalSemaphoreValueCount=1;values.pSignalSemaphoreValues=&ticket;
++  VkSubmitInfo info=original;info.pNext=&values;info.signalSemaphoreCount=1;info.pSignalSemaphores=&semaphore_;
++  VkResult result=submit_(queue,1,&info,VK_NULL_HANDLE);if(result==VK_SUCCESS)submitted_=ticket;return result;
++ }
++};
++}

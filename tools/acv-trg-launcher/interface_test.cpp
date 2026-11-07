@@ -20,10 +20,19 @@ int main(int argc,char** argv){
     Check(app.store.Get("ui.name")=="Профиль","profile form must be prefilled");
     app.store.Set("graphics.resolution","2560x1080");
     app.store.Set("launcher.allow_experimental","true");
+    app.store.Set("launcher.mangohud","true");
+    Check(app.settings.at("launcher").at("mangohud").is_boolean(),"MangoHud uses boolean setting");
     app.Submit(App::Job::Preview,app.Bridge("preview"),app.settings.dump());Finish(app);
     Check(app.Dirty(),"preview must retain unsaved changes");
     Check(!fs::exists(profiles/"settings.json"),"preview must not save");
     Check(app.snapshot.at("settings").at("launcher").at("allow_experimental")==true,"draft capabilities");
+    Check(app.snapshot.at("settings").at("launcher").at("mangohud")==true,"MangoHud preview retains selection");
+    app.store.Set("launcher.mangohud","false");
+    Check(app.snapshot.at("input").at("modes").size()==3,"three input modes are offered");
+    Check(app.snapshot.at("settings").at("launcher").at("input_mode")=="keyboard_mouse","default input mode");
+    app.store.Set("launcher.input_mode","gamepad");
+    Check(app.settings.at("launcher").at("input_mode")=="gamepad","input mode is stored as a string");
+    app.store.Set("launcher.input_mode","keyboard_mouse");
     app.Submit(App::Job::Snapshot,app.Bridge("snapshot"));Finish(app);
     Check(app.store.Get("graphics.resolution")=="2560x1080","refresh must preserve draft");
     Check(app.Dirty(),"refresh must preserve dirty indicator");
@@ -47,6 +56,20 @@ int main(int argc,char** argv){
     app.settings["graphics"]["wide_view"]="auto";
     app.Submit(App::Job::Preview,app.Bridge("preview"),app.settings.dump());Finish(app);
     app.snapshot["display_info"]={{"monitors",Json::array()}, {"display_modes",Json::array({{{"width",2560},{"height",1080}}})}};
+    auto before_presets=app.saved_settings;
+    app.settings["graphics"]["color_depth"]=10;
+    for(const auto* preset:{"quality","compatibility","streaming"}){
+      app.ApplyPreset(preset);Finish(app);
+      Check(app.settings["graphics"]["dither"]==false,"presets must respect 10-bit output");
+      Check(app.settings["graphics"]["resolution"]=="2560x1080","presets preserve display geometry");
+      Check(app.saved_settings==before_presets,"presets must remain unsaved drafts");
+      if(std::string(preset)=="quality"){
+        Check(app.settings["graphics"]["output_effect"]=="fsr","quality requests FSR 1");
+        Check(app.settings["launcher"]["allow_experimental"]==true,"quality permits requested FSR 1");
+        Check(app.settings["graphics"]["texture_cache_retention_s"]==800,"quality retains textures for 800 seconds");
+      }
+    }
+    app.snapshot["display_info"]={{"monitors",Json::array()}, {"display_modes",Json::array({{{"width",2560},{"height",1080}}})}};
     for(const auto* key:{"window_mode","monitor","render_scale","vsync","fps_limit","wide_view"})
       for(const auto& option:app.snapshot.at("capabilities").at(key).at("options"))
         Check(option.value("selectable",false),"fixture must keep every screen option selectable");
@@ -68,6 +91,14 @@ int main(int argc,char** argv){
       std::cout<<"screen resolution controls sharing first ID="<<resolution_items<<std::endl;
       Check(resolution_items==1,"resolution pickers must not share an ID");
       Check(io.ConfigDebugHighlightIdConflicts,"ID conflict warning must remain enabled");
+    }
+    // Regression: null/non-object entries in display_info (no session yet) must not throw on Screen/Color/Graphics.
+    app.snapshot["display_info"]={{"applied",nullptr},{"monitors",Json::array({nullptr})},{"display_modes",Json::array({nullptr})}};
+    for(int page:{2,3,4}){
+      auto config=app.Config();config.fonts={font,font,font,18};
+      trg::Launcher launcher(std::move(config));launcher.GoToPage(page);
+      try{for(int i=0;i<3;++i){ImGui::NewFrame();launcher.Frame();ImGui::Render();}}
+      catch(const std::exception& e){std::cerr<<"page "<<page<<" threw: "<<e.what()<<std::endl;Check(false,"Screen/Color/Graphics pages must tolerate null display_info");}
     }
     ImGui::DestroyContext(context);
     std::cout<<"interface: preview, dirty refresh, save, profile fields, backup/session isolation, draft reset passed"<<std::endl;return 0;

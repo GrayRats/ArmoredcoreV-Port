@@ -24,6 +24,8 @@ def _mapped(proc="/proc"):
 
 
 def orphans(shm=SHM, proc="/proc"):
+    if os.name == "nt":
+        return []
     mapped = _mapped(proc)
     found = []
     for path in sorted(glob.glob(os.path.join(shm, "xenia_memory_*"))):
@@ -37,6 +39,11 @@ def orphans(shm=SHM, proc="/proc"):
 
 
 def status(shm=SHM, proc="/proc"):
+    if os.name == "nt":
+        # Windows has no POSIX shared-memory tmpfs; do not substitute free RAM
+        # for the Linux /dev/shm capacity guard used by the game probe.
+        return {"free": 0, "total": 0, "orphans": 0, "orphan_bytes": 0,
+                "supported": False}
     usage = shutil.disk_usage(shm)
     items = orphans(shm, proc)
     return {"free": usage.free, "total": usage.total, "orphans": len(items),
@@ -45,6 +52,8 @@ def status(shm=SHM, proc="/proc"):
 
 def clean(shm=SHM, proc="/proc"):
     """Remove orphans; returns the removed files. Re-checks mappings right before each unlink."""
+    if os.name == "nt":
+        return []
     removed = []
     for item in orphans(shm, proc):
         if item["path"] in _mapped(proc):

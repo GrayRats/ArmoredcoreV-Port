@@ -4,7 +4,7 @@
 Precedence, lowest to highest: built-in defaults -> saved settings -> explicit launcher
 choice -> per-launch overrides. Unsupported values are rejected, never clamped silently.
 """
-import configparser, copy, json, os, re, tempfile, uuid
+import configparser, copy, ctypes, json, os, re, shutil, subprocess, tempfile, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -18,7 +18,7 @@ GRAPHICS_SCHEMA = {
     "resolution": ("auto", _RESOLUTION),
     "render_scale": (1, (1, 2, 3, 4)),
     "vsync": (True, (True, False)),
-    "fps_limit": (60, (30, 60, 120)),
+    "fps_limit": (60, (30, 60, 120, 0)),  # 0 = no limit (frame_limit_fps<=0 disables pacing)
     "anisotropy": ("game", ("game", "off", 2, 4, 8, 16)),
     "antialiasing": ("off", ("off", "fxaa", "fxaa_extreme")),
     "dither": (False, (True, False)),
@@ -28,9 +28,11 @@ GRAPHICS_SCHEMA = {
     "color_encoding": ("rgb_full", ("rgb_full", "ycbcr444", "ycbcr422", "ycbcr420")),
     "color_depth": (8, (8, 10)),
     "wide_view": ("off", ("off", "auto")),
-    "texture_cache_soft_mb": (1024, (384, 768, 1024, 1536, 2048)),
-    "texture_cache_hard_mb": (1536, (768, 1024, 1536, 2048, 3072, 4096)),
-    "texture_cache_retention_s": (180, (30, 60, 120, 180, 300, 600)),
+    "texture_cache_soft_mb": (1024, (384, 512, 768, 1024, 1536, 2048, 2560, 3072, 3584, 4096)),
+    "texture_cache_hard_mb": (1536, (512, 768, *range(1024, 8193, 512))),
+    "texture_cache_retention_s": (180, (30, 60, 120, 180, 300, 600, 800)),
+    # CPU readback of render-to-texture results: full = synchronous (exact), fast = previous frame (delayed).
+    "readback_resolve": ("full", ("full", "fast")),
     "asset_read_ahead_mb": ("auto", ("auto", 0, 8, 16, 32, 64)),
 }
 
@@ -97,17 +99,106 @@ _EXPERIMENTAL = {
 
 # Shared preset payloads: frontend widgets do not own a second policy table.
 GRAPHICS_PRESETS = {
-    "compatibility": {"render_scale": 1, "anisotropy": "game", "antialiasing": "off",
+    # "compatibility" = Производительность: minimal GPU work, moderate cache to avoid VRAM pressure.
+    "compatibility": {"render_scale": 1, "anisotropy": 2, "antialiasing": "off",
                       "dither": False, "output_effect": "bilinear", "vsync": True,
-                      "texture_cache_soft_mb": 384, "texture_cache_hard_mb": 768,
-                      "texture_cache_retention_s": 30, "asset_read_ahead_mb": 0},
-    "quality": {"render_scale": 1, "anisotropy": 16, "antialiasing": "off",
-                "dither": True, "output_effect": "bilinear", "vsync": True,
-                "texture_cache_soft_mb": 1024, "texture_cache_hard_mb": 1536,
-                "texture_cache_retention_s": 180, "asset_read_ahead_mb": "auto"},
-    "streaming": {"texture_cache_soft_mb": 1536, "texture_cache_hard_mb": 2048,
-                  "texture_cache_retention_s": 300, "asset_read_ahead_mb": 32},
+                      "texture_cache_soft_mb": 768, "texture_cache_hard_mb": 1536,
+                      "texture_cache_retention_s": 120, "asset_read_ahead_mb": 16, "readback_resolve": "full"},
+    # "quality" = Графика: largest cache budgets the schema allows, FSR 1 (experimental, needs FidelityFX).
+    "quality": {"render_scale": 1, "anisotropy": 2, "antialiasing": "off",
+                "dither": True, "output_effect": "fsr", "vsync": True,
+                "texture_cache_soft_mb": 2048, "texture_cache_hard_mb": 4096,
+                "texture_cache_retention_s": 800, "asset_read_ahead_mb": 64, "readback_resolve": "full"},
+    # "streaming" = Плавность: balanced medium; complete payload so applying it is deterministic.
+    "streaming": {"render_scale": 1, "anisotropy": 4, "antialiasing": "off",
+                  "dither": True, "output_effect": "bilinear", "vsync": True,
+                  "texture_cache_soft_mb": 1536, "texture_cache_hard_mb": 2048,
+                  "texture_cache_retention_s": 300, "asset_read_ahead_mb": 32, "readback_resolve": "full"},
 }
+
+
+def host_memory_info():
+    """Read host capacities without changing GPU/OS state; reserve space outside the cache.
+
+    Multiple devices use the smallest reported capacity because the selected Vulkan
+    adapter is not known before launch. SDK cache cvar bounds are soft<=4096/hard<=8192.
+    """
+    capacities, sources = [], []
+    for path in Path('/sys/class/drm').glob('card[0-9]*/device/mem_info_vram_total'):
+        try:
+            value = int(path.read_text()) // (1024 * 1024)
+            if value > 0: capacities.append(value); sources.append('DRM VRAM')
+        except (OSError, ValueError): pass
+    command = shutil.which('nvidia-smi')
+    if command:
+        try:
+            result = subprocess.run([command, '--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+                                    capture_output=True, text=True, timeout=2, check=True)
+            values = [int(v.strip()) for v in result.stdout.splitlines()]
+            capacities.extend(v for v in values if v > 0)
+            if values: sources.append('NVIDIA VRAM')
+        except (OSError, ValueError, subprocess.SubprocessError): pass
+    if os.name == 'nt':
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [('dwLength', ctypes.c_ulong), ('dwMemoryLoad', ctypes.c_ulong),
+                        ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
+                        ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong),
+                        ('ullTotalVirtual', ctypes.c_ulonglong), ('ullAvailVirtual', ctypes.c_ulonglong),
+                        ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+        memory_status = MemoryStatus()
+        memory_status.dwLength = ctypes.sizeof(memory_status)
+        try:
+            query = ctypes.windll.kernel32.GlobalMemoryStatusEx
+            query.argtypes = [ctypes.POINTER(MemoryStatus)]
+            query.restype = ctypes.c_int
+            ram = (memory_status.ullTotalPhys // (1024 * 1024)
+                   if query(ctypes.byref(memory_status)) else None)
+        except (AttributeError, OSError):
+            ram = None
+    else:
+        try: ram = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') // (1024 * 1024)
+        except (AttributeError, OSError, ValueError): ram = None
+    vram = min(capacities) if capacities else None
+    soft, hard = quality_cache_budget(vram, ram)
+    return {'vram_mb': vram, 'ram_mb': ram, 'source': ', '.join(sorted(set(sources))) or 'unknown',
+            'quality_soft_mb': soft, 'quality_hard_mb': hard,
+            'reason': (f'VRAM: {vram} МиБ; RAM: {ram} МиБ. Кэш «Графика»: {soft}/{hard} МиБ. '
+                       'Зарезервировано не менее 1 ГиБ и 25% VRAM для рендера и системы; RAM ограничивает кэш четвертью объёма.'
+                       if vram else 'Объём VRAM не определён: «Графика» использует резервный кэш 2048/4096 МиБ. Проверьте предел вручную.')}
+
+
+def quality_cache_budget(vram_mb, ram_mb):
+    if not vram_mb: return 2048, 4096
+    cap = min(8192, max(512, vram_mb - max(1024, vram_mb // 4)))
+    if ram_mb: cap = max(512, min(cap, ram_mb // 4))
+    hard = max(v for v in GRAPHICS_SCHEMA['texture_cache_hard_mb'][1] if v <= cap)
+    soft = max(v for v in GRAPHICS_SCHEMA['texture_cache_soft_mb'][1] if v <= min(4096, max(384, hard - 512)))
+    return soft, hard
+
+
+def graphics_presets(memory=None):
+    presets = copy.deepcopy(GRAPHICS_PRESETS)
+    for values in presets.values():
+        values.update(fps_limit=60, sharpness='default', fsr_sharpness='default')
+    if memory is not None:
+        presets['quality'].update(texture_cache_soft_mb=memory['quality_soft_mb'],
+                                  texture_cache_hard_mb=memory['quality_hard_mb'])
+    return presets
+
+
+def apply_graphics_preset(document, name, features, memory):
+    presets = graphics_presets(memory)
+    if name not in presets: raise SettingsError('Unknown graphics preset')
+    result = copy.deepcopy(document)
+    result['graphics'] = resolve_graphics(result.get('graphics'))
+    result['graphics'].update(presets[name])
+    if result['graphics']['color_depth'] == 10: result['graphics']['dither'] = False
+    launcher = result.setdefault('launcher', {})
+    if name == 'quality':
+        if 'fidelityfx' not in features: raise SettingsError('«Графика» требует runtime с FidelityFX / FSR 1')
+        launcher['allow_experimental'] = True
+    graphics_to_cvars(result['graphics'], launcher.get('allow_experimental', False), features)
+    return result
 
 
 def capabilities():
@@ -133,6 +224,45 @@ class SettingsError(ValueError):
     pass
 
 
+def launcher_mangohud(launcher=None, override=None):
+    """Saved launcher preference, optionally overridden for one CLI launch."""
+    if launcher is None:
+        launcher = {}
+    if not isinstance(launcher, dict):
+        raise SettingsError("launcher must be an object")
+    value = launcher.get("mangohud", False)
+    if type(value) is not bool or (override is not None and type(override) is not bool):
+        raise SettingsError("launcher.mangohud must be boolean")
+    return value if override is None else override
+
+
+def launcher_mangohud_host_fps(launcher=None):
+    """Opt-in MangoHud Host FPS (presenter counter; repeats the last guest image). Default off."""
+    if launcher is None:
+        launcher = {}
+    if not isinstance(launcher, dict):
+        raise SettingsError("launcher must be an object")
+    value = launcher.get("mangohud_host_fps")
+    if value is None:  # key absent or unset by the UI toggle: default off
+        return False
+    if type(value) is not bool:
+        raise SettingsError("launcher.mangohud_host_fps must be boolean")
+    return value
+
+
+def launcher_input_mode(launcher=None, override=None):
+    """Saved launcher input mode (keyboard_mouse | keyboard | gamepad), optionally overridden for one launch."""
+    modes = ("keyboard_mouse", "keyboard", "gamepad")
+    if launcher is None:
+        launcher = {}
+    if not isinstance(launcher, dict):
+        raise SettingsError("launcher must be an object")
+    value = launcher.get("input_mode", "keyboard_mouse") if override is None else override
+    if not isinstance(value, str) or value not in modes:
+        raise SettingsError(f"launcher.input_mode must be one of {', '.join(modes)}")
+    return value
+
+
 def _accepts(rule, value):
     if isinstance(rule, re.Pattern):
         return isinstance(value, str) and rule.fullmatch(value) is not None
@@ -146,6 +276,8 @@ def validate_graphics(values):
             raise SettingsError(f"unknown graphics setting '{key}'")
         if not _accepts(GRAPHICS_SCHEMA[key][1], value):
             raise SettingsError(f"unsupported value {value!r} for graphics setting '{key}'")
+        if key == 'resolution' and value != 'auto' and any(int(v) > 8192 for v in value.split('x')):
+            raise SettingsError('Window dimensions must not exceed the SDK limit of 8192 pixels')
     if "texture_cache_soft_mb" in values and "texture_cache_hard_mb" in values and values["texture_cache_soft_mb"] > values["texture_cache_hard_mb"]:
         raise SettingsError("Soft texture cache limit must not exceed the hard limit")
     return values
@@ -284,7 +416,7 @@ def runtime_env(profile):
     return {"ACV_PILOT_NAME": profile.pilot_name, "ACV_GAMERTAG": profile.gamertag}
 
 
-# Runtime errors the project classified as harmless (docs/NATIVE_REXGLUE_LINUX.md): logged, not fatal.
+# Runtime errors the project classified as harmless (kb:NATIVE_REXGLUE_LINUX): logged, not fatal.
 BENIGN_RUNTIME_ERRORS = (re.compile(r"ResolvePath\(system:\\\)\s+failed\s+-\s+device not found"),)
 
 
@@ -309,12 +441,16 @@ def runtime_features(directory):
               "librexgpu-xenos.so": ("frame_limit_fps",)}
     found = set()
     for library, names in wanted.items():
-        path = Path(directory) / library
-        data = path.read_bytes() if path.is_file() else b""
-        found.update(name for name in names if name.encode() in data)
+        # A Windows package stages .dll builds of the same libraries; accept either.
+        for candidate in (library, library[:-3] + ".dll"):
+            path = Path(directory) / candidate
+            data = path.read_bytes() if path.is_file() else b""
+            found.update(name for name in names if name.encode() in data)
     if "cas_additional_sharpness" in found:  # cvar exists only when REX_HAS_FIDELITYFX_SDK is compiled in
         found.add("fidelityfx")
     elf = Path(directory) / "acv_linux_probe"
+    if not elf.is_file():
+        elf = Path(directory) / "acv_windows_probe.exe"
     if elf.is_file():
         import mmap
         with elf.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
@@ -367,7 +503,7 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
             f"--present_dither={str(values['dither']).lower()}"]
     # Guest video mode and output window size are independent. Preserve the native 16:9
     # guest mode while the presenter fits it into the selected host rectangle.
-    args += ["--present_letterbox=true", "--present_safe_area_x=100", "--present_safe_area_y=100",
+    args += ["--present_letterbox=" + str(_wide_aspect(values, features) is None).lower(), "--present_safe_area_x=100", "--present_safe_area_y=100",
              "--resolution=1280x720", "--video_mode_width=1280", "--video_mode_height=720",
              "--vulkan_allow_present_mode_immediate=" + str(not values["vsync"]).lower(),
              "--vulkan_allow_present_mode_mailbox=" + str(not values["vsync"]).lower(),
@@ -390,7 +526,7 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         # This limits presented swaps; it does not change the guest timestep.
         args.append(f"--frame_limit_fps={values['fps_limit']}")
     elif values["fps_limit"] != 60:
-        raise SettingsError("Лимиты 30/120 FPS требуют сборку с frame_limit_fps")
+        raise SettingsError("30/120 FPS и отключение лимита требуют сборку с frame_limit_fps")
     if values["resolution"] != "auto":
         width, height = values["resolution"].split("x")
         args += [f"--window_width={width}", f"--window_height={height}"]
@@ -400,6 +536,8 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
     args += [f"--texture_cache_memory_limit_soft={values['texture_cache_soft_mb']}",
              f"--texture_cache_memory_limit_hard={values['texture_cache_hard_mb']}",
              f"--texture_cache_memory_limit_soft_lifetime={values['texture_cache_retention_s']}"]
+    # Last on purpose: a launcher choice outranks the [sdk] default of acv.config.
+    args.append(f"--readback_resolve={values['readback_resolve']}")
     read_ahead = values["asset_read_ahead_mb"]
     if read_ahead == "auto":
         read_ahead = 16 if "asset_read_ahead_mb" in features else 0
@@ -407,6 +545,4 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         args.append(f"--asset_read_ahead_mb={read_ahead}")
     elif read_ahead:
         raise SettingsError("Background archive preloading requires an updated runtime")
-    if _wide_aspect(values, features) is not None:
-        args.append("--present_letterbox=false")  # the render target is stretched; the hooks make the picture fit
     return args

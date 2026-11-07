@@ -56,7 +56,7 @@ def main():
     if args.replay:
         inspector = ROOT / "tmp/acv_renderdoc_replay"
         if not inspector.is_file():
-            parser.error("build replay_inspect.cpp first; see docs/NATIVE_REXGLUE_LINUX.md")
+            parser.error("build replay_inspect.cpp first; see kb:NATIVE_REXGLUE_LINUX")
         command = [str(inspector), str(source)]
         if args.event is not None:
             command.append(str(args.event))

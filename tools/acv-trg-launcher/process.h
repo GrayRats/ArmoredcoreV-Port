@@ -1,4 +1,7 @@
 #pragma once
+#ifdef _WIN32
+#include "process_win32.h"
+#else
 #include <spawn.h>
 #include <sys/wait.h>
 #include <poll.h>
@@ -122,3 +125,4 @@ class Game {
   void Stop(){if(pid && kill(pid,SIGTERM)<0 && errno!=ESRCH)Check(errno);}
 };
 }
+#endif

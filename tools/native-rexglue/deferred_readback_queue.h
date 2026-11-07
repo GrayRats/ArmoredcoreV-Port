@@ -65,6 +65,29 @@ class DeferredReadbackQueue {
     bytes_ += bytes;
     return true;
   }
+  // Combined recorded + submitted admission is checked BEFORE recording.
+  // Settlement only splices preallocated nodes: no await, callback or allocation.
+  bool CanAdmit(size_t jobs, uint64_t bytes) const {
+    return std::this_thread::get_id()==owner_ && !busy_ && !failed_ &&
+        jobs<=max_jobs_ && jobs_.size()<=max_jobs_-jobs &&
+        bytes<=max_bytes_ && bytes_<=max_bytes_-bytes;
+  }
+  bool AppendSubmittedNoWait(std::list<Job>& prepared) {
+    if(!Enter()) return false;
+    uint64_t bytes=0, ticket=last_ticket_;
+    for(auto it=prepared.begin();it!=prepared.end();++it) {
+      const auto& job=*it;
+      if(!job.range.valid() || !job.slot || !job.ticket || !job.publish ||
+         job.ticket<ticket || job.range.bytes>max_bytes_-bytes) return false;
+      for(const auto& old:jobs_) if(old.slot==job.slot) return false;
+      for(auto prior=prepared.begin();prior!=it;++prior) if(prior->slot==job.slot) return false;
+      bytes+=job.range.bytes;ticket=job.ticket;
+    }
+    if(!CanAdmit(prepared.size(),bytes)) return false;
+    jobs_.splice(jobs_.end(),prepared);
+    bytes_+=bytes;last_ticket_=ticket;
+    return true;
+  }
   bool BeforeSlotReuse(uint64_t slot) {
     if(!Enter()) return false;
     Guard guard(*this);

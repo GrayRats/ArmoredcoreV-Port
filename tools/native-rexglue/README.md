@@ -1,7 +1,7 @@
 # ACV independent Linux ReXGlue probe
 
 No XenonRecomp-generated C++ is used in this build. Original game input remains
-read-only. See `docs/NATIVE_REXGLUE_LINUX.md` for checked evidence and limits.
+read-only. See `kb:NATIVE_REXGLUE_LINUX` for checked evidence and limits.
 
 - `acv-boundaries.toml`: 31 instruction-backed analysis hints; no semantic names.
 - `validate_boundaries.py`: verify hints against the pinned original XEX and

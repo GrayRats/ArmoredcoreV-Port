@@ -11,7 +11,24 @@
 #include "bake_chain_trace.h"
 #include "profile_text.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+// The executable's own definition shadows the SDK export; the original lives in librexruntime.dll.
+static void* AcvNextSymbol(const char* symbol) {
+  HMODULE module = GetModuleHandleA("librexruntime.dll");
+  return module ? reinterpret_cast<void*>(GetProcAddress(module, symbol)) : nullptr;
+}
+#else
 #include <dlfcn.h>
+// Next definition after this executable: the SDK's own export in librexruntime.
+static void* AcvNextSymbol(const char* symbol) { return dlsym(RTLD_NEXT, symbol); }
+#endif
 #include <atomic>
 #include <mutex>
 #include <fcntl.h>
@@ -135,6 +152,11 @@ void AcvTraceBakeCopy(PPCContext& ctx) {
       using Fn=bool(*)(uint32_t,uint32_t);
       Fn synchronize=nullptr;
       Gateway() {
+#if defined(_WIN32)
+        HMODULE module=GetModuleHandleA("rexgpu-xenos.dll");  // already loaded by the GPU plugin loader
+        if(!module)module=GetModuleHandleA("librexgpu-xenos.dll");
+        if(module)synchronize=reinterpret_cast<Fn>(GetProcAddress(module,"AcvResolveReadbackForCpu"));
+#else
         char executable[4096];const auto n=::readlink("/proc/self/exe",executable,sizeof(executable)-1);
         if(n<=0)return;executable[n]=0;
         std::string path(executable);const auto slash=path.find_last_of('/');
@@ -142,8 +164,13 @@ void AcvTraceBakeCopy(PPCContext& ctx) {
         path.resize(slash+1);path+="librexgpu-xenos.so";
         plugin=::dlopen(path.c_str(),RTLD_NOW|RTLD_NOLOAD);
         if(plugin)synchronize=reinterpret_cast<Fn>(::dlsym(plugin,"AcvResolveReadbackForCpu"));
+#endif
       }
-      ~Gateway(){if(plugin)::dlclose(plugin);}
+      ~Gateway(){
+#if !defined(_WIN32)
+        if(plugin)::dlclose(plugin);
+#endif
+      }
     };
     static Gateway gateway;
     if(!gateway.synchronize || !gateway.synchronize(memory->GetPhysicalAddress(ctx.r4.u32),ctx.r5.u32)) {
@@ -555,8 +582,7 @@ extern "C" REX_FUNC(sub_82B8F618) {
 
 extern "C" REX_FUNC(__imp__MmAllocatePhysicalMemoryEx) {
   using Fn = void (*)(PPCContext&, uint8_t*);
-  // Next definition after this executable: the SDK's own export in librexruntime.
-  static const Fn original = reinterpret_cast<Fn>(dlsym(RTLD_NEXT, "__imp__MmAllocatePhysicalMemoryEx"));
+  static const Fn original = reinterpret_cast<Fn>(AcvNextSymbol("__imp__MmAllocatePhysicalMemoryEx"));
   static const bool enabled = std::getenv("ACV_COMPAT_MM_WC_RW") != nullptr;
   static const bool trace = std::getenv("ACV_TRACE_PHYSICAL_ALLOCS") != nullptr;
   static std::atomic<uint32_t> trace_count{0};
@@ -604,7 +630,7 @@ namespace {
 using HostFn = void (*)(PPCContext&, uint8_t*);
 
 HostFn NextExport(const char* symbol) {
-  auto fn = reinterpret_cast<HostFn>(dlsym(RTLD_NEXT, symbol));
+  auto fn = reinterpret_cast<HostFn>(AcvNextSymbol(symbol));
   if (fn == nullptr) {
     std::fprintf(stderr, "[acv-compat] SDK export %s not found\n", symbol);
     std::abort();

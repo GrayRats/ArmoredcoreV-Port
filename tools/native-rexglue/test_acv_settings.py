@@ -174,6 +174,25 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(cfg.read_bytes()).hexdigest(), before)
         self.assertEqual(s.runtime_env(p), {"ACV_PILOT_NAME": "ARTEM", "ACV_GAMERTAG": "ARTEM"})
 
+class ReadbackSettingTest(unittest.TestCase):
+    def test_default_is_full_and_cvar_is_emitted(self):
+        values = s.resolve_graphics()
+        self.assertEqual(values["readback_resolve"], "full")
+        self.assertIn("--readback_resolve=full", s.graphics_to_cvars(values))
+
+    def test_fast_is_accepted_and_goes_last_among_readback_cvars(self):
+        args = s.graphics_to_cvars(s.resolve_graphics({"readback_resolve": "fast"}))
+        self.assertEqual([a for a in args if a.startswith("--readback_resolve=")], ["--readback_resolve=fast"])
+
+    def test_other_modes_are_rejected(self):
+        for bad in ("some", "none", "", True, 1):
+            with self.assertRaises(s.SettingsError):
+                s.resolve_graphics({"readback_resolve": bad})
+
+    def test_presets_keep_full(self):
+        for name, payload in s.GRAPHICS_PRESETS.items():
+            self.assertEqual(payload["readback_resolve"], "full", name)
+
 
 if __name__ == "__main__":
     unittest.main()

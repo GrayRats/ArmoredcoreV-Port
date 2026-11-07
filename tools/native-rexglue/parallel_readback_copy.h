@@ -15,8 +15,9 @@ namespace acv {
 // At most three persistent workers, no queued jobs, small copies stay serial.
 class ParallelReadbackCopy {
  public:
-  explicit ParallelReadbackCopy(size_t total_threads)
-      : threads_(std::clamp(total_threads, size_t(1), size_t(4))) {
+  explicit ParallelReadbackCopy(size_t total_threads, bool forward_copy = false)
+      : threads_(std::clamp(total_threads, size_t(1), size_t(4))),
+        forward_copy_(forward_copy) {
     try {
       for (size_t i = 0; i + 1 < threads_; ++i) {
         workers_.emplace_back([this, i] { Worker(i); });
@@ -35,7 +36,8 @@ class ParallelReadbackCopy {
     // Support concurrent producers without overlapping the single work slot.
     std::unique_lock operation(operation_mutex_);
     if (threads_ == 1 || bytes < kMinimumBytes) {
-      std::memcpy(destination, source, bytes);
+      CopyBytes(static_cast<uint8_t*>(destination),
+                static_cast<const uint8_t*>(source), bytes, forward_copy_);
       return;
     }
     const size_t lines = bytes / 64 + (bytes % 64 != 0);
@@ -51,7 +53,7 @@ class ParallelReadbackCopy {
     }
     work_.notify_all();
     CopyPart(static_cast<uint8_t*>(destination),
-             static_cast<const uint8_t*>(source), bytes, chunk, threads_ - 1);
+             static_cast<const uint8_t*>(source), bytes, chunk, threads_ - 1, forward_copy_);
     std::unique_lock lock(mutex_);
     done_.wait(lock, [this] { return remaining_ == 0; });
     // Do not retain dangling lease pointers between jobs.
@@ -61,12 +63,25 @@ class ParallelReadbackCopy {
 
  private:
   static constexpr size_t kMinimumBytes = 1024 * 1024;
+  static void CopyBytes(uint8_t* destination, const uint8_t* source,
+                        size_t bytes, bool forward) {
+    if (forward) {
+      // Non-overlap is the class contract. Fixed small memcpy operations avoid
+      // libc choosing a backward large-copy loop for equal page offsets.
+      // No reads beyond length, no non-temporal stores, no visibility change.
+      while (bytes >= 128) {
+        std::memcpy(destination, source, 128);
+        destination += 128; source += 128; bytes -= 128;
+      }
+    }
+    if (bytes) std::memcpy(destination, source, bytes);
+  }
   static void CopyPart(uint8_t* destination, const uint8_t* source,
-                       size_t bytes, size_t chunk, size_t index) {
+                       size_t bytes, size_t chunk, size_t index, bool forward) {
     // index <= 3 and chunk <= ceil(bytes/threads/64)*64 for large jobs.
     const size_t begin = index * chunk;
     if (begin < bytes) {
-      std::memcpy(destination + begin, source + begin, std::min(chunk, bytes - begin));
+      CopyBytes(destination + begin, source + begin, std::min(chunk, bytes - begin), forward);
     }
   }
   void Worker(size_t index) {
@@ -80,7 +95,7 @@ class ParallelReadbackCopy {
       const auto* source = source_;
       const size_t bytes = bytes_, chunk = chunk_;
       lock.unlock();
-      CopyPart(destination, source, bytes, chunk, index);
+      CopyPart(destination, source, bytes, chunk, index, forward_copy_);
       lock.lock();
       if (--remaining_ == 0) done_.notify_one();
     }
@@ -94,6 +109,7 @@ class ParallelReadbackCopy {
     for (auto& worker : workers_) if (worker.joinable()) worker.join();
   }
   const size_t threads_;
+  const bool forward_copy_;
   std::mutex operation_mutex_, mutex_;
   std::condition_variable work_, done_;
   std::vector<std::thread> workers_;

@@ -12,7 +12,7 @@ gamertag = User
 [sdk]
 # Passed to the SDK as --key=value. Paths and logging keys are reserved by the probe.
 # headless = true answers prompts with their defaults and avoids the host keyboard dialog
-# whose UTF-8 conversion aborts the process (see docs/PLAN.md).
+# whose UTF-8 conversion aborts the process (see tools/acv-context/docs/PLAN.md).
 headless = true
 user_language = 1
 user_country = 103
@@ -20,6 +20,11 @@ user_country = 103
 # vulkan_async_skip_incomplete_frames = false
 # gamma_render_target_as_unorm16 = false
 # gpu_allow_invalid_fetch_constants = true
+# Experimental readback modes (default "full" from the acv-fsi profile). On the menu scene:
+# some ~ +20 %, fast ~ +50 % swap/s versus full. They hand the guest the PREVIOUS frame's
+# resolve data (one frame late); bake-texture/image correctness is NOT verified. Do not enable
+# for normal play until checked on your mission.
+# readback_resolve = fast
 
 [compat]
 # Experiment toggles implemented in tools/native-rexglue/acv_compat_shims.cpp.
