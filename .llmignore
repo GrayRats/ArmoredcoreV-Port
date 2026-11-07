@@ -1,0 +1,79 @@
+# .llmignore — paths LLM agents must not bulk-read, search or index.
+#
+# Syntax: .gitignore (patterns, `!` negation, trailing `/` for directories).
+# Meaning: do not Glob/Grep/read-through these paths and do not paste them into
+# prompts. A narrow, deliberate read of one named file (for example an evidence
+# file linked from kb:SLUG) is still allowed. This file is not a security boundary.
+#
+# Source of truth for tools/llmignore.py:
+#   python3 tools/llmignore.py check PATH...   # is PATH ignored, and by which rule
+#   python3 tools/llmignore.py list            # ignored top-level entries with sizes
+#   python3 tools/llmignore.py sync            # regenerate .ignore for ripgrep/fd
+# Search tools built on ripgrep (Grep/Glob) read `.ignore` automatically.
+
+# --- Scratch, run output and evidence (tens of GB; read one linked file at a time)
+/tmp/
+/logs/
+
+# --- Game data, extracted assets, archives (protected, read-only)
+/games/
+/assets/
+/unity/
+/bin/
+*.bdt
+*.bhd
+*.xex
+*.iso
+*.xiso
+*.stfs
+*.dcx
+*.tpf
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# --- Ghidra project and analysis dumps
+/Armoredcore.rep/
+/Armoredcore.gpr
+/--callers
+/Old.task.MD
+
+# --- Binary build products
+*.so
+*.so.*
+*.a
+*.o
+*.obj
+*.dll
+*.exe
+*.pdb
+*.rdc
+*.spv
+*.nupkg
+
+# --- Build trees, caches and dependencies
+node_modules/
+__pycache__/
+.cache/
+/tools/rexglue-sdk/out/
+/tools/rexglue-sdk/thirdparty/
+build/
+out/
+obj/
+
+# --- Third-party tool checkouts (read their README, not the tree)
+/tools/360toolsUpdated/
+/tools/c-xbox_tool_2.0.7/
+/tools/XenonRecomp/
+/tools/XenosRecomp/
+/tools/xenonrecomp-bin/
+/xenonrecomp/
+
+# --- Historical snapshots
+
+
+# Knowledge base database: read through kb.py or the kb_* MCP tools
+/tools/acv-context/knowledge.sqlite3*

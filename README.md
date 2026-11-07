@@ -10,7 +10,7 @@ In parallel, an independent C/C++ reconstruction of the game's behaviour is bein
 
 *Static recompilation of Armored Core V (Xbox 360) into a native Linux port. Research project; no game data included.*
 
-![Gameplay scene from the native Linux build with the Vulkan renderer](docs/images/gameplay-vulkan.jpg)
+![Gameplay scene from the native Linux build with the Vulkan renderer](kb-file:images__gameplay-vulkan.jpg)
 
 
 > [!IMPORTANT]
@@ -35,7 +35,7 @@ In parallel, an independent C/C++ reconstruction of the game's behaviour is bein
 - **Transparent log.** Every analysis and build run is written to the SQLite logger (`tools/decomp-logging`),
   so results are reproducible and verifiable.
 - **Independent reconstruction.** A parallel C/C++ reconstruction of behaviour based on retail data;
-  the evidence by address and function is listed in [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md).
+  the evidence by address and function is listed in [REVERSE_ENGINEERING](kb:REVERSE_ENGINEERING).
 
 ## Current status
 
@@ -45,11 +45,11 @@ The current standalone package is [ACV-Linux-release-1.0](../ACV-Linux-release-1
 
 A user-run release1.0 session stayed active beyond 184 seconds. A 60-second sample recorded 29.02 guest swaps/s, 92.4% device-wide GPU utilization, and no lost CPU IP samples. The mission and route were not identified, so this is not a repeatable gameplay baseline; FPS above30, 1% low, image correctness, and game-time pacing remain unaccepted. See the [FPS report](report-fps.md).
 
-A black-screen hang in Mission2 was observed in an earlier session and remains unresolved for that scenario ([evidence](docs/PROGRESS.md#native-linux), [analysis](docs/NATIVE_REXGLUE_LINUX.md#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24)). It is not known whether it matches the later unlabelled performance sample.
+A black-screen hang in Mission2 was observed in an earlier session and remains unresolved for that scenario ([evidence](kb:PROGRESS#native-linux), [analysis](kb:NATIVE_REXGLUE_LINUX#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24)). It is not known whether it matches the later unlabelled performance sample.
 
 Resource work includes validated BHD5/BDT and BND3 parsing, 7,111 FLVER headers, and Xbox360 BC1 block matching. DLC sound is partially mounted; emblems and seven sounds require an image with DLC. Pixel-shader emulation, in-game readback coverage, and kernel behavior for `ObReferenceObject` and `IoDismountVolumeByFileHandle` remain open.
 
-The detailed plan, acceptance criteria and journal are in [docs/PLAN.md](docs/PLAN.md) and [docs/PROGRESS.md](docs/PROGRESS.md).
+The detailed plan, acceptance criteria and journal are in [PLAN](kb:PLAN) and [PROGRESS](kb:PROGRESS).
 
 ## Structure
 
@@ -60,7 +60,7 @@ The detailed plan, acceptance criteria and journal are in [docs/PLAN.md](docs/PL
 | `tools/native-decomp/`, `tools/native-host-probe/` | limited manual models and checks based on retail evidence |
 | `tools/*.py` | resource unpacking and checking: `bhd5_extract_all.py`, `bnd3_extract_dir.py`, `flver_inventory.py`, `x360_bc_decode.py`, `bc_tile_match.py`, `spirv_slice.py`, and others |
 | `scripts/` | wrappers: `assets.sh`, `decomp.sh`, `ghidra-rpc.sh`, `unity.sh`, `check_repository_payload.py` |
-| `docs/` | state, plan, journal, formats and technical reports |
+| `kb:` (SQLite `tools/acv-context/knowledge.sqlite3`) | state, plan, journal, formats and technical reports; read with `python3 tools/acv-context/kb.py index` |
 | `logs/` | not published, except for individual evidence files listed in `.gitignore` |
 
 External components (ReXGlue SDK, XenonRecomp, XenosRecomp, c-xbox_tool_2.0.7 and others) are not part of the repository.
@@ -73,7 +73,7 @@ They are installed separately and keep their own licenses in their directories.
   [tools/native-rexglue/gpu-plugin/README.md](tools/native-rexglue/gpu-plugin/README.md)).
 - Python 3 and Node.js (for the logger in `tools/decomp-logging`).
 - RenderDoc for frame captures; Ghidra is optional, via `scripts/ghidra-rpc.sh`.
-- Your own image of the game. Unpacking is described in [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md).
+- Your own image of the game. Unpacking is described in [ASSET_FORMATS](kb:ASSET_FORMATS).
 
 ## Quick start
 
@@ -92,7 +92,7 @@ node tools/decomp-logging/cli.mjs run --stage linux_probe --timeout-ms 175000 --
 ```
 
 The run is a diagnostic tool, not a game launcher. A `failed` status for probes caused by `dlc_*` noise in the
-classifier means a false classification when the child exits with 0; see [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md).
+classifier means a false classification when the child exits with 0; see [SQLITE_LOGGING](kb:SQLITE_LOGGING).
 
 All analysis, builds and tests must be run through the logger:
 
@@ -104,27 +104,27 @@ node tools/decomp-logging/cli.mjs run --stage <stage_name> -- <command> [argumen
 
 | Document | Purpose |
 |---|---|
-| [docs/README.md](docs/README.md) | Navigation: which document to read for which question |
-| [docs/PLAN.md](docs/PLAN.md) | Single plan, working rules and acceptance criteria |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Journal of verified results and operations |
-| [docs/X360_PROJECT_STATE.md](docs/X360_PROJECT_STATE.md) | Current state and blockers |
-| [docs/NATIVE_REXGLUE_LINUX.md](docs/NATIVE_REXGLUE_LINUX.md) | Native Linux line: build, imports, experiments |
-| [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md) | ISO, BHD5/BDT, DCX, BND3, TPF, FLVER, textures |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Runtime layers and boundaries |
-| [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) | Evidence by address and function |
-| [docs/LINUX_INPUT.md](docs/LINUX_INPUT.md) | Keyboard, mouse, configuration |
-| [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md) | Logger: commands, history, retries |
-| [docs/ACV_TIMING.md](docs/ACV_TIMING.md), [docs/GHIDRA_CAPTURE.md](docs/GHIDRA_CAPTURE.md) | Timing and Ghidra captures |
-| [docs/fine/](docs/fine/) | Condensed reports on postponed branches; archives excluded |
+| [DOCS_README](kb:DOCS_README) | Navigation: which document to read for which question |
+| [PLAN](kb:PLAN) | Single plan, working rules and acceptance criteria |
+| [PROGRESS](kb:PROGRESS) | Journal of verified results and operations |
+| [X360_PROJECT_STATE](kb:X360_PROJECT_STATE) | Current state and blockers |
+| [NATIVE_REXGLUE_LINUX](kb:NATIVE_REXGLUE_LINUX) | Native Linux line: build, imports, experiments |
+| [ASSET_FORMATS](kb:ASSET_FORMATS) | ISO, BHD5/BDT, DCX, BND3, TPF, FLVER, textures |
+| [ARCHITECTURE](kb:ARCHITECTURE) | Runtime layers and boundaries |
+| [REVERSE_ENGINEERING](kb:REVERSE_ENGINEERING) | Evidence by address and function |
+| [LINUX_INPUT](kb:LINUX_INPUT) | Keyboard, mouse, configuration |
+| [SQLITE_LOGGING](kb:SQLITE_LOGGING) | Logger: commands, history, retries |
+| [ACV_TIMING](kb:ACV_TIMING), [GHIDRA_CAPTURE](kb:GHIDRA_CAPTURE) | Timing and Ghidra captures |
+| archived reports: `python3 tools/acv-context/kb.py index --all --kind archive` | Condensed reports on postponed branches; archives excluded |
 | [ABOUT_DE-AC5.MD](ABOUT_DE-AC5.MD) | Process overview: from ISO to C++ and runtime |
-| [TASK-SQL.MD](TASK-SQL.MD) | Policy for the persistent journal and recovery |
+| [TASK_SQL](kb:TASK_SQL) | Policy for the persistent journal and recovery |
 
 ## For agents and contributors
 
-- [AGENTS.md](AGENTS.md) — working rules for AI agents and contributors: what to check, what must not be
+- [AGENTS](kb:AGENTS) — working rules for AI agents and contributors: what to check, what must not be
   changed without permission, and how to record results.
-- Before making changes, read [docs/PLAN.md](docs/PLAN.md), then the latest entries in
-  [docs/PROGRESS.md](docs/PROGRESS.md).
+- Before making changes, read [PLAN](kb:PLAN), then the latest entries in
+  [PROGRESS](kb:PROGRESS).
 - The original ISO and the live Ghidra database are read-only.
 - Screenshots and PNG previews are not kept for analysis: the evidence is logs, RenderDoc RDC/XML,
   instructions and numeric dumps.
@@ -136,8 +136,8 @@ on; [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) and the recompilatio
 
 [Armored-core-ReAnswered](https://github.com/rensoftworks/Armored-core-ReAnswered/) is a reference for future
 improvements. [TRG Launcher](https://github.com/TekRantGaming/trg-launcher) is the selected GUI for the
-[launcher migration plan](PLAN_GUI.MD). [extract-xiso](https://github.com/XboxDev/extract-xiso) provides disc-image
-extraction tooling. Local checkout revisions and usage notes: [tool selection guide](TOOLS.MD).
+[launcher migration plan](kb:PLAN_GUI). [extract-xiso](https://github.com/XboxDev/extract-xiso) provides disc-image
+extraction tooling. Local checkout revisions and usage notes: [tool selection guide](kb:TOOLS).
 
 ## License
 

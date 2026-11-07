@@ -49,7 +49,7 @@ tar --zstd -xf ACV-Linux-release-1.0.tar.zst
 
 Сам бинарный пакет обозначен как **1.0**. Релиз **1.1** также содержит исходники и документацию проекта. Эта упаковка не доказывает новый результат FPS.
 
-![Существующая игровая сессия Linux-порта](docs/images/gameplay-vulkan.jpg)
+![Существующая игровая сессия Linux-порта](kb-file:images__gameplay-vulkan.jpg)
 
 *Существующий игровой кадр Linux-порта. Это не подтверждение Windows-сборки или результат замера производительности.*
 
@@ -179,7 +179,7 @@ node tools/decomp-logging/cli.mjs run --stage trg-build --timeout-ms 600000 -- \
 
 В Ubuntu укажите `clang-18`/`clang++-18`, если имена без версии выбирают старый компилятор. Результат: `tmp/acv-trg-build/acv-launcher`. Интерфейс может открываться без игрового executable, но PLAY требует корректный runtime-пакет.
 
-![Лаунчер, собранный из исходников в отдельной Linux-среде](docs/images/install-launcher-linux.jpg)
+![Лаунчер, собранный из исходников в отдельной Linux-среде](kb-file:images__install-launcher-linux.jpg)
 
 *Настоящая Linux-сборка из исходников: Xvfb, программный OpenGL и отдельный профиль. Игра для этого скриншота не запускалась.*
 
@@ -207,7 +207,7 @@ tmp/acv-native-adjusting-thunks.cpp
 | Adjusting thunks | Генератор также читает приватный registry и результаты сканирования; чистого clone недостаточно |
 | Согласованный SDK с патчами | Отдельные патчи — ресурсы ремонта и свидетельства; единой принятой команды воспроизведения runtime из чистого clone пока нет |
 
-Перед продолжением восстановите полное согласованное рабочее дерево. Не создавайте пустые заглушки и не подставляйте stock SDK молча. Входы описаны в [native-документе](docs/NATIVE_REXGLUE_LINUX.md), [baseline-хешах](tools/native-rexglue/RUNTIME_BASELINE.json) и [карте инструментов](TOOLS.MD).
+Перед продолжением восстановите полное согласованное рабочее дерево. Не создавайте пустые заглушки и не подставляйте stock SDK молча. Входы описаны в [native-документе](kb:NATIVE_REXGLUE_LINUX), [baseline-хешах](tools/native-rexglue/RUNTIME_BASELINE.json) и [карте инструментов](kb:TOOLS).
 
 Для **восстановленного рабочего дерева**:
 
@@ -301,13 +301,20 @@ Get-ChildItem tmp/rex-sdk-install-win -Recurse -Filter *.dll
 
 | Текущий файл/слой | Что требуется до сборки Windows-игры |
 |---|---|
-| `acv_compat_shims.cpp` | Реализовать Windows-пути вместо POSIX `dlfcn.h`, `fcntl.h`, `unistd.h` |
-| `tools/acv-trg-launcher/process.h` | Портировать `posix_spawn`, `poll`, группы процессов и сигналы |
-| `acv_profiles.py` и Linux sessions | Портировать `fcntl.flock`, `/proc`, XDG и владение сессией |
-| `standalone.py` | Заменить упаковку ELF/`.so` через `ldd` и Linux `start.sh` |
+| `acv_compat_shims.cpp` и game host/runtime | POSIX `dlfcn.h`, `fcntl.h`, `unistd.h` и Windows game launch/runtime bridge пока не портированы |
+| `tools/acv-trg-launcher/process.h` | Реализация Win32 `CreateProcessW`/pipes/job control есть и cross-build проходит; нативные Windows process-тесты открыты |
+| `acv_profiles.py` и Linux session/input tools | Windows LocalAppData и `msvcrt` profile lock добавлены; нужно проверить на NTFS и перенести оставшиеся `/proc` session/input пути |
+| `standalone.py` | Текущий package path всё ещё собирает ELF/`.so` через `ldd` и Linux `start.sh`; Windows packager отсутствует |
 | Generated-проект и SDK с патчами | Восстановить те же дополнительные входы, что нужны для Linux-игры |
 
-Проверенной команды сборки нативного ACV `.exe` и Windows-скриншота пока нет. WSL2 позволяет выполнить Linux-**сборку** с учётом CPU, драйвера и glibc; готовый Linux-пакет от этого не становится нативным Windows-приложением.
+Launcher cross-build в OpenGL и Vulkan 1.4 вариантах создаёт .exe; Vulkan
+target связан с LunarG SDK 1.4.363.1. Wine smoke renderer прошёл через встроенный
+Wine Vulkan loader. App-local LunarG Runtime Components loader сообщает версию
+1.4.363, но не загрузил Wine ICD bridge; этот путь не является проверкой
+presentation. Нативный Windows WSI/game package отсутствует. Действие Play
+блокируется до появления game runtime bridge. WSL2 позволяет выполнить
+Linux-сборку с учётом CPU, драйвера и glibc; готовый Linux-пакет от этого не
+становится нативным Windows-приложением.
 
 <details>
 <summary>Пример упаковки Windows после реализации и независимой проверки нативного порта</summary>
@@ -352,6 +359,20 @@ node tools/decomp-logging/cli.mjs run --stage acv-package-verify --timeout-ms 60
 Для Arch используются `/usr/share/fonts/TTF` и `/usr/share/licenses/ttf-dejavu/LICENSE`; эти значения сохранены по умолчанию. `--skip-settings-tests` пропускает settings test file, включая effect checks, и записывает пропуск. Остальные проверки упаковки продолжают выполняться. Приёмки эффектов CAS/FSR в проекте пока нет.
 
 Каталог назначения должен быть новым. Упаковка выполняется через staging с проверкой хешей и библиотек перед публикацией. Существующий вывод не удаляется. Runtime с отличающимися от `RUNTIME_BASELINE.json` хешами отмечается кандидатом.
+
+### Оверлей MangoHud
+
+В TRG-лаунчере есть переключатель **MangoHud в игре**. Он сохраняет логическое значение в существующих настройках лаунчера и включает MangoHud для Vulkan-процесса игры при следующем запуске. На собственное OpenGL-окно лаунчера переключатель не влияет. Установите MangoHud из репозитория дистрибутива (`sudo apt install mangohud` в Ubuntu/Debian или `sudo pacman -S mangohud` в Arch). Если команда `mangohud` не найдена, лаунчер покажет причину и не запустит игру с включённой настройкой.
+
+Для запуска из командной строки используйте `--mangohud`, а для временного отключения поверх сохранённой настройки — `--no-mangohud`:
+
+```bash
+./tools/native-rexglue/probe_linux.py --mangohud --seconds 30
+```
+
+Игра наследует `MANGOHUD_CONFIGFILE`; ACV дописывает параметры счётчиков и расположения в `MANGOHUD_CONFIG`, сохраняя preloads и настройки слоёв Vulkan. Собственный счётчик MangoHud (**Host FPS**, показы окна) отключён: он не следует за частотой кадров игры. **Guest** показывает частоту подачи кадров игровому GPU-потоку: среднее за 300 интервалов, миллисекунды и возраст замера. При 30 кадрах/с окно замера составляет около 10 секунд. В startup-проверке оба счётчика согласованы около 30; миссионное расхождение пока не воспроизведено. Это не измерение скорости игровой логики или уникальных изображений.
+
+Наборы **Производительность**, **Графика** и **Плавность** проверяются общим backend. «Графика» задаёт FSR 1, удержание 800 секунд и бюджет VRAM с запасом для рендера. [Таблица пресетов и границы проверки](kb:LAUNCHER_SETTINGS_20261030).
 
 ### Включение локально извлечённых данных
 

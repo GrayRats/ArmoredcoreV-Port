@@ -49,7 +49,7 @@ tar --zstd -xf ACV-Linux-release-1.0.tar.zst
 
 The attached binary package identifies itself as **1.0**. Release **1.1** also distributes project sources and documentation. This packaging does not establish a new FPS result.
 
-![Existing native Linux game session](docs/images/gameplay-vulkan.jpg)
+![Existing native Linux game session](kb-file:images__gameplay-vulkan.jpg)
 
 *Existing gameplay image from the Linux port; it is not evidence of a Windows build or a performance benchmark.*
 
@@ -179,7 +179,7 @@ node tools/decomp-logging/cli.mjs run --stage trg-build --timeout-ms 600000 -- \
 
 On Ubuntu, use `clang-18`/`clang++-18` if the unversioned names select an older compiler. Output: `tmp/acv-trg-build/acv-launcher`. A launcher-only build can display the UI with the game executable absent; PLAY needs a valid runtime package.
 
-![Launcher compiled from source in an isolated Linux environment](docs/images/install-launcher-linux.jpg)
+![Launcher compiled from source in an isolated Linux environment](kb-file:images__install-launcher-linux.jpg)
 
 *Actual Linux source build, captured in Xvfb with software OpenGL and an isolated profile. No game was started for this screenshot.*
 
@@ -207,7 +207,7 @@ tmp/acv-native-adjusting-thunks.cpp
 | Adjusting thunks | The generator also reads a private registry and scan inputs; running it on a clean clone is insufficient |
 | Matching patched SDK | Saved patches are evidence and repair resources; there is no single validated clean-clone replay command for the accepted runtime |
 
-Restore a complete matching development workspace before continuing. Do not create empty placeholder files or silently substitute the stock SDK. [Native build evidence](docs/NATIVE_REXGLUE_LINUX.md), [baseline hashes](tools/native-rexglue/RUNTIME_BASELINE.json) and [tool routing](TOOLS.MD) describe these inputs.
+Restore a complete matching development workspace before continuing. Do not create empty placeholder files or silently substitute the stock SDK. [Native build evidence](kb:NATIVE_REXGLUE_LINUX), [baseline hashes](tools/native-rexglue/RUNTIME_BASELINE.json) and [tool routing](kb:TOOLS) describe these inputs.
 
 For a **restored workspace**, the maintainer configure/build sequence is:
 
@@ -301,13 +301,20 @@ This is the SDK's native Windows route, documented from the pinned preset; it wa
 
 | Current source | Work needed before a Windows game build |
 |---|---|
-| `acv_compat_shims.cpp` | POSIX `dlfcn.h`, `fcntl.h`, `unistd.h` paths need a Windows implementation |
-| `tools/acv-trg-launcher/process.h` | Replace/port `posix_spawn`, `poll`, process groups and signals |
-| `acv_profiles.py` and Linux session tools | Port `fcntl.flock`, `/proc`, XDG/session ownership |
-| `standalone.py` | It packages ELF/`.so` with `ldd` and Linux `start.sh` |
+| `acv_compat_shims.cpp` and game host/runtime | POSIX `dlfcn.h`, `fcntl.h`, `unistd.h` paths and the Windows game launch/runtime bridge remain unported |
+| `tools/acv-trg-launcher/process.h` | Win32 `CreateProcessW`/pipes/job-control implementation exists and cross-builds; native Windows process-behavior tests remain |
+| `acv_profiles.py` and Linux session/input tools | Windows LocalAppData and `msvcrt` profile locking exist; validate on NTFS and port remaining `/proc` session/input ownership |
+| `standalone.py` | Current package path still packages ELF/`.so` with `ldd` and Linux `start.sh`; Windows packager does not exist |
 | Generated project and patched SDK | Same missing-input boundary as the Linux game build |
 
-There is therefore no verified native ACV `.exe` build command or Windows screenshot to present. WSL2 can host the Linux **build workflow**, subject to its CPU, driver and glibc requirements; it does not convert the existing package to a native Windows application.
+The launcher OpenGL target and Vulkan 1.4 target cross-build to .exe; Vulkan
+links against LunarG SDK 1.4.363.1. Wine renderer smoke passed with Wine's
+built-in Vulkan loader. The app-local LunarG Runtime Components loader reports
+1.4.363 but did not load Wine's ICD bridge, so that path is not a presentation
+pass. There is still no native Windows WSI/game package. The game Play action is
+intentionally blocked until its runtime bridge exists. WSL2 can host the Linux
+build workflow, subject to its CPU, driver and glibc requirements; it does not
+convert the existing package to a native Windows application.
 
 <details>
 <summary>Windows packaging example for a future, independently verified native port</summary>
@@ -352,6 +359,20 @@ node tools/decomp-logging/cli.mjs run --stage acv-package-verify --timeout-ms 60
 Arch uses `/usr/share/fonts/TTF` and `/usr/share/licenses/ttf-dejavu/LICENSE`; those remain the defaults. `--skip-settings-tests` skips the settings test file, including effect checks, and records the omission. Other packaging checks still run. This project has not accepted CAS/FSR effect tests.
 
 The destination must be new. Packaging uses staging and verifies hashes/dependencies before publication. It never deletes an existing output. Supplying a rebuilt runtime marks it as a candidate when its hashes differ from `RUNTIME_BASELINE.json`.
+
+### MangoHud overlay
+
+The TRG launcher has a **MangoHud in game** switch. It stores a boolean in the existing launcher settings and enables MangoHud for the Vulkan game process on its next launch. It does not inject into the launcher's own OpenGL window. Install MangoHud from your distribution (`sudo apt install mangohud` on Ubuntu/Debian or `sudo pacman -S mangohud` on Arch). The launcher shows an unavailable message and refuses an enabled launch if the `mangohud` command is missing.
+
+For command-line launches, use `--mangohud` to enable it or `--no-mangohud` to override a saved setting for that run:
+
+```bash
+./tools/native-rexglue/probe_linux.py --mangohud --seconds 30
+```
+
+The game inherits `MANGOHUD_CONFIGFILE`; ACV appends its counter/layout options to `MANGOHUD_CONFIG` and preserves preloads and Vulkan layer settings. The native MangoHud FPS counter (**Host FPS**, window presents) is disabled because it does not follow the game frame rate. **Guest** shows GPU command-processor swap cadence averaged over 300 intervals, with mean milliseconds and sample age. At 30/s a batch spans about 10 seconds. A capped startup check agreed at 30/s; a mission discrepancy remains unreproduced. This does not measure simulation speed or unique images.
+
+The presets **Производительность**, **Графика** and **Плавность** are validated through the shared backend. Quality requests FSR 1, retention 800 seconds and an adaptive VRAM budget with room for rendering. See the [preset table and verification scope](kb:LAUNCHER_SETTINGS_20261030).
 
 ### Include locally extracted data when applicable
 

@@ -47,7 +47,7 @@ utilization. The mission and route were not identified, and FPS above 30 has not
 been achieved or accepted. The diagnostic trace patch is source only; this
 release does not claim it was integrated into or built with the packaged game.
 
-See `README.md`, `README.RU.MD`, `docs/LAUNCHER_PACKAGE.md`,
+See `README.md`, `README.RU.MD`, `kb:LAUNCHER_PACKAGE`,
 `report-fps.md` and `perf/baseline.md` for setup, scope and verification limits.
 
 ## Русский
@@ -97,4 +97,4 @@ GitHub ограничивает каждый release asset размером ме
 собран с игровым пакетом.
 
 Инструкции, границы проверки и известные ограничения описаны в `README.md`,
-`README.RU.MD`, `docs/LAUNCHER_PACKAGE.md`, `report-fps.md` и `perf/baseline.md`.
+`README.RU.MD`, `kb:LAUNCHER_PACKAGE`, `report-fps.md` и `perf/baseline.md`.

@@ -10,7 +10,7 @@
 
 *Static recompilation of Armored Core V (Xbox 360) into a native Linux port. Research project; no game data included.*
 
-![Сцена из игры на нативной Linux-сборке с Vulkan-рендером](docs/images/gameplay-vulkan.jpg)
+![Сцена из игры на нативной Linux-сборке с Vulkan-рендером](kb-file:images__gameplay-vulkan.jpg)
 
 
 Репозиторий: <https://github.com/GrayRats/DEArmoredcoreV>
@@ -32,7 +32,7 @@
 - **Прозрачный журнал.** Каждый запуск анализа и сборки пишется в SQLite-логгер (`tools/decomp-logging`),
   поэтому результаты воспроизводимы и проверяемы.
 - **Независимая реконструкция.** Параллельная C/C++ реконструкция поведения по retail-данным;
-  доказательства по адресам и функциям перечислены в [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md).
+  доказательства по адресам и функциям перечислены в [REVERSE_ENGINEERING](kb:REVERSE_ENGINEERING).
 
 ## Текущий статус
 
@@ -42,11 +42,11 @@
 
 В пользовательской сессии release1.0 игра работала дольше184с. За60с замера получено29,02 guest swap/с, загрузка GPU по устройству92,4%, потерянных CPU IP samples нет. Миссия и маршрут не указаны, поэтому это ещё не воспроизводимый игровой baseline. FPS выше30, 1% low, корректность изображения и темп игрового времени не приняты. Подробности — в [отчёте FPS](report-fps.md).
 
-Чёрный экран/зависание в миссии2 наблюдались в более ранней сессии; для этого сценария проблема остаётся открытой ([свидетельства](docs/PROGRESS.md#native-linux), [анализ](docs/NATIVE_REXGLUE_LINUX.md#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24)). Неизвестно, относится ли он к более позднему замеру без названия миссии.
+Чёрный экран/зависание в миссии2 наблюдались в более ранней сессии; для этого сценария проблема остаётся открытой ([свидетельства](kb:PROGRESS#native-linux), [анализ](kb:NATIVE_REXGLUE_LINUX#error-mission-2-freeze-on-the-accepted-build-the-instrumented-waits-did-not-fire-2026-10-24)). Неизвестно, относится ли он к более позднему замеру без названия миссии.
 
 В ресурсной части проверены форматы BHD5/BDT и BND3, разобраны заголовки7 111 FLVER, сопоставлены блоки Xbox360 BC1. DLC-звуки смонтированы частично; эмблемы и семь звуков требуют образа с DLC. Открыты эмуляция pixel shader, покрытие readback в игре и поведение kernel-функций `ObReferenceObject` и `IoDismountVolumeByFileHandle`.
 
-Подробный план, приёмка и журнал: [docs/PLAN.md](docs/PLAN.md), [docs/PROGRESS.md](docs/PROGRESS.md).
+Подробный план, приёмка и журнал: [PLAN](kb:PLAN), [PROGRESS](kb:PROGRESS).
 
 ## Структура
 
@@ -57,7 +57,7 @@
 | `tools/native-decomp/`, `tools/native-host-probe/` | ограниченные ручные модели и проверки по retail-доказательствам |
 | `tools/*.py` | распаковка и проверка ресурсов: `bhd5_extract_all.py`, `bnd3_extract_dir.py`, `flver_inventory.py`, `x360_bc_decode.py`, `bc_tile_match.py`, `spirv_slice.py` и др. |
 | `scripts/` | обёртки: `assets.sh`, `decomp.sh`, `ghidra-rpc.sh`, `unity.sh`, `check_repository_payload.py` |
-| `docs/` | состояние, план, журнал, форматы и технические отчёты |
+| `kb:` (SQLite `tools/acv-context/knowledge.sqlite3`) | состояние, план, журнал, форматы и технические отчёты; индекс: `python3 tools/acv-context/kb.py index` |
 | `logs/` | не публикуется, кроме отдельных доказательных файлов, перечисленных в `.gitignore` |
 
 Внешние компоненты (ReXGlue SDK, XenonRecomp, XenosRecomp, c-xbox_tool_2.0.7 и др.) в репозиторий
@@ -70,7 +70,7 @@
   [tools/native-rexglue/gpu-plugin/README.md](tools/native-rexglue/gpu-plugin/README.md)).
 - Python 3 и Node.js (для логгера `tools/decomp-logging`).
 - RenderDoc — для захватов кадров; Ghidra — опционально, через `scripts/ghidra-rpc.sh`.
-- Собственный образ игры. Распаковка описана в [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md).
+- Собственный образ игры. Распаковка описана в [ASSET_FORMATS](kb:ASSET_FORMATS).
 
 ## Быстрый старт
 
@@ -89,7 +89,7 @@ node tools/decomp-logging/cli.mjs run --stage linux_probe --timeout-ms 175000 --
 ```
 
 Запуск — диагностический, а не игровой лаунчер. Статус `failed` у проб из-за шума `dlc_*` в
-классификаторе означает ложную классификацию при `child exit 0`; см. [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md).
+классификаторе означает ложную классификацию при `child exit 0`; см. [SQLITE_LOGGING](kb:SQLITE_LOGGING).
 
 Все анализ, сборка и тесты должны запускаться через логгер:
 
@@ -101,27 +101,27 @@ node tools/decomp-logging/cli.mjs run --stage <имя_этапа> -- <коман
 
 | Документ | Назначение |
 |---|---|
-| [docs/README.md](docs/README.md) | Навигация: какой документ читать для какого вопроса |
-| [docs/PLAN.md](docs/PLAN.md) | Единый план, правила работы и критерии приёмки |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Журнал проверенных результатов и операций |
-| [docs/X360_PROJECT_STATE.md](docs/X360_PROJECT_STATE.md) | Текущее состояние и блокеры |
-| [docs/NATIVE_REXGLUE_LINUX.md](docs/NATIVE_REXGLUE_LINUX.md) | Нативная Linux-линия: сборка, импорты, эксперименты |
-| [docs/ASSET_FORMATS.md](docs/ASSET_FORMATS.md) | ISO, BHD5/BDT, DCX, BND3, TPF, FLVER, текстуры |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Слои и границы runtime |
-| [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) | Доказательства по адресам и функциям |
-| [docs/LINUX_INPUT.md](docs/LINUX_INPUT.md) | Клавиатура, мышь, конфиг |
-| [docs/SQLITE_LOGGING.md](docs/SQLITE_LOGGING.md) | Логгер: команды, история, повторы |
-| [docs/ACV_TIMING.md](docs/ACV_TIMING.md), [docs/GHIDRA_CAPTURE.md](docs/GHIDRA_CAPTURE.md) | Тайминг и снимки Ghidra |
-| [docs/fine/](docs/fine/) | Сжатые отчёты по отложенным веткам; архивы исключены |
+| [DOCS_README](kb:DOCS_README) | Навигация: какой документ читать для какого вопроса |
+| [PLAN](kb:PLAN) | Единый план, правила работы и критерии приёмки |
+| [PROGRESS](kb:PROGRESS) | Журнал проверенных результатов и операций |
+| [X360_PROJECT_STATE](kb:X360_PROJECT_STATE) | Текущее состояние и блокеры |
+| [NATIVE_REXGLUE_LINUX](kb:NATIVE_REXGLUE_LINUX) | Нативная Linux-линия: сборка, импорты, эксперименты |
+| [ASSET_FORMATS](kb:ASSET_FORMATS) | ISO, BHD5/BDT, DCX, BND3, TPF, FLVER, текстуры |
+| [ARCHITECTURE](kb:ARCHITECTURE) | Слои и границы runtime |
+| [REVERSE_ENGINEERING](kb:REVERSE_ENGINEERING) | Доказательства по адресам и функциям |
+| [LINUX_INPUT](kb:LINUX_INPUT) | Клавиатура, мышь, конфиг |
+| [SQLITE_LOGGING](kb:SQLITE_LOGGING) | Логгер: команды, история, повторы |
+| [ACV_TIMING](kb:ACV_TIMING), [GHIDRA_CAPTURE](kb:GHIDRA_CAPTURE) | Тайминг и снимки Ghidra |
+| archived reports: `python3 tools/acv-context/kb.py index --all --kind archive` | Сжатые отчёты по отложенным веткам; архивы исключены |
 | [ABOUT_DE-AC5.MD](ABOUT_DE-AC5.MD) | Обзор процесса: от ISO до C++ и runtime |
-| [TASK-SQL.MD](TASK-SQL.MD) | Политика постоянного журнала и восстановления |
+| [TASK_SQL](kb:TASK_SQL) | Политика постоянного журнала и восстановления |
 
 ## Для агентов и участников
 
-- [AGENTS.md](AGENTS.md) — правила работы для ИИ-агентов и участников: что проверять, что нельзя
+- [AGENTS](kb:AGENTS) — правила работы для ИИ-агентов и участников: что проверять, что нельзя
   менять без разрешения, как фиксировать результат.
-- Перед изменениями читать [docs/PLAN.md](docs/PLAN.md), затем последние записи в
-  [docs/PROGRESS.md](docs/PROGRESS.md).
+- Перед изменениями читать [PLAN](kb:PLAN), затем последние записи в
+  [PROGRESS](kb:PROGRESS).
 - Оригинальный ISO и живая база Ghidra — только для чтения.
 - Скриншоты и PNG-превью для анализа не сохраняются: доказательства — логи, RenderDoc RDC/XML,
   инструкции и числовые дампы.
