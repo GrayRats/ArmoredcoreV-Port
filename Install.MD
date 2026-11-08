@@ -141,6 +141,17 @@ test -f tools/native-rexglue/acv.config || \
 
 Set your pilot name and gamertag in `[profile]`. Keep the existing configuration on updates. The sample file is not a replacement for an existing user's settings or for the ACV-FSI launch profile.
 
+### Source disc
+
+Build and packaging were verified with this retail disc (see also [Source disc](README.md#source-disc)):
+
+- Edition `Armored Core V [PAL][EN][Simulator][XGD2][2012][XBOX360]`; image files `Armored Core V.dvd` and `Armored Core V.ISO`.
+- Licensed (retail) disc, format XGD2, region PAL.
+- Title ID `4E4D0853`, Media ID `42AE64E3`.
+- Console: firmware L.T.+ 1.9 (13th wave), dashboard 13599 or lower, PFI and Video 13th wave.
+
+Check the Title ID and Media ID of your copy before extraction. Other editions, regions and dashboards are not tested.
+
 ## 4. Build on Linux
 
 ### 4.1 Build the SDK in Release, x86-64-v2

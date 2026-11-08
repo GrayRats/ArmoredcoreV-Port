@@ -73,7 +73,26 @@ They are installed separately and keep their own licenses in their directories.
   [tools/native-rexglue/gpu-plugin/README.md](tools/native-rexglue/gpu-plugin/README.md)).
 - Python 3 and Node.js (for the logger in `tools/decomp-logging`).
 - RenderDoc for frame captures; Ghidra is optional, via `scripts/ghidra-rpc.sh`.
-- Your own image of the game. Unpacking is described in [ASSET_FORMATS](kb:ASSET_FORMATS).
+- Your own copy of the retail disc, as listed in [Source disc](#source-disc). Unpacking is described in [ASSET_FORMATS](kb:ASSET_FORMATS).
+
+## Source disc
+
+The packages and the probe were built from this retail disc:
+
+| Field | Value |
+|---|---|
+| Edition | Armored Core V `[PAL][EN][Simulator][XGD2][2012][XBOX360]` |
+| Image files | `Armored Core V.dvd` and `Armored Core V.ISO` |
+| Disc type | Licensed (retail) |
+| Disc format | XGD2 |
+| Region code | PAL |
+| Title ID | `4E4D0853` |
+| Media ID | `42AE64E3` |
+| Console firmware | L.T.+ 1.9 (13th wave) |
+| Dashboard | 13599 or lower |
+| PFI / Video | 13th wave |
+
+Other regions, editions and dashboard versions have not been tested. The disc image is never stored in the repository; use your own copy. Before extracting, check that the Title ID and Media ID match the table.
 
 ## Quick start
 
