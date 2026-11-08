@@ -194,5 +194,46 @@ class ReadbackSettingTest(unittest.TestCase):
             self.assertEqual(payload["readback_resolve"], "full", name)
 
 
+class ShaderCacheSettingTest(unittest.TestCase):
+    def test_default_on_adds_nothing(self):
+        values = s.resolve_graphics()
+        self.assertEqual(values["shader_cache"], "on")
+        self.assertNotIn("--store_shaders=false", s.graphics_to_cvars(values))
+        self.assertEqual(s.graphics_to_env(values), {})
+
+    def test_off_disables_stored_shaders_and_driver_cache(self):
+        values = s.resolve_graphics({"shader_cache": "off"})
+        self.assertIn("--store_shaders=false", s.graphics_to_cvars(values))
+        self.assertEqual(s.graphics_to_env(values), {"ACV_VULKAN_PIPELINE_CACHE": ""})
+
+    def test_off_keeps_wide_view_environment(self):
+        values = s.resolve_graphics({"shader_cache": "off", "wide_view": "auto", "resolution": "1920x1200"})
+        env = s.graphics_to_env(values, {"wide_view"})
+        self.assertEqual(env["ACV_VULKAN_PIPELINE_CACHE"], "")
+        self.assertIn("ACV_EXPERIMENTAL_SCENE_ASPECT", env)
+
+    def test_other_values_are_rejected(self):
+        for bad in ("auto", "", True, 0):
+            with self.assertRaises(s.SettingsError):
+                s.resolve_graphics({"shader_cache": bad})
+
+
+class PipelineProcessorAssistTest(unittest.TestCase):
+    def test_flag_only_when_runtime_has_the_cvar(self):
+        values = s.resolve_graphics()
+        self.assertIn("--vulkan_pipeline_processor_assist=false",
+                      s.graphics_to_cvars(values, False, frozenset({"pipeline_processor_assist"})))
+        self.assertFalse([a for a in s.graphics_to_cvars(values, False, frozenset())
+                          if a.startswith("--vulkan_pipeline_processor_assist")])
+
+    def test_runtime_feature_is_detected_from_plugin_strings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "rexgpu-xenos.dll").write_bytes(b"MZ..vulkan_pipeline_processor_assist..")
+            self.assertIn("pipeline_processor_assist", s.runtime_features(tmp))
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "rexgpu-xenos.dll").write_bytes(b"MZ..frame_limit_fps..")
+            self.assertNotIn("pipeline_processor_assist", s.runtime_features(tmp))
+
+
 if __name__ == "__main__":
     unittest.main()

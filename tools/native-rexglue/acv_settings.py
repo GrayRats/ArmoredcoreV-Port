@@ -35,6 +35,9 @@ GRAPHICS_SCHEMA = {
     "readback_resolve": ("full", ("full", "fast")),
     # Graphics API of the game on Windows: vulkan (default) or d3d12 (needs a plugin built with REXGLUE_USE_D3D12).
     "gpu_api": ("vulkan", ("vulkan", "d3d12")),
+    # Shader cache: "on" keeps translated shaders/pipeline descriptions (SDK store_shaders) and the Vulkan
+    # driver pipeline cache (ACV_VULKAN_PIPELINE_CACHE); "off" disables both for the next game start.
+    "shader_cache": ("on", ("on", "off")),
     "asset_read_ahead_mb": ("auto", ("auto", 0, 8, 16, 32, 64)),
 }
 
@@ -444,8 +447,8 @@ def dedupe_options(options):
 def runtime_features(directory):
     """Features of the libraries staged in `directory`, found by their cvar/env names."""
     wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits", "asset_read_ahead_mb"),
-              "librexgpu-xenos.so": ("frame_limit_fps", "D3D12GraphicsSystem"),
-              "rexgpu-xenos.dll": ("frame_limit_fps", "D3D12GraphicsSystem")}
+              "librexgpu-xenos.so": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist"),
+              "rexgpu-xenos.dll": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist")}
     found = set()
     for library, names in wanted.items():
         # A Windows package stages .dll builds of the same libraries; accept either.
@@ -457,6 +460,8 @@ def runtime_features(directory):
         found.add("fidelityfx")
     if "D3D12GraphicsSystem" in found:  # the GPU plugin was built with REXGLUE_USE_D3D12 (Windows builds)
         found.add("d3d12")
+    if "vulkan_pipeline_processor_assist" in found:  # cvar exists in GPU plugins with the pipeline assist switch
+        found.add("pipeline_processor_assist")
     elf = Path(directory) / "acv_linux_probe"
     if not elf.is_file():
         elf = Path(directory) / "acv_windows_probe.exe"
@@ -486,11 +491,16 @@ def _wide_aspect(values, features):
 
 def graphics_to_env(values, features=frozenset()):
     """Environment variables for settings that are not SDK cvars (the wide-view hooks of the host)."""
-    aspect = _wide_aspect(resolve_graphics(values), features)
-    if aspect is None:
-        return {}
-    text = repr(aspect)
-    return {"ACV_EXPERIMENTAL_SCENE_ASPECT": text, "ACV_EXPERIMENTAL_HUD_ASPECT": text}
+    resolved = resolve_graphics(values)
+    env = {}
+    aspect = _wide_aspect(resolved, features)
+    if aspect is not None:
+        text = repr(aspect)
+        env = {"ACV_EXPERIMENTAL_SCENE_ASPECT": text, "ACV_EXPERIMENTAL_HUD_ASPECT": text}
+    # An empty value disables the Vulkan driver pipeline cache (the SDK reads only non-empty paths).
+    if resolved["shader_cache"] == "off":
+        env["ACV_VULKAN_PIPELINE_CACHE"] = ""
+    return env
 
 
 def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
@@ -560,4 +570,11 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
     # Runtimes without D3D12 (Linux) do not get the cvar, so they keep working unchanged.
     if values["gpu_api"] != "vulkan" or "d3d12" in features:
         args.append(f"--gpu_api={values['gpu_api']}")
+    # The default ("on") is the SDK default, so only "off" adds an argument.
+    if values["shader_cache"] == "off":
+        args.append("--store_shaders=false")
+    # Frames must not wait for pipeline compiles on the processor thread (hitches of 0.3-0.7 s while many
+    # pipelines are new). Worker threads and the placeholder path keep the game running. Old runtimes skip it.
+    if "pipeline_processor_assist" in features:
+        args.append("--vulkan_pipeline_processor_assist=false")
     return args

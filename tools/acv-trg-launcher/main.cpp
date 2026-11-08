@@ -321,7 +321,7 @@ struct App {
     if(!reasons.empty() && ui.Section((std::string("Недоступные варианты##")+key).c_str()))ui.Help(reasons.c_str());
   }
   static std::string Label(const std::string& s){
-    static const std::map<std::string,std::string> labels={{"true","Вкл."},{"false","Выкл."},{"windowed","Окно"},{"fullscreen","Полный экран"},{"off","Выкл."},{"game","Как в игре"},{"default","По умолчанию"},{"bilinear","Билинейная"},{"cas","CAS"},{"fsr","FSR 1"},{"rgb_full","RGB Full Range"},{"auto","Авто"},{"full","Полный (точный)"},{"fast","Быстрый (отложенный)"},{"fxaa","FXAA"},{"fxaa_extreme","FXAA усиленное"},{"vulkan","Vulkan"},{"d3d12","DirectX 12"}};
+    static const std::map<std::string,std::string> labels={{"true","Вкл."},{"false","Выкл."},{"windowed","Окно"},{"fullscreen","Полный экран"},{"on","Вкл."},{"off","Выкл."},{"game","Как в игре"},{"default","По умолчанию"},{"bilinear","Билинейная"},{"cas","CAS"},{"fsr","FSR 1"},{"rgb_full","RGB Full Range"},{"auto","Авто"},{"full","Полный (точный)"},{"fast","Быстрый (отложенный)"},{"fxaa","FXAA"},{"fxaa_extreme","FXAA усиленное"},{"vulkan","Vulkan"},{"d3d12","DirectX 12"}};
     auto i=labels.find(s);return i==labels.end()?s:i->second;
   }
   void LaunchPage(trg::Ui& ui){
@@ -502,6 +502,7 @@ struct App {
 #if defined(_WIN32)
     Choice(ui,"gpu_api","Графический API игры","Vulkan — основной путь рендера. DirectX 12 — тот же рендер на D3D12 (нужна Windows-сборка с D3D12-бэкендом и драйвер с поддержкой D3D12). Применяется при следующем запуске игры");
 #endif
+    Choice(ui,"shader_cache","Кэш шейдеров","Вкл.: переведённые шейдеры, описания pipeline и кэш драйвера Vulkan сохраняются и ускоряют следующие запуски. Выкл.: кэши не читаются и не пишутся. Применяется при следующем запуске игры");
     Choice(ui,"anisotropy","Анизотропная фильтрация");Choice(ui,"antialiasing","Сглаживание");Choice(ui,"output_effect","Масштабирование","CAS и FSR 1 интегрированы в эту сборку. Качество картинки не проверено; нужны экспериментальные настройки");ImGui::BeginDisabled(settings["graphics"].value("output_effect","")!="cas");Choice(ui,"sharpness","Резкость CAS");ImGui::EndDisabled();
     ImGui::BeginDisabled(settings["graphics"].value("output_effect","")!="fsr");Choice(ui,"fsr_sharpness","Резкость FSR");ImGui::EndDisabled();
     ui.Spacer();
