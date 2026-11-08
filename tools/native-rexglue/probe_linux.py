@@ -153,6 +153,7 @@ profile_options = [f"--user_language={selected_profile.language}"] if selected_p
 command = [str(exe), "--game_data_root="+str(game), "--user_data_root="+str(user),
            "--cache_root="+str(cache_dir or user / "cache"), "--gpu_plugin=xenos",
            "--log_file="+str(output / "runtime.log"), "--log_level="+args.log_level,
+           "--kernel_expected_missing_files="+",".join(acv_settings.EXPECTED_MISSING_FILES),
            *input_options, *compatibility_options, *config_sdk_options, *profile_options, *settings_options, *args.extra]
 command = [command[0], *acv_settings.dedupe_options(command[1:])]
 report = {"scope": "bounded native launch; duration/alive alone does not establish boot, graphics or gameplay", "command": command, "binary_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(), "duration_limit_seconds": None if args.session else args.seconds, "user_root": str(user)}

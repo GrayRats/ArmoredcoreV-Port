@@ -33,6 +33,8 @@ GRAPHICS_SCHEMA = {
     "texture_cache_retention_s": (180, (30, 60, 120, 180, 300, 600, 800)),
     # CPU readback of render-to-texture results: full = synchronous (exact), fast = previous frame (delayed).
     "readback_resolve": ("full", ("full", "fast")),
+    # Graphics API of the game on Windows: vulkan (default) or d3d12 (needs a plugin built with REXGLUE_USE_D3D12).
+    "gpu_api": ("vulkan", ("vulkan", "d3d12")),
     "asset_read_ahead_mb": ("auto", ("auto", 0, 8, 16, 32, 64)),
 }
 
@@ -417,6 +419,10 @@ def runtime_env(profile):
 
 
 # Runtime errors the project classified as harmless (kb:NATIVE_REXGLUE_LINUX): logged, not fatal.
+# Optional files the guest may open but the retail disc / runtime does not provide (docs/NATIVE_REXGLUE_LINUX.md).
+# A failed open of these is logged as info; the guest still receives STATUS_NO_SUCH_FILE.
+EXPECTED_MISSING_FILES = ("acv_talk_$(voicelang).fev", "acv_bgm_title.fev", "acv_dlc_dlc_se.fev",
+                          "dlc_se.fsb", "ch09.fsb", "system.properties")
 BENIGN_RUNTIME_ERRORS = (re.compile(r"ResolvePath\(system:\\\)\s+failed\s+-\s+device not found"),)
 
 
@@ -438,7 +444,8 @@ def dedupe_options(options):
 def runtime_features(directory):
     """Features of the libraries staged in `directory`, found by their cvar/env names."""
     wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits", "asset_read_ahead_mb"),
-              "librexgpu-xenos.so": ("frame_limit_fps",)}
+              "librexgpu-xenos.so": ("frame_limit_fps", "D3D12GraphicsSystem"),
+              "rexgpu-xenos.dll": ("frame_limit_fps", "D3D12GraphicsSystem")}
     found = set()
     for library, names in wanted.items():
         # A Windows package stages .dll builds of the same libraries; accept either.
@@ -448,6 +455,8 @@ def runtime_features(directory):
             found.update(name for name in names if name.encode() in data)
     if "cas_additional_sharpness" in found:  # cvar exists only when REX_HAS_FIDELITYFX_SDK is compiled in
         found.add("fidelityfx")
+    if "D3D12GraphicsSystem" in found:  # the GPU plugin was built with REXGLUE_USE_D3D12 (Windows builds)
+        found.add("d3d12")
     elf = Path(directory) / "acv_linux_probe"
     if not elf.is_file():
         elf = Path(directory) / "acv_windows_probe.exe"
@@ -545,4 +554,10 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         args.append(f"--asset_read_ahead_mb={read_ahead}")
     elif read_ahead:
         raise SettingsError("Background archive preloading requires an updated runtime")
+    if values["gpu_api"] == "d3d12" and "d3d12" not in features:
+        raise SettingsError("Graphics API 'd3d12' needs the Windows game build (GPU plugin with the D3D12 backend)")
+    # The plugin's "any" prefers D3D12 when it is compiled in, so the Vulkan default must be explicit there.
+    # Runtimes without D3D12 (Linux) do not get the cvar, so they keep working unchanged.
+    if values["gpu_api"] != "vulkan" or "d3d12" in features:
+        args.append(f"--gpu_api={values['gpu_api']}")
     return args

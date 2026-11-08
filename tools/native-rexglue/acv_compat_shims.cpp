@@ -1,7 +1,7 @@
 // Opt-in host-side compatibility shims for the installed ReXGlue SDK. Disabled unless the
 // environment variable named below is set; with it unset every call is forwarded unchanged.
 //
-// ACV_COMPAT_MM_WC_RW: MmAllocatePhysicalMemoryEx rejects a protect value that has neither
+// ACV_COMPAT_MM_WC_RW (default on, 0 = off): MmAllocatePhysicalMemoryEx rejects a protect value that has neither
 // X_PAGE_READONLY (0x2) nor X_PAGE_READWRITE (0x4). ACV passes 0x20000400
 // (X_MEM_LARGE_PAGES | X_PAGE_WRITECOMBINE) for two allocations (0x40000 and 0x800000 bytes),
 // which the SDK refuses and answers with 0. The shim adds X_PAGE_READWRITE to exactly that
@@ -583,7 +583,12 @@ extern "C" REX_FUNC(sub_82B8F618) {
 extern "C" REX_FUNC(__imp__MmAllocatePhysicalMemoryEx) {
   using Fn = void (*)(PPCContext&, uint8_t*);
   static const Fn original = reinterpret_cast<Fn>(AcvNextSymbol("__imp__MmAllocatePhysicalMemoryEx"));
-  static const bool enabled = std::getenv("ACV_COMPAT_MM_WC_RW") != nullptr;
+  // On by default: the protect shape ACV uses is refused by the SDK (returns 0) without it.
+  // ACV_COMPAT_MM_WC_RW=0 turns the shim off.
+  static const bool enabled = [] {
+    const char* v = std::getenv("ACV_COMPAT_MM_WC_RW");
+    return !(v && v[0] == '0' && v[1] == '\0');
+  }();
   static const bool trace = std::getenv("ACV_TRACE_PHYSICAL_ALLOCS") != nullptr;
   static std::atomic<uint32_t> trace_count{0};
   const bool record = trace && trace_count.fetch_add(1, std::memory_order_relaxed) < 128;
@@ -924,13 +929,3 @@ extern "C" REX_FUNC(__imp__NtQueryVolumeInformationFile) {
   }
 }
 
-// Logging only: counts ObReferenceObject calls (SDK export is a one-time-warning stub that does not retain).
-// Lets the paired ObDereferenceObject balance be checked from the trace. Behaviour is unchanged.
-extern "C" REX_FUNC(__imp__ObReferenceObject) {
-  static const HostFn original=NextExport("__imp__ObReferenceObject");
-  static std::atomic<uint32_t> calls{0};
-  const uint32_t object=ctx.r3.u32, lr=uint32_t(ctx.lr);
-  const uint32_t n=++calls;
-  original(ctx,base);
-  if(n<=64) std::fprintf(stderr,"[acv-compat] ObReferenceObject #%u object=%08x lr=%08x\n",n,object,lr);
-}

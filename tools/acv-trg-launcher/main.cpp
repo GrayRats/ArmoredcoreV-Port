@@ -2,9 +2,11 @@
 #include "install.h"
 #include <trg/launcher.h>
 #include <SDL.h>
-#include <SDL_opengl.h>
 #include <imgui_impl_sdl2.h>
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
+#include <SDL_opengl.h>
 #include <imgui_impl_opengl3.h>
+#endif
 #if defined(ACV_LAUNCHER_HAS_VULKAN)
 #include "vulkan_renderer.h"
 #endif
@@ -37,10 +39,16 @@ static constexpr const char* kExecutableHint="Исполняемый файл �
 static constexpr const char* kAboutText="ARMORED CORE V · экспериментальная Linux-сборка.\nTRG Launcher / SDL2 / Dear ImGui.\nИсходные игровые данные предоставляются владельцем игры.";
 #endif
 static std::string Text(const Json& j){return j.is_string()?j.get<std::string>():j.dump();}
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
+static constexpr const char* kDefaultRenderer="opengl";
+#else
+static constexpr const char* kDefaultRenderer="vulkan";
+#endif
+
 static std::string PythonCommand(){
   if(const char* configured=std::getenv("ACV_PYTHON"))if(*configured)return configured;
 #if defined(_WIN32)
-  // Prefer the embeddable Python shipped next to the launcher (wine/python/python.exe in the package).
+  // Prefer the embeddable Python shipped next to the launcher (launcher/python/python.exe in the Windows package).
   wchar_t module[MAX_PATH];
   if(GetModuleFileNameW(nullptr,module,MAX_PATH)){
     fs::path bundled=fs::path(module).parent_path()/"python"/"python.exe";
@@ -313,7 +321,7 @@ struct App {
     if(!reasons.empty() && ui.Section((std::string("Недоступные варианты##")+key).c_str()))ui.Help(reasons.c_str());
   }
   static std::string Label(const std::string& s){
-    static const std::map<std::string,std::string> labels={{"true","Вкл."},{"false","Выкл."},{"windowed","Окно"},{"fullscreen","Полный экран"},{"off","Выкл."},{"game","Как в игре"},{"default","По умолчанию"},{"bilinear","Билинейная"},{"cas","CAS"},{"fsr","FSR 1"},{"rgb_full","RGB Full Range"},{"auto","Авто"},{"full","Полный (точный)"},{"fast","Быстрый (отложенный)"},{"fxaa","FXAA"},{"fxaa_extreme","FXAA усиленное"}};
+    static const std::map<std::string,std::string> labels={{"true","Вкл."},{"false","Выкл."},{"windowed","Окно"},{"fullscreen","Полный экран"},{"off","Выкл."},{"game","Как в игре"},{"default","По умолчанию"},{"bilinear","Билинейная"},{"cas","CAS"},{"fsr","FSR 1"},{"rgb_full","RGB Full Range"},{"auto","Авто"},{"full","Полный (точный)"},{"fast","Быстрый (отложенный)"},{"fxaa","FXAA"},{"fxaa_extreme","FXAA усиленное"},{"vulkan","Vulkan"},{"d3d12","DirectX 12"}};
     auto i=labels.find(s);return i==labels.end()?s:i->second;
   }
   void LaunchPage(trg::Ui& ui){
@@ -491,6 +499,9 @@ struct App {
       ApplyPreset(store.Get("ui.preset","compatibility"));
     }
     ui.EndRows();ui.Help("Производительность: 1× рендер, AF 2×, без постсглаживания, билинейный вывод. Графика: AF 2×, FSR 1, удержание 800 с и увеличенный кэш; включает экспериментальные настройки. Плавность: средние параметры кэша и подгрузки, AF 4×. Наборы сохраняют разрешение и глубину цвета, задают лимит 60 FPS.");
+#if defined(_WIN32)
+    Choice(ui,"gpu_api","Графический API игры","Vulkan — основной путь рендера. DirectX 12 — тот же рендер на D3D12 (нужна Windows-сборка с D3D12-бэкендом и драйвер с поддержкой D3D12). Применяется при следующем запуске игры");
+#endif
     Choice(ui,"anisotropy","Анизотропная фильтрация");Choice(ui,"antialiasing","Сглаживание");Choice(ui,"output_effect","Масштабирование","CAS и FSR 1 интегрированы в эту сборку. Качество картинки не проверено; нужны экспериментальные настройки");ImGui::BeginDisabled(settings["graphics"].value("output_effect","")!="cas");Choice(ui,"sharpness","Резкость CAS");ImGui::EndDisabled();
     ImGui::BeginDisabled(settings["graphics"].value("output_effect","")!="fsr");Choice(ui,"fsr_sharpness","Резкость FSR");ImGui::EndDisabled();
     ui.Spacer();
@@ -532,7 +543,7 @@ int main(int argc,char** argv){
   signal(SIGPIPE,SIG_IGN);
 #endif
   try{
-    fs::path root=FindRoot();std::string profiles,renderer="opengl";int smoke_frames=0;bool autoplay=false;auto arguments=Utf8Arguments(argc,argv);
+    fs::path root=FindRoot();std::string profiles,renderer=kDefaultRenderer;int smoke_frames=0;bool autoplay=false;auto arguments=Utf8Arguments(argc,argv);
     for(size_t i=1;i<arguments.size();++i){const std::string& a=arguments[i];
       if(a=="--profiles-root" && i+1<arguments.size())profiles=arguments[++i];
       else if(a=="--smoke-frames" && i+1<arguments.size())smoke_frames=std::stoi(arguments[++i]);
@@ -545,18 +556,25 @@ int main(int argc,char** argv){
 #if !defined(ACV_LAUNCHER_HAS_VULKAN)
     if(renderer=="vulkan")throw std::runtime_error("This launcher build has no Vulkan SDK support");
 #endif
+#if !defined(ACV_LAUNCHER_HAS_OPENGL)
+    if(renderer=="opengl")throw std::runtime_error("This launcher build has no OpenGL renderer (Windows builds are Vulkan-only)");
+#endif
     SDL_SetMainReady();
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMECONTROLLER)!=0)throw std::runtime_error(SDL_GetError());
     struct SdlCleanup{~SdlCleanup(){SDL_Quit();}} cleanup;
     const bool use_vulkan=renderer=="vulkan";
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
     if(!use_vulkan){SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,3);
       SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_CORE);SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);}
+#endif
     Uint32 window_flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI|(use_vulkan?SDL_WINDOW_VULKAN:SDL_WINDOW_OPENGL);
     SDL_Window* window=SDL_CreateWindow("Armored Core V — Лаунчер",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1120,780,window_flags);
     if(!window)throw std::runtime_error(SDL_GetError());
     struct WinCleanup{SDL_Window* p;~WinCleanup(){SDL_DestroyWindow(p);}} wc{window};
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
     struct GlCleanup{SDL_GLContext p=nullptr;~GlCleanup(){if(p)SDL_GL_DeleteContext(p);}} gc;
     if(!use_vulkan){gc.p=SDL_GL_CreateContext(window);if(!gc.p)throw std::runtime_error(SDL_GetError());SDL_GL_SetSwapInterval(1);}
+#endif
     SDL_SetWindowMinimumSize(window,800,600);
     IMGUI_CHECKVERSION();ImGui::CreateContext();
     struct ImCleanup{~ImCleanup(){ImGui::DestroyContext();}} ic;
@@ -575,13 +593,14 @@ int main(int argc,char** argv){
     }else config.fonts=trg::LoadSystemFonts();
 #if defined(ACV_LAUNCHER_HAS_VULKAN)
     if(use_vulkan)vulkan_renderer.Initialize(window);
-    else
 #endif
-    {
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
+    if(!use_vulkan){
       if(!ImGui_ImplSDL2_InitForOpenGL(window,gc.p))throw std::runtime_error("SDL ImGui initialization failed");
       if(!ImGui_ImplOpenGL3_Init("#version 330 core")){ImGui_ImplSDL2_Shutdown();throw std::runtime_error("OpenGL ImGui initialization failed");}
     }
     struct Backends{bool gl;~Backends(){if(gl){ImGui_ImplOpenGL3_Shutdown();ImGui_ImplSDL2_Shutdown();}}} backends{!use_vulkan};
+#endif
     trg::Launcher launcher(std::move(config));bool quit=false;int frames=0;std::string shown;
     std::cout<<"launcher_ready root="<<root<<" renderer="<<renderer<<" SDL="<<SDL_MAJOR_VERSION<<'.'<<SDL_MINOR_VERSION<<'.'<<SDL_PATCHLEVEL<<" ImGui="<<IMGUI_VERSION<<std::endl;
     while(!quit){
@@ -600,9 +619,9 @@ int main(int argc,char** argv){
       if(shown!=app.message){shown=app.message;launcher.SetStatus(shown,120.0);}
 #if defined(ACV_LAUNCHER_HAS_VULKAN)
       if(use_vulkan){vulkan_renderer.NewFrame();}
-      else{ImGui_ImplOpenGL3_NewFrame();}
-#else
-      ImGui_ImplOpenGL3_NewFrame();
+#endif
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
+      if(!use_vulkan){ImGui_ImplOpenGL3_NewFrame();}
 #endif
       ImGui_ImplSDL2_NewFrame();ImGui::NewFrame();
       auto result=launcher.Frame();if(result==trg::Result::kQuit)quit=true;
@@ -610,9 +629,10 @@ int main(int argc,char** argv){
       ImGui::Render();if(smoke_frames>0 && ImGui::GetDrawData()->TotalVtxCount==0)throw std::runtime_error("Empty UI frame");
 #if defined(ACV_LAUNCHER_HAS_VULKAN)
       if(use_vulkan){if(!vulkan_renderer.Render(ImGui::GetDrawData()))SDL_Delay(10);}
-      else
 #endif
-      {int w=0,h=0;SDL_GL_GetDrawableSize(window,&w,&h);glViewport(0,0,w,h);glClearColor(.05f,.05f,.05f,1);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());SDL_GL_SwapWindow(window);}
+#if defined(ACV_LAUNCHER_HAS_OPENGL)
+      if(!use_vulkan){int w=0,h=0;SDL_GL_GetDrawableSize(window,&w,&h);glViewport(0,0,w,h);glClearColor(.05f,.05f,.05f,1);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());SDL_GL_SwapWindow(window);}
+#endif
       if(smoke_frames>0 && ++frames>=smoke_frames)quit=true;
     }
     std::cout<<"launcher_exit game_pid="<<app.game.pid<<" backend_ready="<<app.ready<<std::endl;

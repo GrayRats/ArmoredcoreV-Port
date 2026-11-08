@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <stdexcept>
@@ -319,10 +320,13 @@ class Game {
     startup.hStdOutput = logfile.get();
     startup.hStdError = logfile.get();
     std::wstring command = CommandLine(args);
+    // The probe resolves relative paths (e.g. gamecontrollerdb.txt) against its working directory, so run it
+    // from its own folder (bin/game), as probe_linux.py does with cwd=exe.parent.
+    const std::wstring working_dir = std::filesystem::path(Wide(args.front())).parent_path().wstring();
     PROCESS_INFORMATION process{};
     if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE,
                         CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED,
-                        nullptr, nullptr, &startup, &process))
+                        nullptr, working_dir.empty() ? nullptr : working_dir.c_str(), &startup, &process))
       throw std::runtime_error(WinError("CreateProcessW game"));
     WinHandle process_handle(process.hProcess), thread_handle(process.hThread);
     if (!AssignProcessToJobObject(job.get(), process_handle.get())) {

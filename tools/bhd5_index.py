@@ -19,8 +19,12 @@ from pathlib import Path
 
 
 def parse(bhd: Path, bdt: Path) -> list[dict[str, int | str]]:
-    data_size = bdt.stat().st_size
-    data_file = bdt.open("rb")
+    return parse_archive(bhd, bdt.stat().st_size, lambda: bdt.open("rb"))
+
+
+def parse_archive(bhd: Path, data_size: int, open_data) -> list[dict[str, int | str]]:
+    """Same as parse(), for an archive given by its size and a factory of readers (e.g. sharded storage)."""
+    data_file = open_data()
     raw = bhd.read_bytes()
     if raw[:4] != b"BHD5":
         raise ValueError("BHD magic mismatch")

@@ -58,6 +58,7 @@ def build(profiles_root, config_path=None, run_id=None):
     profile_options = [f"--user_language={selected.language}"] if selected else []
     options = ["--game_data_root=" + str(acv_paths.GAME), "--user_data_root=" + str(user), "--cache_root=" + str(cache),
                "--gpu_plugin=xenos", "--log_file=" + str(log_file), "--log_level=info",
+               "--kernel_expected_missing_files=" + ",".join(S.EXPECTED_MISSING_FILES),
                *input_options, *COMPAT_FSI, *config_sdk_options, *profile_options, *settings_options]
     options = S.dedupe_options(options)
 

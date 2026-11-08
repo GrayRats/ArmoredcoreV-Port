@@ -13,6 +13,7 @@ Names come from a manifest written by acv_loose_unpack.py (path, size, sha256); 
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import gzip
 import hashlib
@@ -141,6 +142,56 @@ def read_idx(path: Path) -> dict:
     if position != len(data):
         raise ValueError("trailing bytes in shard index")
     return {"version": version, "align": align, "virtual_size": virtual_size, "shards": shards, "extents": extents}
+
+
+class ShardReader:
+    """Read-only, seekable view of the virtual dvdbnd.bdt served from shard files (bytes between extents are zero)."""
+
+    def __init__(self, shard_dir: Path):
+        self.shard_dir = shard_dir
+        self.index = read_idx(shard_dir / "shards.idx")
+        self.size = self.index["virtual_size"]
+        self.extents = self.index["extents"]
+        self._starts = [extent["virtual_offset"] for extent in self.extents]
+        self._files: dict[int, object] = {}
+        self.pos = 0
+
+    def seek(self, offset: int) -> int:
+        self.pos = offset
+        return offset
+
+    def _shard(self, number: int):
+        if number not in self._files:
+            self._files[number] = (self.shard_dir / self.index["shards"][number]["file"]).open("rb")
+        return self._files[number]
+
+    def read(self, size: int) -> bytes:
+        out = bytearray()
+        remaining = max(0, min(size, self.size - self.pos))
+        while remaining > 0:
+            index = bisect.bisect_right(self._starts, self.pos) - 1
+            if index >= 0 and self.pos < self.extents[index]["virtual_offset"] + self.extents[index]["size"]:
+                extent = self.extents[index]
+                within = self.pos - extent["virtual_offset"]
+                count = min(remaining, extent["size"] - within)
+                handle = self._shard(extent["shard"])
+                handle.seek(extent["shard_offset"] + within)
+                chunk = handle.read(count)
+                if len(chunk) != count:
+                    raise ValueError(f"short read from shard {extent['shard']}")
+            else:
+                gap_end = self.extents[index + 1]["virtual_offset"] if index + 1 < len(self.extents) else self.size
+                count = min(remaining, gap_end - self.pos)
+                chunk = bytes(count)
+            out += chunk
+            self.pos += count
+            remaining -= count
+        return bytes(out)
+
+    def close(self) -> None:
+        for handle in self._files.values():
+            handle.close()
+        self._files.clear()
 
 
 def find_gaps(entries: list[dict], total: int) -> list[tuple[int, int]]:
