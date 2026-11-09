@@ -20,12 +20,48 @@ def tolerant_graphics(raw, warnings):
                 warnings.append(f"Сохранённая настройка {key}={value!r} сброшена: {error}")
         return S.resolve_graphics(kept)
 
+def derived_resolution(graphics, display_info):
+    """WxH of the observed monitor (from the last runtime log), for choices that need an explicit resolution."""
+    monitors=[m for m in (display_info or {}).get("monitors",[]) if m.get("width") and m.get("height")]
+    if not monitors: return None
+    chosen=next((m for m in monitors if m.get("index")==graphics.get("monitor")),monitors[0])
+    return f"{int(chosen['width'])}x{int(chosen['height'])}"
+
+def fill_wide_resolution(graphics, display_info, warnings):
+    """The wide view derives its aspect from the resolution, which cannot be 'auto'. Use the monitor's one."""
+    if graphics.get("wide_view")=="auto" and graphics.get("resolution")=="auto":
+        value=derived_resolution(graphics,display_info)
+        if value:
+            graphics["resolution"]=value
+            warnings.append(f"Для расширенного обзора выбрано разрешение монитора {value}")
+
+def explain(error, static):
+    """What the user has to do to make an unselectable option selectable (the raw errors are for developers)."""
+    text=str(error)
+    if "is experimental" in text:
+        return "Экспериментальная настройка: включите «Экспериментальные настройки» на странице «Игра»."+(f" {static.rstrip('.')}." if static else "")
+    if "needs an explicit resolution" in text:
+        return "Нужно явное разрешение: выберите его в списке «Разрешение» (например, 2560x1080) или один раз запустите игру, чтобы лаунчер узнал разрешение монитора."
+    if "outside the supported" in text:
+        return "Отношение сторон выбранного разрешения вне диапазона 1.2–4.0."
+    if "FidelityFX" in text:
+        return "В этой сборке нет FidelityFX: CAS и FSR 1 недоступны."
+    if "present_output_bits" in text:
+        return "Эта сборка не умеет выводить 10 бит."
+    if "scene aspect hooks" in text:
+        return "Эта сборка игры не содержит нужных хуков для расширенного обзора."
+    if "Disable 8-bit output dithering" in text:
+        return "10 бит нельзя совмещать с дизерингом: выключите его."
+    return static or text
+
 def snapshot(root, draft=None):
     path=root/"settings.json"
     saved=S.load_json(path,"settings") if path.exists() else {"schema_version":1,"graphics":{},"launcher":{}}
     if draft is not None: saved=normalize(root,draft)
     warnings=[]
+    display_info=acv_sessions.latest(acv_paths.LOGS,acv_paths.RUNTIME_LOGS)
     saved["graphics"]=tolerant_graphics(saved.get("graphics",{}),warnings)
+    fill_wide_resolution(saved["graphics"],display_info,warnings)
     saved.setdefault("launcher",{})
     # An empty/missing build follows this package; a stale path from another folder is replaced (and reported).
     build,build_status,build_warning=acv_paths.resolve_build(saved["launcher"].get("build"))
@@ -49,6 +85,8 @@ def snapshot(root, draft=None):
                           "color_depth": ("dither",), "dither": ("color_depth",)}
             for dependency in dependencies.get(key,()):
                 candidate[dependency]=saved["graphics"][dependency]
+            if key=="wide_view" and candidate["resolution"]=="auto":
+                candidate["resolution"]=derived_resolution(saved["graphics"],display_info) or "auto"
             # Budget controls must be editable together before Save. Capability
             # checks use a compatible counterpart; Save validates the actual pair.
             if key == "texture_cache_soft_mb":
@@ -62,7 +100,14 @@ def snapshot(root, draft=None):
                 option["selectable"]=True
             except S.SettingsError as e:
                 option["selectable"]=False
-                option.setdefault("reason",str(e))
+                reason=explain(e,option.get("reason"))
+                if "is experimental" in str(e):  # tell about the next blocker too, so one toggle is not a dead end
+                    try:
+                        S.graphics_to_cvars(candidate, True, features)
+                    except S.SettingsError as next_error:
+                        if "is experimental" not in str(next_error):
+                            reason+=" Кроме того: "+explain(next_error,None)
+                option["reason"]=reason
     # What Play/Save would do with the saved choices on this build: degraded choices become warnings, a conflict
     # is reported as graphics_error instead of failing the whole snapshot.
     graphics_error=None
@@ -78,7 +123,7 @@ def snapshot(root, draft=None):
     return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"build_status":build_status,"build_warning":build_warning,"platform":"windows" if os.name=="nt" else "linux","settings":saved,"profiles":profiles,"capabilities":caps,
             "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"features_source":features_source,"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
-            "display_info":acv_sessions.latest(acv_paths.LOGS,acv_paths.RUNTIME_LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
+            "display_info":display_info,"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
             "profiles_root":str(root),"settings_path":str(path),"logs_root":str(acv_paths.LOGS),"game_logs_root":str(acv_paths.ROOT/"logs"),"shm":acv_shm.status()}
 
 def normalize(root,doc):
@@ -110,6 +155,7 @@ def save(root,doc):
         available=acv_mangohud.availability()
         if not available["available"]:raise ValueError(available["reason"])
     warnings=[]
+    fill_wide_resolution(graphics,acv_sessions.latest(acv_paths.LOGS,acv_paths.RUNTIME_LOGS),warnings)
     # Lenient: a choice this build cannot honour degrades with a warning; real conflicts still refuse to save.
     features=S.runtime_features(Path(launcher["build"]).parent)
     S.graphics_to_cvars(graphics,launcher.get("allow_experimental",False),features,warnings)
