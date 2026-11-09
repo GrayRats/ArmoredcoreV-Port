@@ -570,6 +570,10 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
     # Runtimes without D3D12 (Linux) do not get the cvar, so they keep working unchanged.
     if values["gpu_api"] != "vulkan" or "d3d12" in features:
         args.append(f"--gpu_api={values['gpu_api']}")
+    if values["gpu_api"] == "d3d12":
+        # COMPAT_FSI only selects the Vulkan interlock path. The D3D12 default on non-Intel GPUs is host render
+        # targets ("rtv"), the FBO-style path that gives a black gameplay picture; ROV is its D3D12 counterpart.
+        args.append("--render_target_path_d3d12=rov")
     # The default ("on") is the SDK default, so only "off" adds an argument.
     if values["shader_cache"] == "off":
         args.append("--store_shaders=false")
