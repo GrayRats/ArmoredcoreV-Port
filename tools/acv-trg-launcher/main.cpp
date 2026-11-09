@@ -30,8 +30,8 @@ static std::string AsUtf8(const fs::path& value){return value.u8string();}
 #if defined(_WIN32)
 static constexpr const char* kLauncherPlatform="WINDOWS";
 static constexpr const char* kExecutableLabel="Исполняемый файл Windows";
-static constexpr const char* kExecutableHint="Выберите Windows host executable для этой сборки; игровой Windows runtime bridge ещё не готов.";
-static constexpr const char* kAboutText="ARMORED CORE V · Windows launcher UI / Vulkan renderer preview.\nИгровой Windows runtime bridge ещё не готов.\nИсходные игровые данные предоставляются владельцем игры.";
+static constexpr const char* kExecutableHint="Исполняемый файл — программа acv_windows_probe.exe из папки bin/game. Нажмите «Игра из этого пакета», чтобы выбрать комплектную сборку, или «Обзор…» для другой Windows-сборки.";
+static constexpr const char* kAboutText="ARMORED CORE V · Windows-сборка.\nTRG Launcher / SDL2 / Dear ImGui / Vulkan.\nИсходные игровые данные предоставляются владельцем игры.";
 #else
 static constexpr const char* kLauncherPlatform="LINUX";
 static constexpr const char* kExecutableLabel="Исполняемый файл Linux";
@@ -101,7 +101,7 @@ struct App {
   std::string edited_profile;
   std::chrono::steady_clock::time_point changed_at;
   std::future<Json> work;
-  enum class Job {None,Snapshot,Save,Play,Reset,Profile,Last,Preview,Backups,Preset};
+  enum class Job {None,Snapshot,Save,Play,Reset,Profile,Last,Preview,Backups,Preset,Diagnostics};
   Job job=Job::None;
   acv::Game game;trg::Task install;
   std::string message="Чтение настроек…",session_log;
@@ -185,10 +185,7 @@ struct App {
   void StartGame(){
 #if defined(_WIN32)
     if(game.pid)throw std::runtime_error("Игра уже запущена");
-    fs::path probe=root/"bin/game/acv_windows_probe.exe";
     std::error_code ignored;
-    if(!fs::is_regular_file(probe,ignored))
-      throw std::runtime_error("Windows-сборка игры не найдена: bin/game/acv_windows_probe.exe. Соберите её или выберите exe в «Выбор игры».");
     fs::path logs=root/"logs";fs::create_directories(logs,ignored);
     auto stamp=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     session_log=AsUtf8(logs/("trg-session-"+std::to_string(stamp)+".log"));
@@ -196,6 +193,11 @@ struct App {
     // (backend.py launch-spec): SDK/graphics cvars, input layout (SDK default mnk_mode=false disables keyboard/mouse),
     // pilot name and gamertag, DLC/system mounts, profile XUID. Without them the probe hangs or misbehaves.
     Json spec=Execute(Bridge("launch-spec"),"");
+    // The build comes from the same rule as the settings page (an empty or stale saved path follows this package).
+    fs::path probe=AsPath(spec.value("executable",AsUtf8(root/"bin/game/acv_windows_probe.exe")));
+    if(!fs::is_regular_file(probe,ignored))
+      throw std::runtime_error("Windows-сборка игры не найдена: "+AsUtf8(probe)+". Выберите exe в «Выбор игры» или «Игра из этого пакета».");
+    for(const auto& w:spec.value("warnings",Json::array()))Log("launch_warning "+Text(w));
     std::vector<std::string> args{AsUtf8(probe)};
     for(const auto& a:spec.at("args"))args.push_back(a.get<std::string>());
     for(const auto& item:spec.at("env").items())  // the child inherits this process environment
@@ -250,6 +252,12 @@ struct App {
         Json result=work.get();
         if(finished==Job::Last){last=std::move(result);}
         else if(finished==Job::Backups){backups=std::move(result);message=backups.empty()?"Резервных копий пока нет":"Список копий обновлён";}
+        else if(finished==Job::Diagnostics){
+          ImGui::SetClipboardText(result.value("text","").c_str());
+          std::string file=result.contains("file") && result["file"].is_string()?result["file"].get<std::string>():"";
+          message=file.empty()?"Диагностика скопирована в буфер обмена":"Диагностика скопирована в буфер обмена и сохранена: "+file;
+          Log("diagnostics "+file);
+        }
         else if(finished==Job::Preset){
           snapshot=std::move(result);settings=snapshot.at("settings");preview_input=nullptr;
           message="Набор применён к черновику. Сохраните изменения для запуска.";
@@ -295,8 +303,8 @@ struct App {
     if(Busy() || Installing())return {false,"Дождитесь завершения операции",0};
 #if defined(_WIN32)
     if(game.pid)return {false,"Игра уже запущена",0};
-    if(!std::filesystem::is_regular_file(root/"bin/game/acv_windows_probe.exe"))
-      return {false,"Windows-сборка игры не найдена: bin/game/acv_windows_probe.exe",0};
+    if(!snapshot.value("build_exists",false))
+      return {false,"Windows-сборка игры не найдена: "+settings.at("launcher").value("build",std::string("bin/game/acv_windows_probe.exe")),0};
     if(!snapshot.value("game_data_exists",false))return {false,"Файлы игры отсутствуют или не соответствуют проверенному набору",0};
     if(Selected().empty())return {false,"Создайте или выберите профиль",1};
     return {};
@@ -349,22 +357,34 @@ struct App {
     ui.EndRows();
     ui.Help(kExecutableHint);
     ui.Help(("Файл комплектной игры: "+snapshot.at("bundled_build").get<std::string>()).c_str());
+    {
+      // What Play will do differently from the saved choices on this build (degraded options, a replaced build path).
+      std::string notes;
+      for(const auto& w:snapshot.value("warnings",Json::array()))notes+="• "+Text(w)+"\n";
+      if(snapshot.contains("graphics_error") && snapshot["graphics_error"].is_string())notes+="• Ошибка настроек: "+snapshot["graphics_error"].get<std::string>()+"\n";
+      if(!notes.empty())ui.Help(notes.c_str());
+    }
     if(ui.ButtonRow("Выбор игры",kExecutableLabel,"Обзор…")){auto path=trg::BrowseForFile("Выберите исполняемый файл игры");if(!path.empty())settings["launcher"]["build"]=path;}
     if(ui.ButtonRow("Игра из этого пакета","Вернуть путь к комплектной сборке","Выбрать"))settings["launcher"]["build"]=snapshot.at("bundled_build");
 #if !defined(_WIN32)
     ui.Choice("Оконная система","X11 проверен; Wayland зависит от сборки","launcher.video_driver","x11",{{"x11","X11"},{"wayland","Wayland"},{"auto","Авто"}});
 #endif
     ui.Choice("Управление","Раскладки: input_keyboard.ini и input_gamepad.ini. «Клавиатура» отключает мышь; «Геймпад» использует подключённый контроллер SDL. Применяется при следующем запуске игры","launcher.input_mode","keyboard_mouse",{{"keyboard_mouse","Клавиатура и мышь"},{"keyboard","Клавиатура"},{"gamepad","Геймпад"}});
+#if !defined(_WIN32)  // both rows read Linux-only sources (/proc/bus/input, the MangoHud package)
     if(ui.ButtonRow("Контроллер",snapshot.at("input").value("status","").c_str(),"Обновить") && !Busy())Submit(Job::Snapshot,Bridge("snapshot"));
     ui.Toggle("MangoHud в игре","Guest — частота подачи кадров игрой, среднее за 300 кадров; счётчик Host FPS отключён (считает показы окна). Применяется при следующем запуске","launcher.mangohud",false,"Выкл.","Вкл.");
     ui.Help(snapshot.at("mangohud").at("reason").get<std::string>().c_str());
-#if !defined(_WIN32)
     ui.Toggle("Host FPS (MangoHud)","Счётчик показов окна: повторяет последний кадр игры, не равен FPS игры. Выключено по умолчанию. Применяется при следующем запуске с MangoHud","launcher.mangohud_host_fps",false,"Выкл.","Вкл.");
 #endif
     ui.Toggle("Экспериментальные настройки","Применять только доступные выбранной сборке варианты","launcher.allow_experimental",false,"Выкл.","Вкл.");
     if(ui.ButtonRow("Обновить состояние","Обновить сведения об игре, сохранив текущие правки","Обновить"))Submit(Job::Snapshot,Bridge("snapshot"));
     if(ui.ConfirmRow("Отменить правки","Вернуть последние сохранённые настройки","Вернуть","Отменить несохранённые изменения?","Вернуть","Отмена")){settings=saved_settings;preview_input=nullptr;}
     ui.FolderRow("Журналы игры","Открыть каталог журналов","Открыть",snapshot.at("logs_root"));
+#if defined(_WIN32)  // runtime-*.log and trg-session-*.log live in the package, the launcher journal in %LOCALAPPDATA%
+    if(snapshot.contains("game_logs_root"))ui.FolderRow("Журналы сессий","Журналы запусков игры: runtime-*.log, trg-session-*.log, diagnostics-*.txt","Открыть",snapshot.at("game_logs_root"));
+#endif
+    if(ui.ButtonRow("Диагностика","Версии, сборка, возможности, настройки, аргументы запуска и конец журналов: в буфер обмена и в logs/diagnostics-*.txt","Скопировать") && !Busy() && !Installing() && ready)
+      Submit(Job::Diagnostics,Bridge("diagnostics"));
     if(ui.ButtonRow("Последняя сессия","Запрошенные и фактические параметры, причины fallback","Показать"))Submit(Job::Last,Cli({"last-run"}));
     if(last.is_object()){
       if(last.contains("applied") && last["applied"].is_object()){

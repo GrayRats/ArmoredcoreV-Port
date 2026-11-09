@@ -43,6 +43,7 @@ echo "built: $OUT/rexgpu-xenos.dll"
 [ -n "$PACKAGE" ] || exit 0
 GAME="$PACKAGE/bin/game"
 READOBJ="$MSYS/ucrt64/bin/llvm-readobj.exe"
+[ -x "$READOBJ" ] || READOBJ="$MSYS/clang64/bin/llvm-readobj.exe"  # the ucrt64 clang package does not ship it
 imports() { "$READOBJ" --coff-imports "$1" | awk -v L="$2" 'index($0,"Name: " L){f=1;next} /^Import \{/{f=0} f&&/Symbol: /{sub(/.*Symbol: /,""); sub(/ \(.*/,""); print}' | sort -u; }
 exports() { "$READOBJ" --coff-exports "$1" | awk '/Name: /{sub(/.*Name: /,""); print}' | sort -u; }
 # Every symbol the new plugin imports must exist in the package's DLLs (link-level ABI check; it cannot see layouts).
