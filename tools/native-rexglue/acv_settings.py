@@ -515,8 +515,10 @@ def write_capabilities(directory):
 def scan_runtime_features(directory):
     """Features of the libraries staged in `directory`, found by their cvar/env names."""
     wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits", "asset_read_ahead_mb"),
-              "librexgpu-xenos.so": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist"),
-              "rexgpu-xenos.dll": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist")}
+              "librexgpu-xenos.so": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist",
+                                     "d3d12_pipeline_processor_assist"),
+              "rexgpu-xenos.dll": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist",
+                                   "d3d12_pipeline_processor_assist")}
     found = set()
     for library, names in wanted.items():
         # A Windows package stages .dll builds of the same libraries; accept either.
@@ -670,4 +672,8 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset(), wa
     # pipelines are new). Worker threads and the placeholder path keep the game running. Old runtimes skip it.
     if "pipeline_processor_assist" in features:
         args.append("--vulkan_pipeline_processor_assist=false")
+    # The D3D12 backend drains its pipeline queue on the processor thread at every submission end unless told
+    # not to. Only runtimes that define the cvar get the argument (an unknown cvar would be rejected).
+    if values["gpu_api"] == "d3d12" and "d3d12_pipeline_processor_assist" in features:
+        args.append("--d3d12_pipeline_processor_assist=false")
     return args

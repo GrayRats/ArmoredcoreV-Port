@@ -53,6 +53,15 @@ class LenientSettings(unittest.TestCase):
         self.assertIn("--present_effect=fsr", args)
         self.assertIn("--frame_limit_fps=30", args)
 
+    def test_d3d12_pipeline_assist_is_passed_only_when_the_runtime_has_it(self):
+        base = {"d3d12"}
+        args, _ = cvars({"gpu_api": "d3d12"}, base)
+        self.assertFalse(any("d3d12_pipeline_processor_assist" in a for a in args))
+        args, _ = cvars({"gpu_api": "d3d12"}, base | {"d3d12_pipeline_processor_assist"})
+        self.assertIn("--d3d12_pipeline_processor_assist=false", args)
+        args, _ = cvars({"gpu_api": "vulkan"}, base | {"d3d12_pipeline_processor_assist"})
+        self.assertFalse(any("d3d12_pipeline_processor_assist" in a for a in args))
+
     def test_real_conflicts_still_raise(self):
         with self.assertRaises(S.SettingsError):
             S.graphics_to_cvars({"color_depth": 10, "dither": True}, True, {"present_output_bits"}, [])

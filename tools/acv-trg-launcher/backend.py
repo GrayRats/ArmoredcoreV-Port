@@ -75,7 +75,7 @@ def snapshot(root, draft=None):
         install=acv_install.verify(acv_paths.GAME,full=False)
     except (ValueError,OSError) as error:
         install={"ok":False,"reason":str(error)}
-    return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"build_status":build_status,"build_warning":build_warning,"settings":saved,"profiles":profiles,"capabilities":caps,
+    return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"build_status":build_status,"build_warning":build_warning,"platform":"windows" if os.name=="nt" else "linux","settings":saved,"profiles":profiles,"capabilities":caps,
             "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"features_source":features_source,"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
             "display_info":acv_sessions.latest(acv_paths.LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
@@ -124,6 +124,60 @@ def save(root,doc):
     write_input_options(root,launcher["input_mode"])
     return {"ok":True,"warnings":list(dict.fromkeys(warnings))}
 
+def _tail(path,limit=8192):
+    """Last `limit` bytes of a text file as text ('' when unreadable)."""
+    try:
+        with Path(path).open("rb") as stream:
+            stream.seek(0,os.SEEK_END); size=stream.tell(); stream.seek(max(0,size-limit))
+            data=stream.read()
+    except OSError:
+        return ""
+    text=data.decode("utf-8",errors="replace")
+    return text if size<=limit else "[...]\n"+text.split("\n",1)[-1]
+
+def _newest(folder,pattern):
+    try:
+        return max(Path(folder).glob(pattern),key=lambda p:p.stat().st_mtime,default=None)
+    except OSError:
+        return None
+
+def diagnostics(root):
+    """Support report for a bug: versions, build and features, saved settings, launch arguments and log tails.
+    Written to <package>/logs/diagnostics-<time>.txt and returned as text for the clipboard."""
+    import datetime, platform
+    snap=snapshot(root); settings=snap["settings"]; build=Path(settings["launcher"]["build"]); folder=build.parent
+    lines=[f"ACV diagnostics {datetime.datetime.now().astimezone().isoformat(timespec='seconds')}",
+           f"os: {platform.platform()} ({platform.machine()})",f"python: {platform.python_version()}",f"package root: {acv_paths.ROOT}"]
+    try:
+        package=json.loads((acv_paths.ROOT/"acv-package.json").read_text(encoding="utf-8"))
+        lines.append("package: "+", ".join(f"{k}={package[k]}" for k in ("version","release_name","patch_level") if k in package))
+    except (OSError,ValueError):
+        lines.append("package: acv-package.json not found (development tree)")
+    lines+=["","[build]",f"path: {build}",f"status: {snap['build_status']}",f"exists: {snap['build_exists']}",
+            f"features ({snap['features_source']}): {', '.join(snap['features']) or '-'}"]
+    for name in S._CAPABILITY_BINARIES:
+        path=folder/name
+        if path.is_file():
+            lines.append(f"  {name}: {path.stat().st_size} bytes"+("" if path.stat().st_size>64<<20 else f", sha256 {S._sha256_file(path)[:16]}"))
+    lines+=["","[warnings]"]+(snap["warnings"] or ["-"])
+    if snap["graphics_error"]: lines.append("graphics error: "+snap["graphics_error"])
+    lines+=["","[settings]",json.dumps(settings,ensure_ascii=False,indent=1,sort_keys=True),"","[launch arguments]"]
+    try:
+        spec=acv_launch_spec.build(root); lines+=list(spec["args"])+["env keys: "+", ".join(sorted(spec["env"]))]
+    except (ValueError,OSError,KeyError,S.SettingsError,P.ProfileBusy) as error:
+        lines.append(f"unavailable: {error}")
+    for title,path in (("runtime log",_newest(acv_paths.ROOT/"logs","runtime-*.log")),
+                       ("game session log",_newest(acv_paths.ROOT/"logs","trg-session-*.log")),
+                       ("launcher journal",acv_paths.LOGS/"acv-trg-launcher.log")):
+        lines+=["",f"[{title}: {path}]",_tail(path) if path else ""]
+    text="\n".join(lines)+"\n"
+    target=acv_paths.ROOT/"logs"/f"diagnostics-{datetime.datetime.now().strftime('%Y%m%dT%H%M%S')}.txt"
+    try:
+        target.parent.mkdir(parents=True,exist_ok=True); target.write_text(text,encoding="utf-8")
+    except OSError:
+        target=None
+    return {"text":text,"file":str(target) if target else None}
+
 def write_input_options(root,mode):
     """Probe cvars for the saved input mode, one per line. The Windows launcher has no Python call on Play,
     so it reads this file (SDK default mnk_mode=false leaves keyboard/mouse disabled without these options)."""
@@ -133,7 +187,7 @@ def write_input_options(root,mode):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--profiles-root",type=Path,default=acv_paths.PROFILES)
-    ap.add_argument("command",choices=["snapshot","preview","save","preset","reset-graphics","verify-install","publish-install","launch-spec"]);ap.add_argument("--preset",choices=tuple(S.GRAPHICS_PRESETS));ap.add_argument("--staging",type=Path);a=ap.parse_args();root=a.profiles_root.resolve()
+    ap.add_argument("command",choices=["snapshot","preview","save","preset","reset-graphics","verify-install","publish-install","launch-spec","diagnostics"]);ap.add_argument("--preset",choices=tuple(S.GRAPHICS_PRESETS));ap.add_argument("--staging",type=Path);a=ap.parse_args();root=a.profiles_root.resolve()
     try:
         if a.command=="snapshot":out=snapshot(root)
         elif a.command=="preview":out=snapshot(root,json.load(sys.stdin))
@@ -143,6 +197,7 @@ def main():
             out=snapshot(root,doc)
         elif a.command=="save":out=save(root,json.load(sys.stdin))
         elif a.command=="launch-spec":out=acv_launch_spec.build(root)
+        elif a.command=="diagnostics":out=diagnostics(root)
         elif a.command in ("verify-install","publish-install"):
             if a.staging is None:raise ValueError("staging is required")
             out=acv_install.verify(a.staging) if a.command=="verify-install" else acv_install.publish(a.staging,acv_paths.GAME)
