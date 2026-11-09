@@ -60,6 +60,9 @@ def build(profiles_root, config_path=None, run_id=None):
                "--gpu_plugin=xenos", "--log_file=" + str(log_file), "--log_level=info",
                "--kernel_expected_missing_files=" + ",".join(S.EXPECTED_MISSING_FILES),
                *input_options, *COMPAT_FSI, *config_sdk_options, *profile_options, *settings_options]
+    # The launcher picks ROV for D3D12; an explicit [sdk] render_target_path_d3d12 (e.g. rtv for a bisect) wins.
+    if any(o.startswith("--render_target_path_d3d12=") for o in config_sdk_options):
+        options = [o for o in options if not (o.startswith("--render_target_path_d3d12=") and o in settings_options)]
     options = S.dedupe_options(options)
 
     gamma = config.get("compat", "display_gamma_type", fallback=None)
