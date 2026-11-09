@@ -4,12 +4,14 @@
 Usage: refresh_package_manifest.py PACKAGE [--add REL ...] [--version X --release-name NAME --patch-level TEXT]
 Game data (data/game) is verified separately by acv_install and is not listed here.
 """
-import argparse, datetime, hashlib, json
+import argparse, datetime, hashlib, json, sys
 from pathlib import Path
 
 ap = argparse.ArgumentParser()
 ap.add_argument("package", type=Path)
 ap.add_argument("--add", nargs="*", default=[])
+ap.add_argument("--capabilities", action="store_true",
+                help="regenerate bin/game/acv-capabilities.json and list it in the manifest")
 ap.add_argument("--version"); ap.add_argument("--release-name"); ap.add_argument("--patch-level")
 a = ap.parse_args()
 p = a.package.resolve()
@@ -19,6 +21,11 @@ files = m["files"]
 def record(path):
     data = path.read_bytes()
     return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+if a.capabilities:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import acv_settings
+    acv_settings.write_capabilities(p / "bin/game")
+    if "bin/game/acv-capabilities.json" not in a.add: a.add.append("bin/game/acv-capabilities.json")
 dropped = [n for n in files if not (p / n).is_file()]
 for n in dropped: del files[n]
 for n in a.add: files[n] = record(p / n)

@@ -4,7 +4,7 @@
 Precedence, lowest to highest: built-in defaults -> saved settings -> explicit launcher
 choice -> per-launch overrides. Unsupported values are rejected, never clamped silently.
 """
-import configparser, copy, ctypes, json, os, re, shutil, subprocess, tempfile, uuid
+import configparser, copy, ctypes, hashlib, json, os, re, shutil, subprocess, tempfile, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -449,7 +449,70 @@ def dedupe_options(options):
     return [o for i, o in enumerate(options) if not o.startswith("--") or last[o.split("=", 1)[0]] == i]
 
 
+CAPABILITIES_FILE = "acv-capabilities.json"
+_CAPABILITY_BINARIES = ("librexruntime.so", "librexgpu-xenos.so", "librexruntime.dll", "rexgpu-xenos.dll",
+                        "acv_linux_probe", "acv_windows_probe.exe")
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _manifest_features(directory):
+    """Features recorded in acv-capabilities.json, or None when it is absent, malformed or stale.
+    It is trusted only while every staged binary still matches (size and mtime, or sha256 after a copy)."""
+    directory = Path(directory)
+    try:
+        doc = json.loads((directory / CAPABILITIES_FILE).read_text(encoding="utf-8"))
+        files, features = doc["files"], doc["features"]
+        if doc["schema_version"] != 1 or not isinstance(files, dict) or \
+                not isinstance(features, list) or not all(isinstance(f, str) for f in features):
+            return None
+        if {n for n in _CAPABILITY_BINARIES if (directory / n).is_file()} != set(files):
+            return None  # a binary was added or removed since the manifest was written
+        for name, info in files.items():
+            stat = (directory / name).stat()
+            if stat.st_size != info["size"]:
+                return None
+            if stat.st_mtime_ns != info["mtime_ns"] and _sha256_file(directory / name) != info["sha256"]:
+                return None
+        return set(features)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def runtime_features_info(directory):
+    """(features, source): the recorded manifest when it matches the binaries, otherwise a scan of them."""
+    recorded = _manifest_features(directory)
+    if recorded is not None:
+        return recorded, "manifest"
+    return scan_runtime_features(directory), "scan"
+
+
 def runtime_features(directory):
+    """Features of the runtime staged in `directory` (see runtime_features_info)."""
+    return runtime_features_info(directory)[0]
+
+
+def write_capabilities(directory):
+    """Record the scanned features next to the binaries (run when a package is assembled)."""
+    directory = Path(directory)
+    files = {}
+    for name in _CAPABILITY_BINARIES:
+        path = directory / name
+        if path.is_file():
+            stat = path.stat()
+            files[name] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "sha256": _sha256_file(path)}
+    doc = {"schema_version": 1, "files": files, "features": sorted(scan_runtime_features(directory))}
+    save_json_atomic(directory / CAPABILITIES_FILE, doc)
+    return doc
+
+
+def scan_runtime_features(directory):
     """Features of the libraries staged in `directory`, found by their cvar/env names."""
     wanted = {"librexruntime.so": ("ACV_XUID", "cas_additional_sharpness", "present_output_bits", "asset_read_ahead_mb"),
               "librexgpu-xenos.so": ("frame_limit_fps", "D3D12GraphicsSystem", "vulkan_pipeline_processor_assist"),

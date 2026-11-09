@@ -38,7 +38,7 @@ def snapshot(root, draft=None):
     profiles=[dataclasses.asdict(p) for p in P.ProfileStore(root).list()]
     if profiles: saved["launcher"].setdefault("profile",profiles[0]["uuid"])
     exe=Path(saved["launcher"]["build"])
-    features=S.runtime_features(exe.parent)
+    features,features_source=S.runtime_features_info(exe.parent)
     memory=S.host_memory_info()
     caps=S.capabilities()
     for key, cap in caps.items():
@@ -76,7 +76,7 @@ def snapshot(root, draft=None):
     except (ValueError,OSError) as error:
         install={"ok":False,"reason":str(error)}
     return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"build_status":build_status,"build_warning":build_warning,"settings":saved,"profiles":profiles,"capabilities":caps,
-            "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"build_exists":exe.is_file(),
+            "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"features_source":features_source,"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
             "display_info":acv_sessions.latest(acv_paths.LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
             "profiles_root":str(root),"settings_path":str(path),"logs_root":str(acv_paths.LOGS),"shm":acv_shm.status()}
