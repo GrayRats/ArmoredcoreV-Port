@@ -191,7 +191,9 @@ def graphics_presets(memory=None):
     return presets
 
 
-def apply_graphics_preset(document, name, features, memory):
+def apply_graphics_preset(document, name, features, memory, lenient=False):
+    """Apply a preset. A preset that needs FidelityFX/FSR 1 raises, unless `lenient`: then it is applied
+    with the bilinear output so the other quality settings of the preset still take effect."""
     presets = graphics_presets(memory)
     if name not in presets: raise SettingsError('Unknown graphics preset')
     result = copy.deepcopy(document)
@@ -200,8 +202,11 @@ def apply_graphics_preset(document, name, features, memory):
     if result['graphics']['color_depth'] == 10: result['graphics']['dither'] = False
     launcher = result.setdefault('launcher', {})
     if name == 'quality':
-        if 'fidelityfx' not in features: raise SettingsError('«Графика» требует runtime с FidelityFX / FSR 1')
-        launcher['allow_experimental'] = True
+        if 'fidelityfx' not in features:
+            if not lenient: raise SettingsError('«Графика» требует runtime с FidelityFX / FSR 1')
+            result['graphics'].update(output_effect='bilinear', fsr_sharpness='default')
+        else:
+            launcher['allow_experimental'] = True
     graphics_to_cvars(result['graphics'], launcher.get('allow_experimental', False), features)
     return result
 
@@ -474,11 +479,15 @@ def runtime_features(directory):
     return found
 
 
-def _wide_aspect(values, features):
-    """Aspect for wide_view=auto, or None when disabled or equal to the native 16:9."""
+def _wide_aspect(values, features, warnings=None):
+    """Aspect for wide_view=auto, or None when disabled or equal to the native 16:9.
+    With a `warnings` list a host build without the hooks degrades to "off" instead of raising."""
     if values["wide_view"] != "auto":
         return None
     if "wide_view" not in features:
+        if warnings is not None:
+            warnings.append("wide_view отключён: сборка игры не содержит нужных хуков")
+            return None
         raise SettingsError("wide_view needs a host build with the scene aspect hooks")
     if values["resolution"] == "auto":
         raise SettingsError("wide_view=auto needs an explicit resolution to derive the aspect from")
@@ -489,11 +498,11 @@ def _wide_aspect(values, features):
     return aspect if abs(aspect - 16 / 9) > 1e-3 else None  # 16:9 needs no change
 
 
-def graphics_to_env(values, features=frozenset()):
+def graphics_to_env(values, features=frozenset(), warnings=None):
     """Environment variables for settings that are not SDK cvars (the wide-view hooks of the host)."""
     resolved = resolve_graphics(values)
     env = {}
-    aspect = _wide_aspect(resolved, features)
+    aspect = _wide_aspect(resolved, features, warnings)
     if aspect is not None:
         text = repr(aspect)
         env = {"ACV_EXPERIMENTAL_SCENE_ASPECT": text, "ACV_EXPERIMENTAL_HUD_ASPECT": text}
@@ -503,11 +512,16 @@ def graphics_to_env(values, features=frozenset()):
     return env
 
 
-def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
+def graphics_to_cvars(values, allow_experimental=False, features=frozenset(), warnings=None):
     """Translate resolved graphics settings into SDK --cvar=value arguments.
     Unavailable values raise; experimental ones need allow_experimental.
-    `features` names runtime capabilities (e.g. "frame_limit_fps") detected in the staged runtime."""
-    values = resolve_graphics(values)
+    `features` names runtime capabilities (e.g. "frame_limit_fps") detected in the staged runtime.
+    Strict by default. Pass a `warnings` list to be lenient: a choice that the staged runtime cannot honour
+    (10-bit output, CAS/FSR, a frame limit, wide view, DirectX 12) then degrades to the supported default and a
+    message is appended, so one unsupported option no longer makes every other option unselectable.
+    Conflicting or invalid choices still raise."""
+    values = dict(resolve_graphics(values))
+    lenient = warnings is not None
     for key, value in values.items():
         if (key, value) in _UNAVAILABLE:
             raise SettingsError(f"{key}={value!r} is unavailable: {_UNAVAILABLE[(key, value)]}")
@@ -522,7 +536,7 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
             f"--present_dither={str(values['dither']).lower()}"]
     # Guest video mode and output window size are independent. Preserve the native 16:9
     # guest mode while the presenter fits it into the selected host rectangle.
-    args += ["--present_letterbox=" + str(_wide_aspect(values, features) is None).lower(), "--present_safe_area_x=100", "--present_safe_area_y=100",
+    args += ["--present_letterbox=" + str(_wide_aspect(values, features, warnings) is None).lower(), "--present_safe_area_x=100", "--present_safe_area_y=100",
              "--resolution=1280x720", "--video_mode_width=1280", "--video_mode_height=720",
              "--vulkan_allow_present_mode_immediate=" + str(not values["vsync"]).lower(),
              "--vulkan_allow_present_mode_mailbox=" + str(not values["vsync"]).lower(),
@@ -531,9 +545,16 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
     if "present_output_bits" in features:
         args.append(f"--present_output_bits={values['color_depth']}")
     elif values["color_depth"] != 8:
-        raise SettingsError("10-bit output requires a runtime with present_output_bits support")
+        if not lenient:
+            raise SettingsError("10-bit output requires a runtime with present_output_bits support")
+        warnings.append("10-бит вывод отключён: эта сборка поддерживает только 8 бит")
+        values["color_depth"] = 8
     if values["color_depth"] == 10 and values["dither"]:
         raise SettingsError("Disable 8-bit output dithering before requesting 10-bit output")
+    if values["output_effect"] != "bilinear" and "fidelityfx" not in features and lenient:
+        warnings.append(f"Масштабирование {values['output_effect'].upper()} недоступно в этой сборке: используется билинейное")
+        values["output_effect"] = "bilinear"
+        args = [("--present_effect=bilinear" if a.startswith("--present_effect=") else a) for a in args]
     if values["output_effect"] != "bilinear":
         if "fidelityfx" not in features:
             raise SettingsError(f"output_effect={values['output_effect']!r} needs a FidelityFX-enabled runtime")
@@ -545,7 +566,9 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         # This limits presented swaps; it does not change the guest timestep.
         args.append(f"--frame_limit_fps={values['fps_limit']}")
     elif values["fps_limit"] != 60:
-        raise SettingsError("30/120 FPS и отключение лимита требуют сборку с frame_limit_fps")
+        if not lenient:
+            raise SettingsError("30/120 FPS и отключение лимита требуют сборку с frame_limit_fps")
+        warnings.append("Лимит FPS игнорируется: сборка не поддерживает frame_limit_fps (остаётся 60)")
     if values["resolution"] != "auto":
         width, height = values["resolution"].split("x")
         args += [f"--window_width={width}", f"--window_height={height}"]
@@ -565,7 +588,10 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
     # else: the runtime has no read-ahead cvar (e.g. the Windows build). It is a best-effort performance
     # hint, so it is skipped; raising here made every other option (e.g. DirectX 12) unselectable.
     if values["gpu_api"] == "d3d12" and "d3d12" not in features:
-        raise SettingsError("Graphics API 'd3d12' needs the Windows game build (GPU plugin with the D3D12 backend)")
+        if not lenient:
+            raise SettingsError("Graphics API 'd3d12' needs the Windows game build (GPU plugin with the D3D12 backend)")
+        warnings.append("DirectX 12 недоступен в этой сборке (нет D3D12-бэкенда в rexgpu-xenos.dll): используется Vulkan")
+        values["gpu_api"] = "vulkan"
     # The plugin's "any" prefers D3D12 when it is compiled in, so the Vulkan default must be explicit there.
     # Runtimes without D3D12 (Linux) do not get the cvar, so they keep working unchanged.
     if values["gpu_api"] != "vulkan" or "d3d12" in features:

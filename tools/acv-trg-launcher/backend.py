@@ -6,11 +6,26 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/native-rexglue"))
 import acv_paths, acv_settings as S, acv_profiles as P, acv_shm, acv_install, acv_sessions, acv_mangohud, acv_input, acv_launch_spec
 
+def tolerant_graphics(raw, warnings):
+    """resolve_graphics that drops saved values the current schema rejects (with a warning) instead of failing
+    the whole snapshot, so the controls that repair them stay usable."""
+    try:
+        return S.resolve_graphics(raw)
+    except S.SettingsError:
+        kept={}
+        for key,value in (raw if isinstance(raw,dict) else {}).items():
+            try:
+                S.resolve_graphics({**kept,key:value}); kept[key]=value
+            except S.SettingsError as error:
+                warnings.append(f"Сохранённая настройка {key}={value!r} сброшена: {error}")
+        return S.resolve_graphics(kept)
+
 def snapshot(root, draft=None):
     path=root/"settings.json"
     saved=S.load_json(path,"settings") if path.exists() else {"schema_version":1,"graphics":{},"launcher":{}}
     if draft is not None: saved=normalize(root,draft)
-    saved["graphics"]=S.resolve_graphics(saved.get("graphics",{}))
+    warnings=[]
+    saved["graphics"]=tolerant_graphics(saved.get("graphics",{}),warnings)
     saved.setdefault("launcher",{})
     saved["launcher"].setdefault("build",str(acv_paths.EXECUTABLE))
     saved["launcher"]["build"]=acv_paths.packaged_build_selection(saved["launcher"]["build"])
@@ -46,11 +61,19 @@ def snapshot(root, draft=None):
             except S.SettingsError as e:
                 option["selectable"]=False
                 option.setdefault("reason",str(e))
+    # What Play/Save would do with the saved choices on this build: degraded choices become warnings, a conflict
+    # is reported as graphics_error instead of failing the whole snapshot.
+    graphics_error=None
+    try:
+        S.graphics_to_cvars(saved["graphics"],saved["launcher"]["allow_experimental"],features,warnings)
+        S.graphics_to_env(saved["graphics"],features,warnings)
+    except S.SettingsError as error:
+        graphics_error=str(error)
     try:
         install=acv_install.verify(acv_paths.GAME,full=False)
     except (ValueError,OSError) as error:
         install={"ok":False,"reason":str(error)}
-    return {"settings":saved,"profiles":profiles,"capabilities":caps,
+    return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"settings":saved,"profiles":profiles,"capabilities":caps,
             "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
             "display_info":acv_sessions.latest(acv_paths.LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
@@ -83,13 +106,16 @@ def save(root,doc):
     if launcher["mangohud"]:
         available=acv_mangohud.availability()
         if not available["available"]:raise ValueError(available["reason"])
-    S.graphics_to_cvars(graphics,launcher.get("allow_experimental",False),S.runtime_features(Path(launcher["build"]).parent))
+    warnings=[]
+    # Lenient: a choice this build cannot honour degrades with a warning; real conflicts still refuse to save.
+    features=S.runtime_features(Path(launcher["build"]).parent)
+    S.graphics_to_cvars(graphics,launcher.get("allow_experimental",False),features,warnings)
     old=S.load_json(root/"settings.json","settings") if (root/"settings.json").exists() else {}
     old.update(schema_version=S.SCHEMA_VERSION,graphics=graphics)
     old["launcher"]={**old.get("launcher",{}),**launcher}
     S.save_json_atomic(root/"settings.json",old)
     write_input_options(root,launcher["input_mode"])
-    return {"ok":True}
+    return {"ok":True,"warnings":list(dict.fromkeys(warnings))}
 
 def write_input_options(root,mode):
     """Probe cvars for the saved input mode, one per line. The Windows launcher has no Python call on Play,
@@ -106,7 +132,7 @@ def main():
         elif a.command=="preview":out=snapshot(root,json.load(sys.stdin))
         elif a.command=="preset":
             doc=normalize(root,json.load(sys.stdin))
-            doc=S.apply_graphics_preset(doc,a.preset,S.runtime_features(Path(doc['launcher']['build']).parent),S.host_memory_info())
+            doc=S.apply_graphics_preset(doc,a.preset,S.runtime_features(Path(doc['launcher']['build']).parent),S.host_memory_info(),lenient=True)
             out=snapshot(root,doc)
         elif a.command=="save":out=save(root,json.load(sys.stdin))
         elif a.command=="launch-spec":out=acv_launch_spec.build(root)

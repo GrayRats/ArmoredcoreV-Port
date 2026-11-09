@@ -48,8 +48,10 @@ def build(profiles_root, config_path=None, run_id=None):
     user.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
 
-    settings_options = S.graphics_to_cvars(saved.get("graphics", {}), bool(launcher.get("allow_experimental", False)), features)
-    env = dict(S.graphics_to_env(saved.get("graphics", {}), features))
+    # Lenient: a saved choice this build cannot honour degrades with a warning instead of blocking Play.
+    warnings = []
+    settings_options = S.graphics_to_cvars(saved.get("graphics", {}), bool(launcher.get("allow_experimental", False)), features, warnings)
+    env = dict(S.graphics_to_env(saved.get("graphics", {}), features, warnings))
     input_mode = S.launcher_input_mode(launcher)
     input_options = acv_input.cvar_options(input_mode)
     env.update(acv_input.mode_environment(input_mode, {}))
@@ -87,4 +89,5 @@ def build(profiles_root, config_path=None, run_id=None):
         if "ACV_XUID" in features:
             env["ACV_XUID"] = selected.xuid
     return {"args": options, "env": env, "log_file": str(log_file), "user_data_root": str(user),
-            "input_mode": input_mode, "profile": selected.uuid if selected else None}
+            "input_mode": input_mode, "profile": selected.uuid if selected else None,
+            "warnings": list(dict.fromkeys(warnings))}
