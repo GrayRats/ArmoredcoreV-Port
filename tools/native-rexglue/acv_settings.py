@@ -562,8 +562,8 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset()):
         read_ahead = 16 if "asset_read_ahead_mb" in features else 0
     if "asset_read_ahead_mb" in features:
         args.append(f"--asset_read_ahead_mb={read_ahead}")
-    elif read_ahead:
-        raise SettingsError("Background archive preloading requires an updated runtime")
+    # else: the runtime has no read-ahead cvar (e.g. the Windows build). It is a best-effort performance
+    # hint, so it is skipped; raising here made every other option (e.g. DirectX 12) unselectable.
     if values["gpu_api"] == "d3d12" and "d3d12" not in features:
         raise SettingsError("Graphics API 'd3d12' needs the Windows game build (GPU plugin with the D3D12 backend)")
     # The plugin's "any" prefers D3D12 when it is compiled in, so the Vulkan default must be explicit there.

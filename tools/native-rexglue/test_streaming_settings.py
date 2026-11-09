@@ -33,7 +33,9 @@ class StreamingSettings(unittest.TestCase):
                      "--texture_cache_memory_limit_soft_lifetime=180","--asset_read_ahead_mb=16"]:
             self.assertIn(flag,args)
         self.assertFalse(any(x.startswith("--asset_read_ahead_mb=") for x in S.graphics_to_cvars({})))
-        with self.assertRaises(S.SettingsError):S.graphics_to_cvars({"asset_read_ahead_mb":32})
+        # Runtime without the cvar: read-ahead is skipped instead of failing every option.
+        self.assertFalse(any(x.startswith("--asset_read_ahead_mb=") for x in S.graphics_to_cvars({"asset_read_ahead_mb":32})))
+        self.assertIn("--gpu_api=d3d12",S.graphics_to_cvars({"asset_read_ahead_mb":32,"gpu_api":"d3d12"},features={"d3d12"}))
     def test_invalid_budget_and_types(self):
         for values in [{"texture_cache_soft_mb":2048,"texture_cache_hard_mb":768},
                        {"texture_cache_hard_mb":True},{"asset_read_ahead_mb":-1},
