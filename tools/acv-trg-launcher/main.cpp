@@ -456,7 +456,12 @@ struct App {
     ImGui::EndDisabled();
     ui.FolderRow("Данные профилей","Резервные копии и сохранения","Открыть",snapshot.at("profiles_root"));
   }
+  // The same switch as on the Launch page, repeated where the options it unlocks are (wide view, 10-bit, FXAA, scale).
+  void ExperimentalToggle(trg::Ui& ui){
+    ui.Toggle("Экспериментальные настройки","Открывает расширенный обзор, 10 бит, FXAA и масштаб рендера. Совпадает с переключателем на странице «Запуск»","launcher.allow_experimental",false,"Выкл.","Вкл.");
+  }
   void ScreenPage(trg::Ui& ui){
+    ExperimentalToggle(ui);
     Choice(ui,"window_mode","Режим экрана");Choice(ui,"monitor","Монитор","Индекс дисплея игрового backend");
     ui.Combo("Группа разрешений","Фильтр списка; текущее разрешение сохраняется","ui.resolution_group","all",{{"all","Все"},{"16:9","16:9"},{"16:10","16:10"},{"UltraWide","UltraWide"},{"32:9","32:9"}});
     std::vector<trg::Option> resolutions;
@@ -500,6 +505,7 @@ struct App {
     }
   }
   void ColorPage(trg::Ui& ui){
+    ExperimentalToggle(ui);
     ui.Help("10 бит — запрос SDR-формата. Для выбора включите «Экспериментальные настройки» на странице «Запуск». При отсутствии поддержки игра применит 8 бит и покажет фактический результат ниже.");
     Choice(ui,"color_encoding","Кодирование цвета");
     Choice(ui,"color_depth","Глубина цвета","10 бит — экспериментальный запрос SDR, не HDR. Нужна поддержка поверхности и экрана; иначе игра явно вернётся к 8 бит. Выбор 10 бит отключает 8-битный дизеринг.");
@@ -514,6 +520,7 @@ struct App {
     }else ui.Help("Фактическая глубина цвета появится после запуска. Наличие пункта 10 бит не подтверждает 10-битный вывод.");
   }
   void GraphicsPage(trg::Ui& ui){
+    ExperimentalToggle(ui);
     ui.Choice("Набор настроек","Применение меняет графику; кнопка «Сохранить» записывает изменения","ui.preset","compatibility",{{"compatibility","Производительность"},{"quality","Графика"},{"streaming","Плавность"}});
     if(ui.ButtonRow("Применить набор","Профиль и сохранения сохраняются","Применить")){
       ApplyPreset(store.Get("ui.preset","compatibility"));
