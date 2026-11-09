@@ -39,7 +39,7 @@ def explain(error, static):
     """What the user has to do to make an unselectable option selectable (the raw errors are for developers)."""
     text=str(error)
     if "is experimental" in text:
-        return "Экспериментальная настройка: включите «Экспериментальные настройки» на странице «Игра»."+(f" {static.rstrip('.')}." if static else "")
+        return "Экспериментальная настройка: включите «Экспериментальные настройки» на странице «Запуск»."+(f" {static.rstrip('.')}." if static else "")
     if "needs an explicit resolution" in text:
         return "Нужно явное разрешение: выберите его в списке «Разрешение» (например, 2560x1080) или один раз запустите игру, чтобы лаунчер узнал разрешение монитора."
     if "outside the supported" in text:
