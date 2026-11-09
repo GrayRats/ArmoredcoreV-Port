@@ -45,7 +45,7 @@ class LenientSettings(unittest.TestCase):
 
     def test_supported_choices_produce_no_warnings(self):
         features = {"d3d12", "present_output_bits", "fidelityfx", "frame_limit_fps"}
-        args, warnings = cvars({"gpu_api": "d3d12", "color_depth": 10, "dither": False,
+        args, warnings = cvars({"gpu_api": "d3d12", "color_depth": 10, "dither": False, "readback_resolve": "fast",
                                 "output_effect": "fsr", "fps_limit": 30}, features)
         self.assertEqual(warnings, [])
         self.assertIn("--gpu_api=d3d12", args)
@@ -61,6 +61,20 @@ class LenientSettings(unittest.TestCase):
         self.assertIn("--d3d12_pipeline_processor_assist=false", args)
         args, _ = cvars({"gpu_api": "vulkan"}, base | {"d3d12_pipeline_processor_assist"})
         self.assertFalse(any("d3d12_pipeline_processor_assist" in a for a in args))
+
+    def test_directx12_never_gets_the_synchronous_readback(self):
+        args, warnings = cvars({"gpu_api": "d3d12", "readback_resolve": "full"}, {"d3d12"})
+        self.assertIn("--readback_resolve=fast", args)
+        self.assertNotIn("--readback_resolve=full", args)
+        self.assertEqual(len(warnings), 1)
+        strict = S.graphics_to_cvars({"gpu_api": "d3d12", "readback_resolve": "full"}, True, {"d3d12"})
+        self.assertIn("--readback_resolve=fast", strict)
+        # Vulkan keeps the accepted synchronous mode; an unsupported DirectX 12 request falls back to Vulkan first.
+        args, _ = cvars({"gpu_api": "vulkan", "readback_resolve": "full"}, {"d3d12"})
+        self.assertIn("--readback_resolve=full", args)
+        args, warnings = cvars({"gpu_api": "d3d12", "readback_resolve": "full"})
+        self.assertIn("--readback_resolve=full", args)
+        self.assertEqual(len(warnings), 1)  # only the "DirectX 12 unavailable" message
 
     def test_real_conflicts_still_raise(self):
         with self.assertRaises(S.SettingsError):

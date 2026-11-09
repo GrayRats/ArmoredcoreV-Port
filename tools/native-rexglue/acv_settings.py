@@ -643,6 +643,13 @@ def graphics_to_cvars(values, allow_experimental=False, features=frozenset(), wa
     args += [f"--texture_cache_memory_limit_soft={values['texture_cache_soft_mb']}",
              f"--texture_cache_memory_limit_hard={values['texture_cache_hard_mb']}",
              f"--texture_cache_memory_limit_soft_lifetime={values['texture_cache_retention_s']}"]
+    # On D3D12 the synchronous readback never finishes loading (tested 2026-11-10 on GTX 1660 SUPER with both the
+    # rov and rtv paths: the guest stops requesting new textures), while "fast" loads and renders normally.
+    if values["gpu_api"] == "d3d12" and "d3d12" in features and values["readback_resolve"] == "full":
+        # Applied in strict mode too (it is a correctness fix, not a refusal); the warning is for lenient callers.
+        if lenient:
+            warnings.append("На DirectX 12 режим чтения «Полный» зависает на загрузке: используется «Быстрый (отложенный)»")
+        values["readback_resolve"] = "fast"
     # Last on purpose: a launcher choice outranks the [sdk] default of acv.config.
     args.append(f"--readback_resolve={values['readback_resolve']}")
     read_ahead = values["asset_read_ahead_mb"]
