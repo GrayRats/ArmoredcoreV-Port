@@ -24,6 +24,10 @@ else:
             "DEArmoredcore/acv/logs" if PACKAGED else ROOT / "logs")
 
 
+# Windows runtime logs (runtime-*.log, trg-session-*.log) are written into the package, not into LOGS.
+RUNTIME_LOGS = ROOT / "logs" if os.name == "nt" else None
+
+
 def _same_file(a, b):
     try:
         return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))

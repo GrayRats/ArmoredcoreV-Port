@@ -78,7 +78,7 @@ def snapshot(root, draft=None):
     return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"build_status":build_status,"build_warning":build_warning,"platform":"windows" if os.name=="nt" else "linux","settings":saved,"profiles":profiles,"capabilities":caps,
             "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"features_source":features_source,"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
-            "display_info":acv_sessions.latest(acv_paths.LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
+            "display_info":acv_sessions.latest(acv_paths.LOGS,acv_paths.RUNTIME_LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
             "profiles_root":str(root),"settings_path":str(path),"logs_root":str(acv_paths.LOGS),"game_logs_root":str(acv_paths.ROOT/"logs"),"shm":acv_shm.status()}
 
 def normalize(root,doc):

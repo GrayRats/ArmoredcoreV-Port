@@ -42,7 +42,7 @@ def main(argv=None):
     try:
         if a.cmd == "last-run":
             import acv_sessions
-            out = acv_sessions.latest(acv_paths.LOGS)
+            out = acv_sessions.latest(acv_paths.LOGS, acv_paths.RUNTIME_LOGS)
         elif a.cmd == "shm-status":
             out = acv_shm.status()
         elif a.cmd == "shm-clean":

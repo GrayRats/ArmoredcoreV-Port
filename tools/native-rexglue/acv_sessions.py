@@ -3,9 +3,29 @@ import json, time
 from pathlib import Path
 import acv_display
 
-def latest(logs):
+def _runtime_log_report(log):
+    """Observed display state of one Windows runtime-*.log (no launch.json is written there)."""
+    with log.open("rb") as f:
+        header=f.read(128*1024)
+        size=f.seek(0,2)
+        f.seek(max(len(header),size-1024*1024))
+        tail=f.read(1024*1024)
+    display=acv_display.summarize((header+b"\n"+tail).decode("utf-8",errors="replace"))
+    pacing=display["pacing"]
+    return {"available":True,"evidence":str(log),"completed":False,"child_returncode":None,"fatal_error_count":0,
+            "output":display.get("output"),"applied":display.get("applied"),"fallbacks":display.get("fallbacks",[]),
+            "monitors":display.get("monitors",[]),"display_modes":display.get("display_modes",[]),
+            "pacing_last":pacing[-1] if pacing else None,"mangohud":None,
+            "idle_seconds":max(0,time.time()-log.stat().st_mtime),"limit_reached":None}
+
+def latest(logs,runtime_logs=None):
+    """Telemetry of the newest run. `runtime_logs` is a folder with Windows runtime-*.log files, used when no
+    Linux run directory exists (Windows writes the log into the package instead of the per-user log folder)."""
     runs=sorted((Path(logs)/"acv-native-linux").glob("2*"))
     runs=[r for r in runs if r.is_dir()]
+    if not runs and runtime_logs is not None:
+        logs_found=sorted(Path(runtime_logs).glob("runtime-*.log"),key=lambda p:p.stat().st_mtime)
+        if logs_found:return _runtime_log_report(logs_found[-1])
     if not runs:return {"available":False,"reason":"Пока нет запусков игры"}
     run=runs[-1];report=run/"launch.json"
     launch=json.loads(report.read_text()) if report.is_file() else {}
