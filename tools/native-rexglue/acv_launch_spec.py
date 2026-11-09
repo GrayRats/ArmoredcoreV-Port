@@ -34,7 +34,9 @@ def build(profiles_root, config_path=None, run_id=None):
     if not isinstance(launcher, dict):
         raise S.SettingsError("launcher must be an object")
     config, config_sdk_options = read_config(config_path or acv_paths.ROOT / "tools/native-rexglue/acv.config")
-    features = S.runtime_features(acv_paths.EXECUTABLE.parent)
+    # The build the launcher shows and validates against (an empty or stale saved path follows this package).
+    executable, build_status, build_warning = acv_paths.resolve_build(launcher.get("build"))
+    features = S.runtime_features(Path(executable).parent)
     run_id = run_id or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
     selected = None
@@ -90,4 +92,5 @@ def build(profiles_root, config_path=None, run_id=None):
             env["ACV_XUID"] = selected.xuid
     return {"args": options, "env": env, "log_file": str(log_file), "user_data_root": str(user),
             "input_mode": input_mode, "profile": selected.uuid if selected else None,
-            "warnings": list(dict.fromkeys(warnings))}
+            "executable": executable, "build_status": build_status,
+            "warnings": list(dict.fromkeys(warnings + ([build_warning] if build_warning else [])))}

@@ -27,8 +27,10 @@ def snapshot(root, draft=None):
     warnings=[]
     saved["graphics"]=tolerant_graphics(saved.get("graphics",{}),warnings)
     saved.setdefault("launcher",{})
-    saved["launcher"].setdefault("build",str(acv_paths.EXECUTABLE))
-    saved["launcher"]["build"]=acv_paths.packaged_build_selection(saved["launcher"]["build"])
+    # An empty/missing build follows this package; a stale path from another folder is replaced (and reported).
+    build,build_status,build_warning=acv_paths.resolve_build(saved["launcher"].get("build"))
+    saved["launcher"]["build"]=build
+    if build_warning: warnings.append(build_warning)
     saved["launcher"].setdefault("video_driver","x11")
     saved["launcher"].setdefault("allow_experimental",False)
     saved["launcher"]["mangohud"]=S.launcher_mangohud(saved["launcher"])
@@ -73,7 +75,7 @@ def snapshot(root, draft=None):
         install=acv_install.verify(acv_paths.GAME,full=False)
     except (ValueError,OSError) as error:
         install={"ok":False,"reason":str(error)}
-    return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"settings":saved,"profiles":profiles,"capabilities":caps,
+    return {"warnings":list(dict.fromkeys(warnings)),"graphics_error":graphics_error,"build_status":build_status,"build_warning":build_warning,"settings":saved,"profiles":profiles,"capabilities":caps,
             "resolution_presets":S.RESOLUTION_PRESETS,"bundled_build":str(acv_paths.EXECUTABLE),"presets":S.graphics_presets(memory),"memory":memory,"features":sorted(features),"build_exists":exe.is_file(),
             "game_data_exists":install["ok"],"installation":install,"game_root":str(acv_paths.GAME),
             "display_info":acv_sessions.latest(acv_paths.LOGS),"mangohud":acv_mangohud.availability(),"input":acv_input.snapshot(saved["launcher"]["input_mode"]),
@@ -86,8 +88,9 @@ def normalize(root,doc):
     if set(doc)-{"schema_version","graphics","launcher"}: raise ValueError("Unknown settings section")
     graphics=S.resolve_graphics(doc.get("graphics",{})); launcher=doc.get("launcher",{})
     if not isinstance(launcher,dict):raise ValueError("launcher must be an object")
-    build=launcher.get("build",str(acv_paths.EXECUTABLE))
-    if not isinstance(build,str) or not build:raise ValueError("build must be a non-empty path")
+    build=launcher.get("build","")
+    if not isinstance(build,str):raise ValueError("build must be a path string")
+    build,_,_=acv_paths.resolve_build(build)  # empty or stale package path -> this package's build
     exe=Path(build).expanduser().resolve()
     launcher=dict(launcher,build=str(exe))
     launcher["mangohud"]=S.launcher_mangohud(launcher)
@@ -113,6 +116,10 @@ def save(root,doc):
     old=S.load_json(root/"settings.json","settings") if (root/"settings.json").exists() else {}
     old.update(schema_version=S.SCHEMA_VERSION,graphics=graphics)
     old["launcher"]={**old.get("launcher",{}),**launcher}
+    # Windows package: store "follow this package" instead of an absolute path, so moving or upgrading the
+    # package folder cannot leave a stale build path behind. Only a build the user chose elsewhere stays pinned.
+    if os.name=="nt" and acv_paths.PACKAGED and acv_paths._same_file(launcher["build"],acv_paths.EXECUTABLE):
+        old["launcher"]["build"]=""
     S.save_json_atomic(root/"settings.json",old)
     write_input_options(root,launcher["input_mode"])
     return {"ok":True,"warnings":list(dict.fromkeys(warnings))}

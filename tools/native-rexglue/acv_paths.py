@@ -24,6 +24,51 @@ else:
             "DEArmoredcore/acv/logs" if PACKAGED else ROOT / "logs")
 
 
+def _same_file(a, b):
+    try:
+        return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))
+    except OSError:
+        return False
+
+
+def _inside(path, folder):
+    try:
+        Path(os.path.normcase(str(Path(path).resolve()))).relative_to(os.path.normcase(str(Path(folder).resolve())))
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def resolve_build(saved_build, root=None, executable=None, packaged=None):
+    """Executable to use for the saved launcher.build: (path, status, warning).
+
+    status: "dev" (not a package; the saved path is used as is), "package" (this package's own build),
+    "relocated" (the saved path named this package's executable in another folder, e.g. a moved or older
+    release: the build of this package is used), "external" (a different build the user chose) and "missing"
+    (the saved file does not exist: this package's build is used). The warning is None unless the saved
+    value was not honoured or points outside the package. Saved preferences are never rewritten here."""
+    root = ROOT if root is None else Path(root)
+    executable = EXECUTABLE if executable is None else Path(executable)
+    packaged = PACKAGED if packaged is None else packaged
+    if not saved_build:
+        return str(executable), ("package" if packaged else "dev"), None
+    saved = Path(saved_build)
+    if not packaged:
+        return str(saved), "dev", None
+    if _same_file(saved, executable):
+        return str(executable), "package", None
+    if packaged_build_selection(saved_build) != str(saved):  # Linux sibling-release switch
+        return str(executable), "package", None
+    if _inside(saved, root):
+        return str(saved), "package", None
+    if saved.name.lower() == executable.name.lower():
+        return str(executable), "relocated", (
+            f"Сохранённый путь сборки указывал в другую папку ({saved.parent}); используется сборка этого пакета")
+    if not saved.is_file():
+        return str(executable), "missing", f"Сохранённая сборка не найдена ({saved}); используется сборка этого пакета"
+    return str(saved), "external", f"Используется внешняя сборка игры: {saved}"
+
+
 def packaged_build_selection(saved_build):
     """Follow a sibling release switch without rewriting saved preferences."""
     saved = Path(saved_build)
